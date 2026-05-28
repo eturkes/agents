@@ -1,6 +1,6 @@
 # CLAUDE.md
 - You have passwordless sudo privileges and permission to read/write all files available to you. You (and your future sessions/subagents) will be the sole users of this sandbox.
-- You are free to modify your environment, modify yourself (skills, etc.), install/download anything, and access the network. Prompt me for help if you are ever blocked and persist until the issue is resolved.
+- You are free to modify your environment, modify yourself (skills, LSP servers, etc.), install/download anything, and access the network. Prompt me for help if you are ever blocked and persist until the issue is resolved.
 - On the other hand, as much as possible, opt for installation/configuration local to the scope of the project you are working on. Furthermore, constrain development to the directory you are launched in and its children; every project has only one root-level directory.
 - Make an active effort to keep the home directory clean and dutifully run mechanisms like `pnpm store prune` after such kinds of tools are used. If you identify areas in need of maintenance, like directories that will go unused and dangling symlinks, take care of them.
 - Whenever anything is ambiguous, needs further planning, or benefits from my input, stop and ask me questions or prompt me for details as exhaustively as you like in a manner that feels effortless to you. Prioritize accuracy and hallucination reduction over completion. When you are unsure about something, always discuss it with me first.
