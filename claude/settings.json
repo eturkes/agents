@@ -4,27 +4,31 @@
     "DISABLE_AUTOUPDATER": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
-    "skillOverrides": {
-      "claude-api": "off",
-      "update-config": "off",
-      "schedule": "off",
-      "run": "off",
-      "loop": "off",
-      "verify": "off",
-      "keybindings-help": "off",
-      "code-review": "off",
-      "fewer-permission-prompts": "off",
-      "security-review": "off",
-      "init": "off",
-      "review": "off"
+  "permissions": {
+    "defaultMode": "dontAsk"
+  },
+  "skillOverrides": {
+    "claude-api": "off",
+    "update-config": "off",
+    "schedule": "off",
+    "run": "off",
+    "loop": "off",
+    "verify": "off",
+    "keybindings-help": "off",
+    "code-review": "off",
+    "fewer-permission-prompts": "off",
+    "security-review": "off",
+    "init": "off",
+    "review": "off",
+    "simplify": "off"
   },
   "awaySummaryEnabled": false,
-  "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
-  "useAutoModeDuringPlan": false,
   "theme": "light",
-  "preferredNotifChannel": "notifications_disabled",
   "autoCompactEnabled": false,
   "remoteControlAtStartup": false,
-  "agentPushNotifEnabled": false
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true,
+  "useAutoModeDuringPlan": false,
+  "autoMemoryEnabled": false
 }
