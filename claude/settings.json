@@ -1,7 +1,10 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "128000",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "opus",
+    "CLAUDE_CODE_EFFORT_LEVEL": "max",
     "DISABLE_AUTOUPDATER": "1"
   },
   "permissions": {
@@ -20,13 +23,15 @@
     "security-review": "off",
     "init": "off",
     "review": "off",
-    "simplify": "off"
+    "simplify": "off",
+    "deep-research": "off"
   },
   "awaySummaryEnabled": false,
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
   "autoCompactEnabled": false,
+  "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
