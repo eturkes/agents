@@ -35,5 +35,6 @@
   "remoteControlAtStartup": false,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "useAutoModeDuringPlan": false
+  "useAutoModeDuringPlan": false,
+  "workflowKeywordTriggerEnabled": false
 }
