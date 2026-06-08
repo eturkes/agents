@@ -22,16 +22,17 @@ else
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=200000
 # Rate-limit suffix; empty when rate_limits absent (manual mode, or before first API response).
-# seg PCT EPOCH => "N% used, resets MM/DD HH:MM (TZ)"; N>=80 yellow, N>=90 red.
+# seg PCT EPOCH => "N% used, resets MM/DD HH:MM"; N>=80 yellow, N>=90 red.
 seg() {
   printf '%s, resets %s' "$(awk -v p="$1" 'BEGIN{q=int(p+0.5)
     if(q>=90)printf "\033[31m%d%% used\033[0m",q
     else if(q>=80)printf "\033[33m%d%% used\033[0m",q
-    else printf "%d%% used",q}')" "$(date -d "@$2" +'%m/%d %H:%M (%Z)')"
+    else printf "%d%% used",q}')" "$(date -d "@$2" +'%m/%d %H:%M')"
 }
 rl=""
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | 5h $(seg "$sp" "$sr")"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | 7d $(seg "$wp" "$wr")"
+[ -n "$rl" ] && rl="$rl | $(date +%Z)"  # timezone column qualifying the reset timestamps
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}
               return sprintf("%dK",int(n/1000+0.5)) }
