@@ -32,6 +32,7 @@
     "command": "$HOME/.claude/statusline.sh",
     "refreshInterval": 60
   },
+  "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
@@ -41,6 +42,5 @@
   "remoteControlAtStartup": false,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "useAutoModeDuringPlan": false,
-  "promptSuggestionEnabled": false
+  "useAutoModeDuringPlan": false
 }
