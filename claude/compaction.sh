@@ -11,6 +11,7 @@ if [ -n "$u" ]; then
   sr=$(printf '%s' "$j" | jq -r '.rate_limits.five_hour.resets_at // empty' 2>/dev/null)
   wp=$(printf '%s' "$j" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null)
   wr=$(printf '%s' "$j" | jq -r '.rate_limits.seven_day.resets_at // empty' 2>/dev/null)
+  tp=$(printf '%s' "$j" | jq -r '.transcript_path // empty' 2>/dev/null)
   c=1
 else
   f=$(ls "$HOME"/.claude/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl 2>/dev/null)
@@ -32,7 +33,9 @@ seg() {
 rl=""
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | 5h $(seg "$sp" "$sr")"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | 7d $(seg "$wp" "$wr")"
-[ -n "$rl" ] && rl="$rl | $(date +%Z)"  # timezone column qualifying the reset timestamps
+# "ended" = transcript mtime: tracks ~now while a turn streams, freezes at turn end once idle.
+te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && rl="$rl | ended $(date -d "@$te" +'%m/%d %H:%M')"
+[ -n "$rl" ] && rl="$rl | $(date +%Z)"  # timezone column qualifying all timestamps
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}
               return sprintf("%dK",int(n/1000+0.5)) }
