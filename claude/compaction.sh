@@ -34,10 +34,13 @@ rl=""
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | 5h $(seg "$sp" "$sr")"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | 7d $(seg "$wp" "$wr")"
 # "last" = turn-end time via transcript mtime: tracks ~now while a turn streams, freezes once idle.
-# Red past 1h idle = subscription cache TTL expired; next turn re-reads context uncached.
+# Idle >=15m yellow (TTL burning down), >=1h red (subscription cache TTL expired; next turn uncached).
 te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
   ts="last $(date -d "@$te" +'%m/%d %H:%M')"
-  [ $(( $(date +%s) - te )) -ge 3600 ] && ts=$(printf '\033[31m%s\033[0m' "$ts")
+  idle=$(( $(date +%s) - te ))
+  if [ "$idle" -ge 3600 ]; then ts=$(printf '\033[31m%s\033[0m' "$ts")
+  elif [ "$idle" -ge 900 ]; then ts=$(printf '\033[33m%s\033[0m' "$ts")
+  fi
   rl="$rl | $ts"
 }
 [ -n "$rl" ] && rl="$rl | $(date +%Z)"  # timezone column qualifying all timestamps
