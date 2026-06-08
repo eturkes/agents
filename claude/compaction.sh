@@ -22,9 +22,16 @@ else
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=200000
 # Rate-limit suffix; empty when rate_limits absent (manual mode, or before first API response).
+# seg PCT EPOCH => "N% used, resets YYYY/MM/DD HH:MM (TZ)"; N>=80 yellow, N>=90 red.
+seg() {
+  printf '%s, resets %s' "$(awk -v p="$1" 'BEGIN{q=int(p+0.5)
+    if(q>=90)printf "\033[31m%d%% used\033[0m",q
+    else if(q>=80)printf "\033[33m%d%% used\033[0m",q
+    else printf "%d%% used",q}')" "$(date -d "@$2" +'%Y/%m/%d %H:%M (%Z)')"
+}
 rl=""
-[ -n "$sp" ] && [ -n "$sr" ] && rl=" | 5h $(awk -v p="$sp" 'BEGIN{l=100-p;printf "%d",(l<0?0:l)+0.5}')% left, resets $(date -d "@$sr" +'%-d %b %H:%M')"
-[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | 7d $(awk -v p="$wp" 'BEGIN{l=100-p;printf "%d",(l<0?0:l)+0.5}')% left, resets $(date -d "@$wr" +'%-d %b %H:%M')"
+[ -n "$sp" ] && [ -n "$sr" ] && rl=" | 5h $(seg "$sp" "$sr")"
+[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | 7d $(seg "$wp" "$wr")"
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}
               return sprintf("%dK",int(n/1000+0.5)) }
