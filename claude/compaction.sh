@@ -12,6 +12,7 @@ if [ -n "$u" ]; then
   wp=$(printf '%s' "$j" | jq -r '.rate_limits.seven_day.used_percentage // empty' 2>/dev/null)
   wr=$(printf '%s' "$j" | jq -r '.rate_limits.seven_day.resets_at // empty' 2>/dev/null)
   tp=$(printf '%s' "$j" | jq -r '.transcript_path // empty' 2>/dev/null)
+  pd=$(printf '%s' "$j" | jq -r '.workspace.project_dir // empty' 2>/dev/null)
   c=1
 else
   f=$(ls "$HOME"/.claude/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl 2>/dev/null)
@@ -43,8 +44,9 @@ te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
   fi
   rl="$rl | $ts"
 }
-# Timezone column qualifying all timestamps, then Clawd (launch-mascot head row) in Claude orange.
-[ -n "$rl" ] && rl="$rl | $(date +%Z) | $(printf '\033[38;2;217;119;87m▐▛███▜▌\033[0m')"
+# Timezone column qualifying all timestamps, then launch-directory basename.
+[ -n "$rl" ] && rl="$rl | $(date +%Z)"
+[ -n "$rl" ] && [ -n "$pd" ] && rl="$rl | ${pd##*/}"
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}
               return sprintf("%dK",int(n/1000+0.5)) }
