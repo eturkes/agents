@@ -24,9 +24,10 @@ else
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=200000
 # Rate-limit suffix; empty when rate_limits absent (manual mode, or before first API response).
-# seg PCT EPOCH LABEL => "LABEL N% MM/DD HH:MM".
+# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S] => "LABEL N% MM/DD HH:MM".
 #   LABEL+used% (one unit): green >=50, yellow >=75, red >=90.
-#   reset time (date+time only, never the label): green when today, yellow when <=2h away, red when <=1h away.
+#   reset time (date+time only, never the label): red when <=RED_S away, yellow when <=YELLOW_S, green when <=GREEN_S.
+#   Reset thresholds default to red<=1h, yellow<=2h, green=today (5h); 7d overrides to red<=5h, yellow<=10h, green<=15h.
 seg() {
   pct=$(awk -v p="$1" -v l="$3" 'BEGIN{q=int(p+0.5)
     if(q>=90)printf "\033[31m%s %d%%\033[0m",l,q
@@ -34,15 +35,17 @@ seg() {
     else if(q>=50)printf "\033[32m%s %d%%\033[0m",l,q
     else printf "%s %d%%",l,q}')
   dt=$(date -d "@$2" +'%m/%d %H:%M'); delta=$(( $2 - $(date +%s) ))
-  if [ "$delta" -le 3600 ]; then dt=$(printf '\033[31m%s\033[0m' "$dt")
-  elif [ "$delta" -le 7200 ]; then dt=$(printf '\033[33m%s\033[0m' "$dt")
+  rs=${4:-3600}; ys=${5:-7200}
+  if [ "$delta" -le "$rs" ]; then dt=$(printf '\033[31m%s\033[0m' "$dt")
+  elif [ "$delta" -le "$ys" ]; then dt=$(printf '\033[33m%s\033[0m' "$dt")
+  elif [ -n "$6" ]; then [ "$delta" -le "$6" ] && dt=$(printf '\033[32m%s\033[0m' "$dt")
   elif [ "$(date -d "@$2" +%Y%m%d)" = "$(date +%Y%m%d)" ]; then dt=$(printf '\033[32m%s\033[0m' "$dt")
   fi
   printf '%s %s' "$pct" "$dt"
 }
 rl=""
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h)"
-[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d)"
+[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000)"
 # "last" = turn-end time via transcript mtime: tracks ~now while a turn streams, freezes once idle.
 # Idle >=15m green, >=30m yellow, >=45m red: escalating staleness as cache TTL burns down toward an uncached next turn.
 te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
