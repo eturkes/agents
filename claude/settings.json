@@ -29,7 +29,7 @@
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
-    "command": "$HOME/.claude/compaction.sh",
+    "command": "$HOME/.claude/statusline.sh",
     "refreshInterval": 60
   },
   "awaySummaryEnabled": false,
