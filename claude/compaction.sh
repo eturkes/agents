@@ -34,7 +34,12 @@ rl=""
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | 5h $(seg "$sp" "$sr")"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | 7d $(seg "$wp" "$wr")"
 # "last" = turn-end time via transcript mtime: tracks ~now while a turn streams, freezes once idle.
-te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && rl="$rl | last $(date -d "@$te" +'%m/%d %H:%M')"
+# Red past 1h idle = subscription cache TTL expired; next turn re-reads context uncached.
+te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
+  ts="last $(date -d "@$te" +'%m/%d %H:%M')"
+  [ $(( $(date +%s) - te )) -ge 3600 ] && ts=$(printf '\033[31m%s\033[0m' "$ts")
+  rl="$rl | $ts"
+}
 [ -n "$rl" ] && rl="$rl | $(date +%Z)"  # timezone column qualifying all timestamps
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}

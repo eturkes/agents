@@ -29,7 +29,8 @@
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
-    "command": "$HOME/.claude/compaction.sh"
+    "command": "$HOME/.claude/compaction.sh",
+    "refreshInterval": 60
   },
   "awaySummaryEnabled": false,
   "autoMemoryEnabled": false,
