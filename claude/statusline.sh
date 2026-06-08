@@ -25,12 +25,12 @@ fi
 [ "$w" -gt 0 ] 2>/dev/null || w=200000
 # Rate-limit suffix; empty when rate_limits absent (manual mode, or before first API response).
 # seg PCT EPOCH LABEL => "LABEL N% MM/DD HH:MM".
-#   LABEL+used% (one unit): green >=50, yellow >=80, red >=90.
+#   LABEL+used% (one unit): green >=50, yellow >=75, red >=90.
 #   reset time (date+time only, never the label): green when today, yellow when <=2h away, red when <=1h away.
 seg() {
   pct=$(awk -v p="$1" -v l="$3" 'BEGIN{q=int(p+0.5)
     if(q>=90)printf "\033[31m%s %d%%\033[0m",l,q
-    else if(q>=80)printf "\033[33m%s %d%%\033[0m",l,q
+    else if(q>=75)printf "\033[33m%s %d%%\033[0m",l,q
     else if(q>=50)printf "\033[32m%s %d%%\033[0m",l,q
     else printf "%s %d%%",l,q}')
   dt=$(date -d "@$2" +'%m/%d %H:%M'); delta=$(( $2 - $(date +%s) ))
