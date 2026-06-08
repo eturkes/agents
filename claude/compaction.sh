@@ -24,13 +24,21 @@ else
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=200000
 # Rate-limit suffix; empty when rate_limits absent (manual mode, or before first API response).
-# seg PCT EPOCH => "N% MM/DD HH:MM" (used%, reset time); N>=80 yellow, N>=90 red.
+# seg PCT EPOCH => "N% MM/DD HH:MM" (used%, reset time).
+#   used%: green >=50, yellow >=80, red >=90.
+#   reset time (date+time): green when today, yellow when <=2h away, red when <=1h away.
 seg() {
-  printf '%s %s' "$(awk -v p="$1" 'BEGIN{q=int(p+0.5)
+  pct=$(awk -v p="$1" 'BEGIN{q=int(p+0.5)
     if(q>=90)printf "\033[31m%d%%\033[0m",q
     else if(q>=80)printf "\033[33m%d%%\033[0m",q
     else if(q>=50)printf "\033[32m%d%%\033[0m",q
-    else printf "%d%%",q}')" "$(date -d "@$2" +'%m/%d %H:%M')"
+    else printf "%d%%",q}')
+  dt=$(date -d "@$2" +'%m/%d %H:%M'); delta=$(( $2 - $(date +%s) ))
+  if [ "$delta" -le 3600 ]; then dt=$(printf '\033[31m%s\033[0m' "$dt")
+  elif [ "$delta" -le 7200 ]; then dt=$(printf '\033[33m%s\033[0m' "$dt")
+  elif [ "$(date -d "@$2" +%Y%m%d)" = "$(date +%Y%m%d)" ]; then dt=$(printf '\033[32m%s\033[0m' "$dt")
+  fi
+  printf '%s %s' "$pct" "$dt"
 }
 rl=""
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | 5h $(seg "$sp" "$sr")"
