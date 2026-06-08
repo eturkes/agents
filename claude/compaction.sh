@@ -43,7 +43,8 @@ te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
   fi
   rl="$rl | $ts"
 }
-[ -n "$rl" ] && rl="$rl | $(date +%Z)"  # timezone column qualifying all timestamps
+# Timezone column qualifying all timestamps, then mascot in Claude orange (#D97757).
+[ -n "$rl" ] && rl="$rl | $(date +%Z) | $(printf '\033[38;2;217;119;87m(•‿•)\033[0m')"
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}
               return sprintf("%dK",int(n/1000+0.5)) }
