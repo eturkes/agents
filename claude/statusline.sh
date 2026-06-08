@@ -24,15 +24,15 @@ else
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=200000
 # Rate-limit suffix; empty when rate_limits absent (manual mode, or before first API response).
-# seg PCT EPOCH => "N% MM/DD HH:MM" (used%, reset time).
-#   used%: green >=50, yellow >=80, red >=90.
-#   reset time (date+time): green when today, yellow when <=2h away, red when <=1h away.
+# seg PCT EPOCH LABEL => "LABEL N% MM/DD HH:MM".
+#   LABEL+used% (one unit): green >=50, yellow >=80, red >=90.
+#   reset time (date+time only, never the label): green when today, yellow when <=2h away, red when <=1h away.
 seg() {
-  pct=$(awk -v p="$1" 'BEGIN{q=int(p+0.5)
-    if(q>=90)printf "\033[31m%d%%\033[0m",q
-    else if(q>=80)printf "\033[33m%d%%\033[0m",q
-    else if(q>=50)printf "\033[32m%d%%\033[0m",q
-    else printf "%d%%",q}')
+  pct=$(awk -v p="$1" -v l="$3" 'BEGIN{q=int(p+0.5)
+    if(q>=90)printf "\033[31m%s %d%%\033[0m",l,q
+    else if(q>=80)printf "\033[33m%s %d%%\033[0m",l,q
+    else if(q>=50)printf "\033[32m%s %d%%\033[0m",l,q
+    else printf "%s %d%%",l,q}')
   dt=$(date -d "@$2" +'%m/%d %H:%M'); delta=$(( $2 - $(date +%s) ))
   if [ "$delta" -le 3600 ]; then dt=$(printf '\033[31m%s\033[0m' "$dt")
   elif [ "$delta" -le 7200 ]; then dt=$(printf '\033[33m%s\033[0m' "$dt")
@@ -41,8 +41,8 @@ seg() {
   printf '%s %s' "$pct" "$dt"
 }
 rl=""
-[ -n "$sp" ] && [ -n "$sr" ] && rl=" | 5h $(seg "$sp" "$sr")"
-[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | 7d $(seg "$wp" "$wr")"
+[ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h)"
+[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d)"
 # "last" = turn-end time via transcript mtime: tracks ~now while a turn streams, freezes once idle.
 # Idle >=15m green, >=30m yellow, >=45m red: escalating staleness as cache TTL burns down toward an uncached next turn.
 te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
