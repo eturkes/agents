@@ -29,18 +29,20 @@ seg() {
   printf '%s %s' "$(awk -v p="$1" 'BEGIN{q=int(p+0.5)
     if(q>=90)printf "\033[31m%d%%\033[0m",q
     else if(q>=80)printf "\033[33m%d%%\033[0m",q
+    else if(q>=50)printf "\033[32m%d%%\033[0m",q
     else printf "%d%%",q}')" "$(date -d "@$2" +'%m/%d %H:%M')"
 }
 rl=""
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | 5h $(seg "$sp" "$sr")"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | 7d $(seg "$wp" "$wr")"
 # "last" = turn-end time via transcript mtime: tracks ~now while a turn streams, freezes once idle.
-# Idle >=15m yellow (TTL burning down), >=1h red (subscription cache TTL expired; next turn uncached).
+# Idle >=15m green, >=30m yellow, >=45m red: escalating staleness as cache TTL burns down toward an uncached next turn.
 te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
   ts="last $(date -d "@$te" +'%m/%d %H:%M')"
   idle=$(( $(date +%s) - te ))
-  if [ "$idle" -ge 3600 ]; then ts=$(printf '\033[31m%s\033[0m' "$ts")
-  elif [ "$idle" -ge 900 ]; then ts=$(printf '\033[33m%s\033[0m' "$ts")
+  if [ "$idle" -ge 2700 ]; then ts=$(printf '\033[31m%s\033[0m' "$ts")
+  elif [ "$idle" -ge 1800 ]; then ts=$(printf '\033[33m%s\033[0m' "$ts")
+  elif [ "$idle" -ge 900 ]; then ts=$(printf '\033[32m%s\033[0m' "$ts")
   fi
   rl="$rl | $ts"
 }
@@ -52,5 +54,5 @@ function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);re
               return sprintf("%dK",int(n/1000+0.5)) }
 BEGIN{ if(u==""){ print "? ?/" h(w) r; exit }
        p=int(u*100/w+0.5); s=p "% " h(u) "/" h(w)
-       if(c&&p>=80) s="\033[31m" s "\033[0m"; else if(c&&p>=60) s="\033[33m" s "\033[0m"
+       if(c&&p>=80) s="\033[31m" s "\033[0m"; else if(c&&p>=60) s="\033[33m" s "\033[0m"; else if(c&&p>=40) s="\033[32m" s "\033[0m"
        print s r }'
