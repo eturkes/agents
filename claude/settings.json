@@ -8,7 +8,40 @@
     "DISABLE_AUTOUPDATER": "1"
   },
   "permissions": {
-    "defaultMode": "dontAsk"
+    "defaultMode": "dontAsk",
+    "deny": [
+      "Bash(cat:*)",
+      "Bash(bat:*)",
+      "Bash(batcat:*)",
+      "Bash(ccat:*)",
+      "Bash(pygmentize:*)",
+      "Bash(highlight:*)",
+      "Bash(source-highlight:*)",
+      "Bash(less:*)",
+      "Bash(more:*)",
+      "Bash(most:*)",
+      "Bash(pg:*)",
+      "Bash(nl:*)",
+      "Bash(tac:*)",
+      "Bash(rev:*)",
+      "Bash(fold:*)",
+      "Bash(pr:*)",
+      "Bash(fmt:*)",
+      "Bash(od:*)",
+      "Bash(xxd:*)",
+      "Bash(hexdump:*)",
+      "Bash(hd:*)",
+      "Bash(hexyl:*)",
+      "Bash(strings:*)",
+      "Bash(rtk read:*)",
+      "Bash(vi:*)",
+      "Bash(vim:*)",
+      "Bash(nvim:*)",
+      "Bash(view:*)",
+      "Bash(nano:*)",
+      "Bash(emacs:*)",
+      "Bash(ed:*)"
+    ]
   },
   "skillOverrides": {
     "claude-api": "off",
