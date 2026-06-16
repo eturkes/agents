@@ -47,13 +47,13 @@ rl=""
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h)"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000)"
 # "last" = turn-end time via transcript mtime: tracks ~now while a turn streams, freezes once idle.
-# Idle >=15m green, >=30m yellow, >=45m red: escalating staleness as cache TTL burns down toward an uncached next turn.
+# Idle >=30m green, >=45m yellow, >=60m red: escalating staleness as cache TTL burns down toward an uncached next turn.
 te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
   ts="last $(date -d "@$te" +'%m/%d %H:%M')"
   idle=$(( $(date +%s) - te ))
-  if [ "$idle" -ge 2700 ]; then ts=$(printf '\033[31m%s\033[0m' "$ts")
-  elif [ "$idle" -ge 1800 ]; then ts=$(printf '\033[33m%s\033[0m' "$ts")
-  elif [ "$idle" -ge 900 ]; then ts=$(printf '\033[32m%s\033[0m' "$ts")
+  if [ "$idle" -ge 3600 ]; then ts=$(printf '\033[31m%s\033[0m' "$ts")
+  elif [ "$idle" -ge 2700 ]; then ts=$(printf '\033[33m%s\033[0m' "$ts")
+  elif [ "$idle" -ge 1800 ]; then ts=$(printf '\033[32m%s\033[0m' "$ts")
   fi
   rl="$rl | $ts"
 }
