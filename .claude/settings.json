@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "deny": [
-      "Read(.serena/cache/**)",
-      "Read(.serena/memories/**)",
-      "Read(.serena/project.local.yml)"
-    ]
-  }
-}
