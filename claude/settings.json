@@ -45,6 +45,10 @@
     "command": "$HOME/.claude/statusline.sh",
     "refreshInterval": 60
   },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
   "autoMemoryEnabled": false,
