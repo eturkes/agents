@@ -1,0 +1,55 @@
+# Scoped Commits
+
+> A loose standard for formatting Git commit messages so the log stays quickly scannable. Normal commits are written as `<scope>: <description>`, with an optional body and optional trailer(s). The bet is that the scope — the subsystem, area, or module a change touches — is the most important part of a commit message. Maintained by Nevarro LLC.
+
+Normal commits are formatted as `<scope>: <description>` on the subject line, followed by an optional body and optional trailer(s). The `<scope>` is the subsystem, area, or module the commit touches; the `<description>` is a short summary of the change; the body holds detailed information; trailers hold additional metadata. Reverts, merges, and other special commits can be formatted however you like. Projects adopting the standard typically define their own valid scopes and additional rules for descriptions, bodies, trailers, and special commits.
+
+The standard is descriptive and deliberately loose, not a strict specification. Its core argument is that scope belongs up front because everyone who reads a commit log is really asking "what areas were touched?" — contributors catching up on or rebasing against an area of the code, debuggers hunting changes near a fault, and incident responders scanning for the cause of an outage. The project takes a clear stance against Conventional Commits, and advises against generating changelogs from commit logs on the grounds that commit logs serve contributors while changelogs serve users.
+
+Practical guidance from the FAQ: a commit spanning multiple scopes should use a more general scope, list scopes comma-separated, fall back to a tree-wide scope (`treewide`, `all`, `global`), or be treated as a special commit; reverts may use any format, including Git's default; ticket numbers can go anywhere, such as in parentheses after the scope (`auth (PROJ-123): ...`) or in a trailer (`Jira-Ticket: PROJ-123`).
+
+## Homepage
+
+- [scopedcommits.com](https://scopedcommits.com/): The entire standard on one page — format specification, real-world examples, the case for scope-first messages, and FAQ. There is no separate Markdown edition; the page is generated from Typst sources.
+
+## Example commits
+
+Real-world commits the site showcases as scope-first messages.
+
+- [Linux](https://github.com/torvalds/linux/commit/1d774589f924): `i2c: virtio: mark device ready before registering the adapter`
+- [FreeBSD](https://github.com/freebsd/freebsd-src/commit/f77d37cffdf3): `linuxulator: Return EINVAL for invalid inotify flags`
+- [Git](https://github.com/git/git/commit/62319b49bbe7): `gitlab-ci: update macOS image`
+- [Go](https://github.com/golang/go/commit/517d4d3c7976): `net/http/cookiejar: add godoc links`
+- [nixpkgs](https://github.com/NixOS/nixpkgs/commit/7bf858875a54): `xwayland: 24.1.11 -> 24.1.12`
+
+## Project commit-message conventions
+
+Each example project's own documentation for how to format commit messages.
+
+- [Linux](https://www.kernel.org/doc/html/v4.14/process/submitting-patches.html): Kernel "Submitting patches" process guide.
+- [FreeBSD](https://freebsdfoundation.org/wp-content/uploads/2020/11/Writing-Commit-Messages.pdf): FreeBSD Foundation "Writing Commit Messages" (PDF).
+- [Git](https://git-scm.com/docs/SubmittingPatches): Git's SubmittingPatches documentation.
+- [Go](https://go.dev/wiki/CommitMessage): Go project commit message wiki.
+- [nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/CONTRIBUTING.md): nixpkgs CONTRIBUTING guide.
+
+## On Conventional Commits
+
+The FAQ answers "What about Conventional Commits?" by linking to three critiques.
+
+- [Stop Using Conventional Commits](https://sumnerevans.com/posts/software-engineering/stop-using-conventional-commits/): Sumner Evans.
+- [Conventional Commits, considered harmful](https://richvdh.org/conventional-commits-considered-harmful.html): richvdh.org.
+- [Conventional Commits considered harmful](https://lr0.org/blog/p/cc/): La Vita Nuova.
+
+## On changelogs
+
+The FAQ argues against generating changelogs from commit logs and cites these articles in agreement.
+
+- [Keep a Changelog: don't dump git logs into changelogs](https://keepachangelog.com/en/1.0.0/#log-diffs)
+- [Your git log is not a changelog!](https://agateau.com/2022/your-git-log-is-not-a-changelog/): agateau.com.
+- [Conventional changelogs suck](https://sophiabits.com/blog/conventional-changelogs-suck): Sophia Willows.
+- [Common Changelog §4.1: Verbatim copying of content](https://common-changelog.org/#41-verbatim-copying-of-content)
+
+## Optional
+
+- [Source repository](https://github.com/nevarro-space/scopedcommits.com): MIT-licensed site source, built with Typst and Nix. Issues and pull requests welcome.
+- [Nevarro LLC](https://nevarro.space): The standard's maintainer.

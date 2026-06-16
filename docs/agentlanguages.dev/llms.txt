@@ -1,0 +1,82 @@
+# agentlanguages.dev
+
+> A community-edited catalogue of programming languages designed for AI agents to author code. 35 projects organised around three philosophical camps: syntactic (strip ambiguity from the surface), verification (make contracts mechanically checkable), orchestration (constrain how agents coordinate), plus adjacent and unclassified buckets.
+
+The catalogue is descriptive, not promotional. Inclusion is based on whether a language's designers explicitly target LLMs or agents as authors — through token-friendly syntax, mechanically checkable contracts, agent-coordination primitives, or first-class effect declarations for model calls. Tools that *use* an LLM at runtime (chatbots, autocomplete plug-ins, IDE assistants) are out of scope.
+
+Originally catalogued in a post ["Three camps alike in dignity"](https://negroniventurestudios.com/2026/05/20/three-camps-alike-in-dignity/) written for the Negroni Venture Studios blog. Maintained by Alasdair Allan.
+
+## Homepage
+
+- [agentlanguages.dev](https://agentlanguages.dev/index.md): Markdown companion to the homepage — Three Camps narrative, full catalogue, methodology.
+
+## Catalogue (full text)
+
+- [llms-full.txt](https://agentlanguages.dev/llms-full.txt): Every entry concatenated into one machine-readable file. 35 languages, full prose, design DNA cross-references, and timeline events.
+
+## Syntactic camp (12)
+
+Languages whose distinctive move is at the level of syntax — token-friendly surfaces, structural representations, IR-as-source.
+
+- [Axis](https://agentlanguages.dev/languages/axis.md): Backend API language for small LLMs (1B/3B/7B). Twelve top-level constructs cover a production backend; LL(1) grammar and prefix-only expressions ship per-state logit masks for constrained decoding.
+- [B-IR](https://agentlanguages.dev/languages/b-ir.md): A Jason Hall blog post on three attempts at an LLM-optimised language: B-IR with unicode opcodes, TBIR with control characters the model rewrote into English keywords, and Loom with pre/postconditions and stable error codes.
+- [Codong](https://agentlanguages.dev/languages/codong.md): Designed for AI to write, with one canonical way to express every operation. Nine bundled modules, structured JSON errors with fix/retry fields, ? operator for propagation. Compiles to Go IR, then native via go build.
+- [Laze](https://agentlanguages.dev/languages/laze.md): Minimal indentation-based syntax with no punctuation. A Python bootstrap compiler emits C in memory and pipes it to cc -O2. Framed by its author as a weekend experiment in what an LLM produces when asked to design a language for itself.
+- [LLMLang](https://agentlanguages.dev/languages/llmlang.md): Prefix-arity AST with single-character ASCII operators and De Bruijn variable indices. Linear ownership enforced at compile time. Compiler-injected OpenTelemetry spans triggered by a metadata marker. LLVM IR via Rust, OpenCL JIT for GPU map operations.
+- [Lume](https://agentlanguages.dev/languages/lume.md): AI-first backend language, immutable by default, with one canonical way to express each operation. Ships a built-in token-budgeted retrieval tool (lume kb) that packs local language docs, examples, and structured diagnostics under a caller-set token cap.
+- [Magpie](https://agentlanguages.dev/languages/magpie.md): SSA as the surface syntax. Every value %-prefixed and typed at definition; one canonical way to express each operation; compiles to native via LLVM.
+- [Mog](https://agentlanguages.dev/languages/mog.md): Statically typed embedded language with flat operators (no precedence) and host-granted capabilities. Full spec fits in 3,200 tokens. Compiles to native via a safe-Rust port of QBE.
+- [NERD](https://agentlanguages.dev/languages/nerd.md): No Effort Required, Done. Replaces every operator with an English keyword on the bet that LLM tokenisers spend fewer tokens on words than on symbols. Built-in MCP client and LLM call primitives.
+- [Sever](https://agentlanguages.dev/languages/sever.md): Single-character opcodes for extreme density. The author's README disclaims the entire repository as Claude-generated and explicitly frames the project as a thought experiment or art piece.
+- [Tacit](https://agentlanguages.dev/languages/tacit.md): AST as the source of truth. Canonical byte-exact text, BLAKE3-addressed definitions, DeBruijn indices, typed Hole nodes for malformed code, and explicit effects in function signatures.
+- [X07](https://agentlanguages.dev/languages/x07.md): Eliminates text syntax. Programs are canonical JSON ASTs (x07AST); edits are RFC 6902 JSON Patch operations; diagnostics ship as stable JSON with quickfixes the toolchain applies deterministically.
+
+## Verification camp (12)
+
+Languages whose distinctive move is mechanical contract-checking — refinement types, mandatory contracts, effect systems, SMT-backed proofs.
+
+- [AILANG](https://agentlanguages.dev/languages/ailang.md): Row-polymorphic Hindley-Milner with capability-based effects (IO, FS, Net, Clock, AI). No loops, lambda calculus only. Written autonomously by AI agents.
+- [Aver](https://agentlanguages.dev/languages/aver.md): Every function carries intent, declared effects, and a colocated verify block. Pure verify blocks export to Lean 4 theorems and Dafny lemmas; effectful ones lift through the Oracle proof export.
+- [BHC/hx](https://agentlanguages.dev/languages/bhc-hx.md): Not a new language. The bet is that Haskell's purity and semantic density already make AI-written, verifiable compute feel natural — once toolchain friction is removed. hx wraps cabal/stack/ghcup/HLS in Rust; BHC is a clean-slate Haskell 2026 compiler with per-profile runtimes.
+- [Codex](https://agentlanguages.dev/languages/codex.md): Self-hosting literate language on bare-metal x86-64: dependent, linear, and effect types, proof blocks, and a byte-identical fixed point as the acceptance gate for every change. Authored and maintained end-to-end by AI agents.
+- [Intent](https://agentlanguages.dev/languages/intent.md): Mandatory preconditions, postconditions, and entity invariants. Z3 SMT verification via intentc verify. Natural-language intent blocks that resolve to specific contract references. One source file compiles to Rust, JavaScript, and WebAssembly.
+- [MoonBit](https://agentlanguages.dev/languages/moonbit.md): AI-friendly general-purpose language. ICSE 2024 paper on real-time semantics-aware token sampling. Three years of training data.
+- [NanoLang](https://agentlanguages.dev/languages/nanolang.md): Mandatory shadow test blocks on every function. The proved core (NanoCore) has 193 Coq theorems with zero axioms. Multi-target codegen across C, WebAssembly, LLVM IR, PTX, and RISC-V.
+- [Pact](https://agentlanguages.dev/languages/pact.md): Intent blocks on every function and route, pipeline syntax, explicit effects, errors as types. Single binary that ships an HTTP server, SQLite, an LSP, and an MCP server with five tools.
+- [Prove](https://agentlanguages.dev/languages/prove.md): Intent-first language with verb-based IO, refinement types, and contracts. Source is covered by the Prove Source License v1.0, which prohibits use as AI training data.
+- [Vera](https://agentlanguages.dev/languages/vera.md): Mandatory contracts on every function. Z3 SMT verification. Typed slot references replace variable names. LLM inference is a first-class typed effect.
+- [Vow](https://agentlanguages.dev/languages/vow.md): Every function carries machine-checked vows. ESBMC bounded model checking discharges them at compile time. The compiler binary ships its own Claude Code skill, generated from the same source as the toolchain.
+- [Zero](https://agentlanguages.dev/languages/zero.md): Vercel Labs' agent-first systems language. Sub-10 KiB native binaries. Structured JSON diagnostics with stable codes and typed repair plans. One obvious path.
+
+## Orchestration camp (7)
+
+Languages whose distinctive move is agent-coordination — sandboxing, replay, audit trails, deterministic workflows, capability systems.
+
+- [Boruna](https://agentlanguages.dev/languages/boruna.md): Deterministic, capability-safe workflow execution. Every effect declared, policy-gated. Hash-chained tamper-evident evidence bundles.
+- [Fabro](https://agentlanguages.dev/languages/fabro.md): Workflow harness for coding agents. .fabro files are Graphviz digraphs whose node shapes pick handlers; a CSS-like stylesheet routes each step to a model. Single Rust binary.
+- [Lumen](https://agentlanguages.dev/languages/lumen.md): Markdown-native source (.lm.md). Algebraic effects, grants for tool and model calls, @deterministic compile-time enforcement, and pipeline / machine / memory process kinds. A language for humans authoring agent workflows.
+- [Marsha](https://agentlanguages.dev/languages/marsha.md): Functional, English-based language whose .mrsh files (declaration, description, examples) are compiled to tested Python by an LLM. Alpha implementation; last maintainer activity early Aug 2023.
+- [Pel](https://agentlanguages.dev/languages/pel.md): Lisp-flavoured language for orchestrating LLM agents, with capability control enforced at the grammar level and a REPeL self-healing loop modelled on Common Lisp restarts.
+- [Plasm](https://agentlanguages.dev/languages/plasm.md): Catalog-hosted path expressions over typed API graphs, with session-scoped opaque symbols, dry-run execution plans, and federated multi-API sessions.
+- [Quasar](https://agentlanguages.dev/languages/quasar.md): Penn group's LLM-agent language with automatic parallelisation, conformal-prediction reliability bounds, and approval-gated security; LLMs write a Python subset that transpiles to Quasar.
+
+## Adjacent (1)
+
+Infrastructure that operates around agent-authored code rather than being authored by agents itself.
+
+- [Plumbing](https://agentlanguages.dev/languages/plumbing.md): A typed language for the wiring between agents. Symmetric monoidal category, typed channels, structural morphisms, agents as stateful morphisms with control ports.
+
+## Unclassified (3)
+
+Candidates that haven't shipped enough machinery — or enough public evidence — to classify yet.
+
+- [Koru](https://agentlanguages.dev/languages/koru.md): Zig-superset systems language with event continuations, mandatory branch handling, phantom typing, and purity tracking. Pre-alpha — 'only ever been compiled on a single computer.' AI-First framing intentionally tongue-in-cheek.
+- [Spec](https://agentlanguages.dev/languages/spec.md): v0.2 design proposal for a language-agnostic IR for agent-driven development. Six specialised agents (Product, Architect, Scrum, Developer, Tester, DevOps) collaborate on shared .spec.ir artefacts; language-specific code generation is downstream.
+- [Valea](https://agentlanguages.dev/languages/valea.md): An AI-native systems programming language announced on Hacker News in March 2026. The Rust MVP compiler ships JSON diagnostics, a JSON AST exporter, a formatter, and a C backend. Public information beyond the repository README is limited.
+
+## Optional
+
+- [robots.txt](https://agentlanguages.dev/robots.txt): Crawler policy. All agents welcome.
+- [sitemap.xml](https://agentlanguages.dev/sitemap.xml): XML sitemap of every URL (HTML pages and markdown companions).
+- [Source repository](https://github.com/aallan/agentlanguages): MIT-licensed code, CC BY 4.0 content. Pull requests welcome.
+- [Genesis essay](https://negroniventurestudios.com/2026/05/20/three-camps-alike-in-dignity/): "Three camps alike in dignity" — the originating taxonomy argument.
