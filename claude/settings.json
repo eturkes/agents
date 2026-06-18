@@ -77,6 +77,19 @@
       }
     ]
   },
+  "enabledPlugins": {
+    "html-lsp@global": true,
+    "json-lsp@global": true,
+    "markdown-lsp@global": true
+  },
+  "extraKnownMarketplaces": {
+    "global": {
+      "source": {
+        "source": "directory",
+        "path": "/var/home/eturkes/debian/agents/claude/marketplace"
+      }
+    }
+  },
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",

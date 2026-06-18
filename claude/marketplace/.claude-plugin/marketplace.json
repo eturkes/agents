@@ -1,0 +1,72 @@
+{
+  "name": "global",
+  "owner": {
+    "name": "eturkes",
+    "email": "emir.turkes@eturkes.com"
+  },
+  "metadata": {
+    "description": "User-global LSP plugins available across all projects. Server binaries must be present on PATH; see plugin READMEs for install commands."
+  },
+  "plugins": [
+    {
+      "name": "html-lsp",
+      "description": "HTML LSP via vscode-html-language-server (from vscode-langservers-extracted)",
+      "version": "1.0.0",
+      "source": "./plugins/html-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "vscode-html": {
+          "command": "vscode-html-language-server",
+          "args": [
+            "--stdio"
+          ],
+          "extensionToLanguage": {
+            ".html": "html",
+            ".htm": "html"
+          }
+        }
+      }
+    },
+    {
+      "name": "json-lsp",
+      "description": "JSON LSP via vscode-json-language-server (from vscode-langservers-extracted)",
+      "version": "1.0.0",
+      "source": "./plugins/json-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "vscode-json": {
+          "command": "vscode-json-language-server",
+          "args": [
+            "--stdio"
+          ],
+          "extensionToLanguage": {
+            ".json": "json",
+            ".jsonc": "jsonc"
+          }
+        }
+      }
+    },
+    {
+      "name": "markdown-lsp",
+      "description": "Markdown LSP via marksman",
+      "version": "1.0.0",
+      "source": "./plugins/markdown-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "marksman": {
+          "command": "marksman",
+          "args": [
+            "server"
+          ],
+          "extensionToLanguage": {
+            ".md": "markdown",
+            ".markdown": "markdown"
+          }
+        }
+      }
+    }
+  ]
+}
