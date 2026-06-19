@@ -7,10 +7,6 @@ Act on the task below:
   roadmap (touch the roadmap only if the task directs it).
 - Empty ⇒ take the next open step from `.agent/roadmap.md`.
 
-Verify a known-good state (build, tests, defined gates) before and after. Pace
-work with `.agent/compaction.sh` to land cleanly before the window fills. Per
-cohesive unit: record durable learnings in `.agent/memory.md`, advance
-`.agent/roadmap.md`, and make one scoped commit covering the work and those
-updates. Ask me whenever scope, design, or intent is ambiguous.
+Verify a known-good state (build, tests, defined gates) at closeout.
 
 Task (may be empty): $ARGUMENTS

@@ -11,8 +11,6 @@ Search runs as bash `grep`/`rg` — Claude Code exposes no Grep/Glob tools here 
 
 ## Pitfalls
 
-In general, when a command fails with `rtk:` in the error, prepend `rtk proxy` to skip the rewrite.
-
 Known cases:
 - **`sudo <cmd>`** — sudo strips PATH, so `sudo rtk <cmd>` fails with `sudo: rtk: command not found`. Run as `rtk proxy sudo <cmd>` (or just `sudo <cmd>` — the hook will still rewrite, so prefer `rtk proxy`).
 - **`find`** — `rtk find` gives a useful noise-filtered file list, but rejects compound expressions (`-not`, `-exec`, `-and`, `-or`) and mis-reads a bare path (`rtk find <dir>` → `0 for ...`). For those, use `rtk proxy find <args>`.
