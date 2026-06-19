@@ -4,7 +4,7 @@ Token-optimized CLI proxy (60-90% savings)
 
 ## Usage
 
-All commands are automatically rewritten by the Claude Code hook.
+Most commands are automatically rewritten by the Claude Code hook.
 Example: `git status` → `rtk git status` (transparent, 0 tokens overhead)
 If RTK has a filter it compresses output, if not it passes through unchanged.
 Search runs as bash `grep`/`rg` — Claude Code exposes no Grep/Glob tools here (folded into Bash).
