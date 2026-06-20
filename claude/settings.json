@@ -93,7 +93,7 @@
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
-    "command": "$HOME/.claude/statusline.sh",
+    "command": "$HOME/.claude/statusline",
     "refreshInterval": 60
   },
   "promptSuggestionEnabled": false,

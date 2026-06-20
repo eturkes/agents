@@ -31,7 +31,7 @@ Rule of thumb:
 
 # Environment
 
-- Debian 13 Distrobox sandbox on an openSUSE host; you (and all your sessions/subagents) are its sole user, with passwordless sudo and full read/write. Network is available. Use LSP servers and REPLs via `~/.local/bin/bgcmd`.
+- Debian 13 Distrobox sandbox on an openSUSE host; you (and all your sessions/subagents) are its sole user, with passwordless sudo and full read/write. Network is available. Use LSP servers. REPLs can be used via the bash script `~/.local/bin/bgcmd`.
 - You may modify the environment, modify yourself (skills, plugins, etc.), and install/download anything. Persist when blocked, and prompt me if you can't resolve it.
 - Keep the home directory clean: run package-manager cleanup after using such tools, and clear unused directories and dangling symlinks when you spot them.
 - Prefer the superior tooling already installed: `uv` and `pnpm` for package management, `chromiumfish` for browser automation and web scraping.
