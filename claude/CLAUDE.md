@@ -1,3 +1,16 @@
+# Environment
+
+- Debian container; you (and all your sessions/subagents) are its sole user, with passwordless sudo and full read/write. Network is available. Use LSP servers. REPLs can be used via the bash script `~/.local/bin/bgcmd`.
+- You may modify the environment, modify yourself (skills, plugins, etc.), and install/download anything. Persist when blocked, and prompt me if you can't resolve it.
+- Keep the home directory clean: run package-manager cleanup after using such tools, and clear unused directories and dangling symlinks when you spot them.
+- Prefer the superior tooling already installed: `uv` and `pnpm` for package management, `chromiumfish` for browser automation and web scraping.
+- Serena (an LSP registered by Headroom) is available for symbol-level navigation and editing; its built-in memory is disabled — use the project's own memory store.
+
+# Reading
+
+- Read file contents only via the `Read` tool, even inside a compound `Bash` command — shell dumps bypass Headroom compression and the `Read()` do-not-read rules, and are denied as backstop.
+- Reads pass through Headroom (lossy but reversible): treat a compressed read as browse-only, and suspect the proxy before the source when output looks garbled/truncated. `Edit` needs a byte-exact `old_string`, so get verbatim first via `headroom_retrieve` (filtered to the span) or a narrow line-range `Read`.
+
 # RTK - Rust Token Killer
 
 Token-optimized CLI proxy (60-90% savings)
@@ -28,19 +41,6 @@ Rule of thumb:
 - One `rtk:` error = switch to `rtk proxy` for that call.
 - Some filters degrade silently (no `rtk:` error) — `grep` corruption, `diff`/`show` condensing, and a few build wrappers misreporting results (`prettier` says "all formatted" on dirty files; `next`/`dotnet` report a failed build as "0 errors" or garble error locations) — so trust exit codes and prefer `rtk proxy` whenever exact output matters. (Most build/lint/test wrappers — cargo, go, ruff, mypy, pytest, tsc, rubocop, rspec, eslint, jest, vitest, playwright, gradlew, prisma, psql, gh, glab — preserve their output fine.)
 - Two failures in a row on the same command = the issue is something else.
-
-# Environment
-
-- Debian 13 Distrobox sandbox on an openSUSE host; you (and all your sessions/subagents) are its sole user, with passwordless sudo and full read/write. Network is available. Use LSP servers. REPLs can be used via the bash script `~/.local/bin/bgcmd`.
-- You may modify the environment, modify yourself (skills, plugins, etc.), and install/download anything. Persist when blocked, and prompt me if you can't resolve it.
-- Keep the home directory clean: run package-manager cleanup after using such tools, and clear unused directories and dangling symlinks when you spot them.
-- Prefer the superior tooling already installed: `uv` and `pnpm` for package management, `chromiumfish` for browser automation and web scraping.
-- Serena (an LSP registered by Headroom) is available for symbol-level navigation and editing; its built-in memory is disabled — use the project's own memory store.
-
-# Reading
-
-- Read file contents only via the `Read` tool, even inside a compound `Bash` command — shell dumps bypass Headroom compression and the `Read()` do-not-read rules, and are denied as backstop.
-- Reads pass through Headroom (lossy but reversible): treat a compressed read as browse-only, and suspect the proxy before the source when output looks garbled/truncated. `Edit` needs a byte-exact `old_string`, so get verbatim first via `headroom_retrieve` (filtered to the span) or a narrow line-range `Read`.
 
 # Meta
 
