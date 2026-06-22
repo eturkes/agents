@@ -5,6 +5,7 @@
 - Keep the home directory clean: run package-manager cleanup after using such tools, and clear unused directories and dangling symlinks when you spot them.
 - Prefer the superior tooling already installed: `uv` and `pnpm` for package management, `chromiumfish` for browser automation and web scraping.
 - Serena (an LSP registered by Headroom) is available for symbol-level navigation and editing; its built-in memory is disabled — use the project's own memory store.
+- Reference docs are mirrored locally at `~/agents/docs/<site>/llms.txt` (e.g. scopedcommits.com, agentlanguages.dev) — prefer the mirror over a web fetch.
 
 # Reading
 
