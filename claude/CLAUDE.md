@@ -1,6 +1,7 @@
 # Environment
 
 - Debian container; you (and all your sessions/subagents) are its sole user, with passwordless sudo and full read/write. Network available. Use LSP servers; REPLs via the bash script `~/.local/bin/bgcmd`.
+- Host & container share working trees at **different absolute paths** — in-container under `/run/host/...`, native on the host. So path-baking artifacts (uv venvs) are per-layer: select by that prefix (the ground truth), not a marker like `/run/.containerenv` (can be absent). uv: per-layer `UV_PROJECT_ENVIRONMENT` (`.venv`/`.venv-host`, git-ignored); a project `.envrc` (direnv) automates it in allowed interactive shells only, else `export` explicitly.
 - Modify the environment, modify yourself (skills, plugins, etc.), and install/download anything. Persist when blocked; prompt me if you can't resolve it.
 - Keep the home directory clean: run package-manager cleanup after such tools, clear unused directories and dangling symlinks when you spot them.
 - Prefer the superior tooling already installed: `uv` and `pnpm` for packages, `chromiumfish` for browser automation and web scraping.
