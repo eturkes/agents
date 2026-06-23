@@ -5,7 +5,7 @@
 - Modify the environment, modify yourself (skills, plugins, etc.), and install/download anything. Persist when blocked; prompt me if you can't resolve it.
 - Keep the home directory clean: run package-manager cleanup after such tools, clear unused directories and dangling symlinks when you spot them.
 - Prefer the superior tooling already installed: `uv` and `pnpm` for packages, `chromiumfish` for browser automation and web scraping.
-- Serena (an LSP registered by Headroom) does symbol-level navigation and editing; its built-in memory is disabled — use the project's own memory store.
+- Serena (Headroom's MCP server) is the primary LSP — symbol nav/edit, ~70 languages, servers auto-installed on first use; memory disabled, use the project's. For a language Serena lacks, enable a gap-fill plugin in the `global` Claude LSP marketplace. Both global, no project setup.
 - Reference docs are mirrored at `~/agents/docs/<site>/llms.txt` (e.g. scopedcommits.com, agentlanguages.dev) — prefer the mirror over a web fetch.
 
 # Reading

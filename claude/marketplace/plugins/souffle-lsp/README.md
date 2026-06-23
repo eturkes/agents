@@ -1,10 +1,10 @@
 # souffle-lsp
 
-Souffle Datalog LSP via [jdaridis/souffle-lsp-plugin](https://github.com/jdaridis/souffle-lsp-plugin).
+Souffle Datalog LSP via jdaridis/souffle-lsp-plugin.
 
 Install / upgrade:
 1. `sudo apt-get install -y openjdk-21-jre-headless`
-2. Install Souffle (Debian 13 needs libffi7 from Debian snapshot, since the
+2. Install Souffle (Debian 13 needs libffi7 from the Debian snapshot, since the
    official package targets Ubuntu 20.04 with libffi7):
    ```
    sudo wget -q https://souffle-lang.github.io/ppa/souffle-key.public \
@@ -18,8 +18,8 @@ Install / upgrade:
    sudo dpkg -i /tmp/libffi7.deb
    sudo apt-get install -y souffle
    ```
-3. Build the LSP jar (the `jar` task emits the artifact even though gradle
-   prints `BUILD FAILED` on a post-package daemon-teardown step):
+3. Build the LSP jar (the `jar` task emits the artifact even though gradle prints
+   `BUILD FAILED` on a post-package daemon-teardown step):
    ```
    git clone https://github.com/jdaridis/souffle-lsp-plugin.git
    cd souffle-lsp-plugin
@@ -30,8 +30,10 @@ Install / upgrade:
 4. Drop a `souffle-lsp` wrapper into `~/.local/bin/` that runs
    `java -jar ~/.local/share/souffle-lsp/souffle-lsp.jar "$@"`.
 
-Notes: tested with `souffle 2.4` + Souffle LSP `1.0-SNAPSHOT` on Debian 13
-trixie. The server requires the client to advertise `textDocument.codeAction`
-(Claude Code does; without it `initialize` NPEs). It uses an in-process ANTLR
-parser and shells out to `souffle-lint` for diagnostics (separately
-installable; basic LSP features work without it).
+Notes:
+- The server requires the client to advertise `textDocument.codeAction` (Claude
+  Code does; without it `initialize` NPEs).
+- It uses an in-process ANTLR parser and shells out to `souffle-lint` for
+  diagnostics (separately installable; basic LSP features work without it).
+
+Last verified: souffle 2.4 + Souffle LSP 1.0-SNAPSHOT on Debian 13 trixie.

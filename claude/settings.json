@@ -84,14 +84,7 @@
     "refreshInterval": 60
   },
   "enabledPlugins": {
-    "html-lsp@global": true,
-    "json-lsp@global": true,
-    "markdown-lsp@global": true,
-    "pyright-lsp@global": true,
-    "yaml-lsp@global": true,
-    "toml-lsp@global": true,
     "xml-lsp@global": true,
-    "lean4-lsp@global": true,
     "alloy-lsp@global": true,
     "dolmen-lsp@global": true,
     "egglog-lsp@global": true,
