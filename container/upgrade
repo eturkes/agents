@@ -51,7 +51,8 @@ pnpm add -g npm@latest
 # chromiumfish fetch
 
 # Keep the shared lsp-node workspace healthy across pnpm store major-version
-# changes, then take dependency updates intentionally for that workspace.
+# changes, then take dependency updates intentionally for that workspace
+# (vscode-langservers-extracted, yaml-language-server, turtle-language-server).
 CI=true pnpm -C ~/.local/share/lsp-node install
 CI=true pnpm -C ~/.local/share/lsp-node update --latest
 
@@ -69,11 +70,14 @@ printf '%s\n' "$out"
 [[ $rc -eq 0 || "$out" == *"already installed"* ]] || exit "$rc"
 
 # --- Pinned LSP binaries: manual upgrades only ---
-# marksman, lemminx, alloy.jar, dolmen-lsp, and egglog-lsp are pinned manual
-# installs; upgrade each on purpose via its recipe in
-# <ckc>/.claude/marketplace/plugins/*/README.md. dolmen-lsp is a standalone
-# copied binary; its opam toolchain is installed only for a rebuild and
-# removed again afterwards (no resident opam to upgrade here).
+# marksman, lemminx, alloy.jar, dolmen-lsp, egglog-lsp, prolog-lsp, and
+# souffle-lsp are pinned manual installs; upgrade each on purpose via its recipe
+# in ~/agents/claude/marketplace/plugins/*/README.md. dolmen-lsp is a standalone
+# copied binary; its opam toolchain is installed only for a rebuild and removed
+# again afterwards (no resident opam to upgrade here). prolog-lsp is pinned to
+# lsp_server 3.16.3 deliberately: 3.17.0 regressed initialize for utf-16 clients
+# (see its README); re-check upstream before bumping. souffle-lsp is rebuilt
+# from source via gradlew.
 
 # --- Codex CLI ---
 # Use Codex's own updater for the CLI.

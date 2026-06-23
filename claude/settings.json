@@ -77,10 +77,27 @@
       }
     ]
   },
+  "workflowKeywordTriggerEnabled": false,
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/.claude/statusline",
+    "refreshInterval": 60
+  },
   "enabledPlugins": {
     "html-lsp@global": true,
     "json-lsp@global": true,
-    "markdown-lsp@global": true
+    "markdown-lsp@global": true,
+    "pyright-lsp@global": true,
+    "yaml-lsp@global": true,
+    "toml-lsp@global": true,
+    "xml-lsp@global": true,
+    "lean4-lsp@global": true,
+    "alloy-lsp@global": true,
+    "dolmen-lsp@global": true,
+    "egglog-lsp@global": true,
+    "turtle-lsp@global": true,
+    "prolog-lsp@global": true,
+    "souffle-lsp@global": true
   },
   "extraKnownMarketplaces": {
     "global": {
@@ -90,22 +107,16 @@
       }
     }
   },
-  "workflowKeywordTriggerEnabled": false,
-  "statusLine": {
-    "type": "command",
-    "command": "$HOME/.claude/statusline",
-    "refreshInterval": 60
-  },
   "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
   "autoCompactEnabled": false,
+  "switchModelsOnFlag": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "useAutoModeDuringPlan": false,
-  "switchModelsOnFlag": false
+  "useAutoModeDuringPlan": false
 }
