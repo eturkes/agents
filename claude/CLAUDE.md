@@ -4,7 +4,7 @@
 - Host & container share working trees at **different absolute paths** — in-container under `/run/host/...`, native on the host. So path-baking artifacts (uv venvs) are per-layer: select by that prefix (the ground truth), not a marker like `/run/.containerenv` (can be absent). uv: per-layer `UV_PROJECT_ENVIRONMENT` (`.venv`/`.venv-host`, git-ignored); a project `.envrc` (direnv) automates it in allowed interactive shells only, else `export` explicitly.
 - Modify the environment, modify yourself (skills, plugins, etc.), and install/download anything. Persist when blocked; prompt me if you can't resolve it.
 - Keep the home directory clean: run package-manager cleanup after such tools, clear unused directories and dangling symlinks when you spot them.
-- Prefer the superior tooling already installed: `uv` and `pnpm` for packages, `chromiumfish` for browser automation and web scraping.
+- Prefer modern, best-in-class tooling; `uv`, `pnpm`, and `cargo-binstall` (packages) and `chromiumfish` (browser automation / scraping) are already installed.
 - Serena (Headroom's MCP server) is the primary LSP — symbol nav/edit, ~70 languages, servers auto-installed on first use; memory disabled, use the project's. For a language Serena lacks, enable a gap-fill plugin in the `global` Claude LSP marketplace. Both global, no project setup.
 - Reference docs are mirrored at `~/agents/docs/<site>/llms.txt` (e.g. scopedcommits.com, agentlanguages.dev) — prefer the mirror over a web fetch.
 
