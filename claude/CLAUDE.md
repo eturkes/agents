@@ -1,56 +1,52 @@
 # Environment
 
-- Debian container; you (and all your sessions/subagents) are its sole user, with passwordless sudo and full read/write. Network available. Use LSP servers; REPLs via the bash script `~/.local/bin/bgcmd`.
-- Host & container share working trees at **different absolute paths** — in-container under `/run/host/...`, native on the host. So path-baking artifacts (uv venvs) are per-layer: select by that prefix (the ground truth), not a marker like `/run/.containerenv` (can be absent). uv: per-layer `UV_PROJECT_ENVIRONMENT` (`.venv`/`.venv-host`, git-ignored); a project `.envrc` (direnv) automates it in allowed interactive shells only, else `export` explicitly.
-- Moving a project dir invalidates the absolute-path shebangs uv bakes into `.venv/bin/` console scripts: `uv run <script>` then fails to spawn while `.venv/bin/python` (a symlink) still works and masks it — fix with `rm -rf .venv && uv sync` (plain `uv sync` won't rewrite shebangs).
-- Modify the environment, modify yourself (skills, plugins, etc.), and install/download anything. Persist when blocked; prompt me if you can't resolve it.
-- Keep the home directory clean: run package-manager cleanup after such tools, clear unused directories and dangling symlinks when you spot them.
-- Prefer modern, best-in-class tooling; `uv`, `pnpm`, and `cargo-binstall` (packages) and `chromiumfish` (browser automation / scraping) are already installed.
-- The bash `grep` is a function routing to Claude Code's embedded `ugrep -G`; the bare system binary is GNU grep 3.11. Both honor GNU-style BRE backslash specials (`\|` = alternation, `\+` = one-or-more), so no `grep -E` workaround is needed for those.
-- `pgrep -f`/`pkill -f` self-match: each Bash tool call runs as `/usr/bin/bash -c 'eval …'`, so the pattern matches its own wrapper — break it with a bracket class (`pyright/index[.]js`) and append `|| echo none`.
-- `bgcmd` runs a filesystem-backed REPL that persists across separate Bash calls: `export BGCMDDIR=<dir> BGCMDPROMPT='>>> '` once, then `bgcmd START <interp> -i -q` to launch (e.g. a project venv's `python`), `bgcmd '<one-liner>'` to send (loaded objects persist between sends), and `bgcmd 'exit()'; rm -rf "$BGCMDDIR"` to stop and clean.
-- Serena (Headroom's MCP server) is the primary LSP — symbol nav/edit, ~70 languages, servers auto-installed on first use; memory disabled, use the project's. For a language Serena lacks, enable a gap-fill plugin in the `global` Claude LSP marketplace. Both global, no project setup.
-- Serena gotchas: a symbolic-tool `Active languages: [...]` error means the language isn't enabled — add it to the project's `.serena/project.yml` `languages:` (first entry = the fallback LS) and restart Claude Code (config is read only at startup), then verify with a symbol call (the first may lag on indexing). `replace_symbol_body` spans the symbol's leading doc comment AND outer `#[...]` attributes — a body omitting them deletes them, so include them or edit inner regions with `replace_content`. On startup Serena rewrites `project.yml` to its full annotated template when keys are missing, so track the file exactly as written or it re-dirties the tree every session. Serena self-manages `.serena/.gitignore` (covers `cache/`, `project.local.yml`), so commit `.serena/` to version `project.yml` plus that nested ignore and keep Serena paths out of the project's root `.gitignore`.
-- Reference docs are mirrored at `~/agents/docs/<site>/llms.txt` (e.g. scopedcommits.com, agentlanguages.dev) — prefer the mirror over a web fetch.
-- Web search: the `WebSearch` tool works on this model line (returns results); re-test on a Claude Code or model-line change, as it has 400'd on some lines (forced `tool_choice` rejected, the error arriving INLINE in an ok-looking result). Fallbacks: `WebFetch` on `https://lite.duckduckgo.com/lite/?q=<query>` (a default-UA `curl` hits a bot wall — use WebFetch or a browser `-A`), or targeted channels — crates.io (`curl -A`: detail `/api/v1/crates/NAME`, search `/crates?q=`), GitHub `/search/repositories?q=`, Wikipedia opensearch. A Workflow `agent()` with a `schema` is unaffected.
+- Debian container; you + all sessions/subagents = sole user: passwordless sudo, full r/w, network. LSP; REPLs via `~/.local/bin/bgcmd`.
+- Host & container share trees at different abs paths (in-container `/run/host/...`). uv venvs path-bake per-layer → pick by path-prefix. Per-layer `UV_PROJECT_ENVIRONMENT` (`.venv`/`.venv-host`, git-ignored); `.envrc`+direnv in interactive shells, else `export`.
+- Moving a project dir breaks uv's baked abs-path shebangs in `.venv/bin/` scripts (the `python` symlink masks it) → `rm -rf .venv && uv sync`.
+- Freely modify env + yourself (skills/plugins) + install anything; persist through blockers, ask only when truly stuck.
+- Keep `$HOME` clean: pkg-manager cleanup post-install; clear stale dirs + dangling symlinks.
+- Installed: `uv`, `pnpm`, `cargo-binstall` (pkgs), `chromiumfish` (browser/scrape).
+- `grep` = function → embedded `ugrep -G` (system binary = GNU grep 3.11); both do GNU BRE specials (`\|`=alternation, `\+`=one-or-more), write directly.
+- `pgrep -f`/`pkill -f` self-match their `bash -c 'eval …'` wrapper → bracket the pattern (`index[.]js`) + `|| echo none`.
+- `bgcmd` = filesystem REPL, objects persist across separate Bash calls: `export BGCMDDIR=<dir> BGCMDPROMPT='>>> '` (re-export each call) → `bgcmd START <interp> -i -q` → `bgcmd '<oneliner>'` → `bgcmd 'exit()'; rm -rf "$BGCMDDIR"`.
+- Serena (Headroom MCP) = primary LSP: symbol nav/edit, ~70 langs, servers auto-install; memory tools off → use the project's. Missing lang → gap-fill plugin in the `global` LSP marketplace. Both global, zero setup.
+- Serena gotchas: `Active languages: [...]` → add lang to project `.serena/project.yml` `languages:` (first = fallback LS), restart Claude Code (startup-only config), verify via a symbol call (first may lag). `replace_symbol_body` spans the leading doc comment + outer `#[...]` attrs → include them or use `replace_content`. Serena rewrites `project.yml` to its full annotated template on missing keys → track as written (else re-dirties tree). Serena owns `.serena/.gitignore` → commit `.serena/`; root `.gitignore` stays project-only.
+- Docs mirror `~/agents/docs/<site>/llms.txt` (scopedcommits.com, agentlanguages.dev) > web fetch.
 
 # Reading
 
-- Read file contents only via the `Read` tool, even inside a compound `Bash` command — shell dumps bypass Headroom compression and the `Read()` do-not-read rules, so they're denied as backstop.
-- Reads pass through Headroom (lossy but reversible): treat a compressed read as browse-only, and suspect the proxy before the source when output looks garbled/truncated. `Edit` needs a byte-exact `old_string`, so get verbatim first via `headroom_retrieve` (filtered to the span) or a narrow line-range `Read` — compression also re-wraps long prose lines, so an `old_string` lifted from a compressed read can miss the file's real wrap points (and the `Edit` mismatch error's `\uXXXX` hint misleads; anchor on raw printed bytes). Prefer short distinctive anchors; re-reading identical bytes returns the SAME cached result (content-dedup), so once an original ages past the proxy TTL (86400s via `~/.profile`) or is evicted past the store's entry cap, `headroom_retrieve` can answer "not found" — then dodge the proxy for exact bytes via small-output `grep -n`/`sed` or a Python `read_text()`.
-- `Edit`/`Write` string parameters decode `\uXXXX` escapes — and only those (`\n`, `\xNN` pass through) — so source that must hold a literal backslash-`u` is silently corrupted and often still compiles. Express such bytes another way (a byte-array literal with `0x5c` for the backslash) and read the region back after writing.
-- Quote a YAML frontmatter scalar that starts with an indicator char (`[ { } ] , & * ! | > % @ # :`, backtick, or double-quote) — a leading `[` opens a flow sequence → `ParserError` or a silently-dropped field; verify ad-hoc frontmatter with an ephemeral `pyyaml` parse.
-- A turn-halting `API Error: <ConnectionTerminated error_code:0 …>` is the upstream HTTP/2 connection rotating mid-stream (a GOAWAY surfacing through the Headroom proxy): transient, content-independent, and SDK-unretryable. Recovery — session context survives, so `git status` to confirm tree state, then continue the interrupted action.
-- That compression tracks **boilerplate redundancy**: it folds repeated structure (log/format strings, repetitive prose) into a deduped token-bag and keeps high-entropy tokens verbatim, above a ratio bar that tightens as context fills, so a file's result varies by read. Spot it by the token-bag ending `[N … compressed … hash=…]`; expect collapse on boilerplate-dense code (logging, formatting) and verbatim on varied code.
+- File contents → `Read` tool (shell dumps denied as backstop, even in a compound `Bash`).
+- Reads pass Headroom: lossy but reversible. Compression = a token-bag `[N … compressed … hash=…]` (high-entropy stays verbatim) → recover via `headroom_retrieve` on its `hash=`. Compressed read = browse-only; suspect the proxy before the source on garbled output. Byte-exact `Edit` `old_string` → verbatim via `headroom_retrieve` / narrow line-range `Read` / `grep -n`/`sed`/Python `read_text()`, anchoring on short distinctive raw bytes (compression re-wraps prose; the `\uXXXX` mismatch hint misleads). Dedups → past the TTL (86400s, `~/.profile`) or store cap, `headroom_retrieve` 404s → `grep -n`/Python.
+- `Edit`/`Write` decode `\uXXXX` only (`\n`, `\xNN` pass through) → a literal backslash-`u` gets rewritten (often still compiles); encode another way (byte array, `0x5c` = backslash) + re-read after writing.
+- Quote YAML frontmatter scalars opening with an indicator char (`[ { } ] , & * ! | > % @ # :`, backtick, double-quote): leading `[` → flow sequence → `ParserError` or silently-dropped field. Verify ad-hoc frontmatter with an ephemeral `pyyaml` parse.
+- `API Error: <ConnectionTerminated error_code:0 …>` = transient HTTP/2 GOAWAY mid-stream through Headroom; context survives → `git status`, resume.
 
 # RTK (Rust Token Killer)
 
-A CLI proxy auto-applied by the Claude Code hook (`git status` → `rtk git status`, 0-token overhead); it compresses output when it has a filter, else passes through unchanged. Search runs as bash `grep`/`rg` — no Grep/Glob tools here (folded into Bash).
+CLI proxy auto-applied by the Claude Code hook (`git status` → `rtk git status`, 0-token). Compresses when it has a filter, else passes through. Search = bash `grep`/`rg`. `rtk proxy <cmd>` = raw passthrough → for exact bytes.
 
-## Pitfalls
-- **`sudo <cmd>`** — sudo strips PATH, so `sudo rtk <cmd>` fails with `sudo: rtk: command not found`. Run `rtk proxy sudo <cmd>` (or just `sudo <cmd>` — the hook still rewrites, so prefer `rtk proxy`).
-- **`find`** — `rtk find` gives a useful noise-filtered file list, but rejects compound expressions (`-not`, `-exec`, `-and`, `-or`) and mis-reads a bare path (`rtk find <dir>` → `0 for ...`). For those, use `rtk proxy find <args>`.
-- **`grep`/`rg`** — whether RTK rewrites these or runs them raw is env-dependent; verify per env (diff a known match against `rtk proxy grep`). When rewritten it adds a header and `file:line:` prefixes but preserves matched lines (including ones with `:`), counts files correctly, keeps `rg` recursive, and parses combined short flags (`grep -rln`) right. Still, bypass with `rtk proxy grep`/`rtk proxy rg` when you need exact/raw output, and sanity-check that a known-present match returns.
-- **`diff`** — excluded too (runs raw): standalone `rtk diff` gives false negatives ("Files are identical" when they differ after the first token). `rtk git diff` uses git's own diff and is unaffected.
-- **`rtk format`** — destructive despite the "format checker" description: by default it runs the formatter in WRITE mode and rewrites files. Pass `--check` for read-only, or run the formatter directly (`black`/`ruff`/`prettier --check`) — but these aren't on the global PATH here; they live in project venvs (use `uv run ruff`, or activate the venv).
-- **Need raw, unfiltered output** (piping into a parser, exact byte capture, diffing tool output verbatim) — `rtk proxy <cmd>` returns the unmodified stdout/stderr.
-- **`git diff`/`git show`/`git log` (and other large outputs)** — RTK condenses diffs (drops context lines; `git show` also drops the commit message body) and truncates long output silently (`git log` piped cuts off at 50 entries with no marker). For full text — reviewing changes before commit, reading a commit's rationale, or full listings and counts — use `rtk proxy git diff`/`show`/`log`, `git rev-list --count`, or redirect to a file.
-- **Summarizing filters** (`json`, `env`, `log`, `curl`) — lossy previews, not full content: `rtk json` truncates long values/arrays and reorders keys, `rtk env` hides ~half the vars, `rtk log` drops INFO detail, `rtk curl` shows JSON as a schema. Use `rtk proxy <cmd>` (or the Read tool for files) for exact content.
-- **File doesn't exist / binary not installed** (not an RTK quirk) — errors like `rtk: Failed to read file`/`rtk: Failed to execute command` mean the underlying file or tool is missing; fix it directly.
+## Filters
+- **`sudo`** strips PATH → `rtk proxy sudo <cmd>` (or plain `sudo`; hook still rewrites).
+- **`find`**: `rtk find <dir> -name …` = noise-filtered list; bare path (`→ 0 for …`) or compound (`-not`/`-exec`/…) → `rtk proxy find`.
+- **`grep`/`rg`**: rewrite-vs-raw env-dependent (verify per env vs `rtk proxy grep`). Rewritten = header + `file:line:` prefixes, but preserves matched lines (incl. `:`), counts files right, `rg` recursive, combined flags (`grep -rln`) OK. Exact → `rtk proxy grep`/`rg`.
+- **`diff`**: standalone `rtk diff` can falsely say "Files are identical" → `rtk git diff`, `rtk proxy diff`, or `git diff --no-index`.
+- **`rtk format`**: WRITE mode by default (rewrites) → `--check` for read-only, or run the formatter directly (`black`/`ruff`/`prettier --check`; in project venvs → `uv run ruff`).
+- **`git diff`/`show`/`log`** + large output: drops diff context, drops `git show` body, truncates piped `git log` at 50 → full text/counts via `rtk proxy git …`, `git rev-list --count`, or redirect.
+- **`json`/`env`/`log`/`curl`** = lossy previews (`json` truncates+reorders, `env` hides ~half, `log` drops INFO, `curl` = schema) → `rtk proxy <cmd>` (or `Read`) for exact.
+- **`rtk: Failed to read file`/`execute command`** = missing file/binary → fix directly.
 
-## Rule of thumb
-- One `rtk:` error = switch to `rtk proxy` for that call.
-- Some filters degrade silently (no `rtk:` error) — `diff`/`show` condensing, some build wrappers misreporting (`prettier` says "all formatted" on dirty files; `next`/`dotnet` report a failed build as "0 errors" or garble locations) — so trust exit codes and prefer `rtk proxy` when exact output matters. (Most wrappers preserve output fine: cargo, go, ruff, mypy, pytest, tsc, rubocop, rspec, eslint, jest, vitest, playwright, gradlew, prisma, psql, gh, glab.)
-- When byte-compatibility is the bar, prove equality with `cmp`/`sha256sum` rather than eyeballed output, and read real diffs via `git diff --no-index` or `rtk proxy diff`.
-- Two failures in a row on the same command = the issue is something else.
+## Rules
+- One `rtk:` error → `rtk proxy` that call. Two failures on one command → cause is elsewhere.
+- Filters can degrade silently: `diff`/`show` condensing; build wrappers misreport (`prettier` says "all formatted" on dirty files; `next`/`dotnet` log a failed build as "0 errors"/garbled) → trust exit codes; `rtk proxy` when exact output matters.
+- Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index` or `rtk proxy diff`.
 
 # Subagents
 
-- A subagent's context window equals the session's, fixed by one launch flag: prefix `claude` with `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` for 200K, omit it for 1M (terminal-only — settings carry model slugs, not this flag). The flag gates the 1M beta header process-wide, so with it on a `CLAUDE_CODE_SUBAGENT_MODEL=<model>[1m]` slug is inert and every subagent caps at 200K (a subagent env block echoing `[1m]` confirms model selection only, never the window).
-- Subagents never compact, so window overflow is a hard mid-task death: the API rejects the next request and the Agent result carries an INLINE `Prompt is too long` (no exception, no result). In 200K sessions budget each subagent at 200K with margin — a read-plus-rewrite agent handles ~40KB of text (~100K peak); chunk larger rewrites at section boundaries. Per-agent transcripts: `~/.claude/projects/<project>/<session-id>/subagents/agent-<id>.jsonl` (assistant `.message.usage`).
-- Fan out several subagents per turn across items or files; chunk sequentially to dodge unrecovered rate-limit failures, and verify each ran to completion.
+- Subagent window = session's, via the terminal launch flag `CLAUDE_CODE_DISABLE_1M_CONTEXT`: `=1` → 200K, omit → 1M (a `claude` launch-command flag; settings files carry model slugs).
+- Subagents run without compaction → window overflow = hard mid-task death: the next request is rejected INLINE as `Prompt is too long` (no result). Budget context with margin (a read+rewrite agent peaks ~100K on ~40KB) → chunk big rewrites at section boundaries. Transcripts: `~/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl` (`.message.usage`).
+- Fan out several subagents/turn across items/files; chunk sequentially to dodge rate-limit failures, confirm each completed.
 
 # Meta
 
-- This global `~/.claude/CLAUDE.md` holds Claude guidance that applies even outside any project — so RTK and Headroom (always in use) live here; update it the moment it's improvable.
-- When my instructions conflict with any `CLAUDE.md`, my instructions are the final say.
+- This global `~/.claude/CLAUDE.md` holds Claude guidance even outside a project (always-on RTK + Headroom) → update the moment it's improvable.
+- My direct instructions outrank any `CLAUDE.md`.
