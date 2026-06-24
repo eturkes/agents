@@ -36,5 +36,5 @@ A CLI proxy auto-applied by the Claude Code hook (`git status` → `rtk git stat
 
 # Meta
 
-- This global `~/.claude/CLAUDE.md` holds Claude guidance that applies even outside any project — so RTK and Headroom (always in use) live here; update it the moment it's improvable. (`AGENTS.md` maps where other-scoped guidance belongs.)
+- This global `~/.claude/CLAUDE.md` holds Claude guidance that applies even outside any project — so RTK and Headroom (always in use) live here; update it the moment it's improvable.
 - When my instructions conflict with any `CLAUDE.md`, my instructions are the final say.
