@@ -11,7 +11,7 @@ Install / upgrade:
    (opam package name uses an underscore; `dolmen-lsp` with a hyphen resolves
    to nothing.)
 5. `install -m755 ~/.opam/dolmen-lsp/bin/dolmenls ~/.local/bin/dolmen-lsp` —
-   copy, never symlink: the binary is standalone (libc/libm only), so after the
+   copy it: the binary is standalone (libc/libm only), so after the
    copy the ~1.5 GB build tree is removable with `rm -rf ~/.opam`. A symlink
    would dangle on that cleanup. Rebuilds start from step 2.
 
