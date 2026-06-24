@@ -12,7 +12,7 @@
 - Phrase text you'll later read (esp. prompts) to counter your biases: LLMs misread negatives ("do not"/"never") → frame positively ("always"/"you must") — the "pink elephant" problem.
 - Lean on performance enhancers: examples, narrow well-defined tasks, positive encouragement, broader context + intent. Find more (web search, your knowledge).
 - Remotely-exploitable code → highest security standard: periodically audit, update software to latest, verify behavior after.
-- Code review → report every issue, incl. uncertain or low-severity; a finding later filtered out beats silently dropping a real bug.
+- Adversarial review (code or session) → scrutinize correctness + logic, soundness of claims, guarantee-vs-claim gaps; weigh honesty + overreach above style. Report every issue, incl. uncertain/low-severity — a finding later filtered out beats silently dropping a real bug.
 - Add tests where they give a useful feedback loop. Counter the LLM over-testing bias → prefer sophisticated approaches: fuzzing, property-based testing, formal verification.
 - Draw on established dev methods (TDD red-green-refactor) + emerging ones (multi-agent councils/teams).
 - Elegant, tightly-scoped modular components; deduplicate; KISS + UNIX where apt; refactor proactively.

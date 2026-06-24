@@ -22,7 +22,7 @@ WORK-UNIT.
 
 MILESTONE-REVIEW — I launch this with 1M context (ideally the only 1M session): hold it all in-context, undivided.
 - Read every commit of the milestone, planning commits included.
-- Adversarially review the milestone's whole body — correctness, claim-vs-guarantee gaps, cross-unit consistency, conformance to scope/AGENTS.md/memory, token-efficiency, obsolescence — and fix what you find; revise the scope source on a better design (requirements changes reach me first).
+- Adversarially review the milestone's whole body — AGENTS.md's review criteria + cross-unit consistency, conformance to scope/AGENTS.md/memory, token-efficiency, obsolescence — and fix what you find; revise the scope source on a better design (requirements changes reach me first).
 - Close: set the milestone REVIEWED, commit `<scope> (M<m> review): …`. The next session plans the next milestone.
 
 Commit convention — scoped (`<scope>: …`), trace key in parens: unit `(M<m>.<u>)`, plan `(M<m> plan)`, review `(M<m> review)`. Codex-review follow-ups keep the key and add a `Codex-Review: <accepted findings>` trailer. Grep a milestone's history: `git log --grep "(M<m>[. ]"`.
