@@ -48,5 +48,5 @@ CLI proxy auto-applied by the Claude Code hook (`git status` → `rtk git status
 
 # Meta
 
-- This global `~/.claude/CLAUDE.md` holds Claude guidance even outside a project (always-on RTK + Headroom) → update the moment it's improvable.
+- This global `~/.claude/CLAUDE.md` holds Claude guidance even outside a project (always-on RTK + Headroom) → update the moment it's improvable; first session to hit a project-independent env/tool failure logs it here that turn.
 - My direct instructions outrank any `CLAUDE.md`.
