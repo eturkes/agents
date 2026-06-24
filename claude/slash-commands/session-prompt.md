@@ -1,8 +1,8 @@
-Continue this project (fresh session). Non-empty task below ⇒ it is your sole task: do exactly it, editing `.agent/roadmap.md` only if it directs you to. Empty ⇒ run the MODE selected from the roadmap's active milestone (first one not DONE/REVIEWED).
+Continue this project (fresh session). Non-empty task below ⇒ your sole task: do exactly it, editing `.agent/roadmap.md` only if it directs you to. Empty ⇒ run the MODE from the roadmap's active milestone (first not DONE/REVIEWED).
 
-Load `.agent/roadmap.md` (milestone ledger + active-milestone detail), then `.agent/memory.md` (lessons + decisions); CLAUDE.md (it imports `AGENTS.md`) is auto-injected. Read only what the step implicates. Navigate via LSP where available, else grep.
+Load `.agent/roadmap.md` (milestone ledger + active-milestone detail), then `.agent/memory.md` (lessons + decisions); CLAUDE.md (imports `AGENTS.md`) is auto-injected. Read only what the step implicates. Navigate via LSP where available, else grep.
 
-MODE ← active-milestone status (each mode advances it, then closes on a scoped commit; convention at the end):
+MODE ← active-milestone status (each mode advances it, then closes on a scoped commit; convention below):
 - UNPLANNED (incl. a not-yet-split future milestone) → PLANNING
 - IN-PROGRESS (has an OPEN unit) → WORK-UNIT (lowest OPEN unit)
 - IMPLEMENTED (units all DONE, unreviewed) → MILESTONE-REVIEW
