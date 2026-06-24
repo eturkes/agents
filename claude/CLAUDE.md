@@ -12,6 +12,7 @@
 
 - Read file contents only via the `Read` tool, even inside a compound `Bash` command — shell dumps bypass Headroom compression and the `Read()` do-not-read rules, so they're denied as backstop.
 - Reads pass through Headroom (lossy but reversible): treat a compressed read as browse-only, and suspect the proxy before the source when output looks garbled/truncated. `Edit` needs a byte-exact `old_string`, so get verbatim first via `headroom_retrieve` (filtered to the span) or a narrow line-range `Read`.
+- That compression tracks **boilerplate redundancy**: it folds repeated structure (log/format strings, repetitive prose) into a deduped token-bag and keeps high-entropy tokens verbatim, above a ratio bar that tightens as context fills, so a file's result varies by read. Spot it by the token-bag ending `[N … compressed … hash=…]`; expect collapse on boilerplate-dense code (logging, formatting) and verbatim on varied code.
 
 # RTK (Rust Token Killer)
 
