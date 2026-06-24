@@ -47,7 +47,6 @@ A CLI proxy auto-applied by the Claude Code hook (`git status` → `rtk git stat
 # Subagents
 
 - A subagent's context window equals the session's, fixed by one launch flag: prefix `claude` with `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` for 200K, omit it for 1M (terminal-only — settings carry model slugs, not this flag). The flag gates the 1M beta header process-wide, so with it on a `CLAUDE_CODE_SUBAGENT_MODEL=<model>[1m]` slug is inert and every subagent caps at 200K (a subagent env block echoing `[1m]` confirms model selection only, never the window).
-- To choose a subagent's model per call, `subagent_type: "fork"` inherits the parent's conversation context and model verbatim (any `model:` override is ignored) — the simplest route onto the latest/largest model; reach for an explicit `model:` slug only to downgrade (`sonnet`/`haiku`).
 - Subagents never compact, so window overflow is a hard mid-task death: the API rejects the next request and the Agent result carries an INLINE `Prompt is too long` (no exception, no result). In 200K sessions budget each subagent at 200K with margin — a read-plus-rewrite agent handles ~40KB of text (~100K peak); chunk larger rewrites at section boundaries. Per-agent transcripts: `~/.claude/projects/<project>/<session-id>/subagents/agent-<id>.jsonl` (assistant `.message.usage`).
 - Fan out several subagents per turn across items or files; chunk sequentially to dodge unrecovered rate-limit failures, and verify each ran to completion.
 
