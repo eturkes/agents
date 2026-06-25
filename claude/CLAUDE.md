@@ -6,7 +6,7 @@
 - Freely modify env + yourself (skills/plugins) + install anything; persist through blockers, ask only when truly stuck.
 - Keep `$HOME` clean: pkg-manager cleanup post-install; clear stale dirs + dangling symlinks.
 - Installed: `uv`, `pnpm`, `cargo-binstall` (pkgs), `chromiumfish` (browser/scrape).
-- `grep` = function → embedded `ugrep -G` (system binary = GNU grep 3.11); both do GNU BRE specials (`\|`=alternation, `\+`=one-or-more), write directly.
+- `grep`/`find` = CC shell-fn shadow → tweakcc `rg-fff` (**RE2**, relevance-ranked, fuzzy-fallback; see `# fff`), NOT raw `ugrep -G`/`bfs`. `rg`=`/usr/bin/rg` (unshadowed). System `grep` binary = GNU grep 3.11 (BRE). Byte-exact/clean → `command grep` | `/usr/bin/rg` | `rtk proxy grep`.
 - `pgrep -f`/`pkill -f` self-match their `bash -c 'eval …'` wrapper → bracket the pattern (`index[.]js`) + `|| echo none`.
 - `bgcmd` = filesystem REPL, objects persist across separate Bash calls: `export BGCMDDIR=<dir> BGCMDPROMPT='>>> '` (re-export each call) → `bgcmd START <interp> -i -q` → `bgcmd '<oneliner>'` → `bgcmd 'exit()'; rm -rf "$BGCMDDIR"`.
 - Serena (Headroom MCP) = primary LSP: symbol nav/edit, ~70 langs, servers auto-install; memory tools off → use the project's. Missing lang → gap-fill plugin in the `global` LSP marketplace. Both global, zero setup.
@@ -39,6 +39,20 @@ CLI proxy auto-applied by the Claude Code hook (`git status` → `rtk git status
 - One `rtk:` error → `rtk proxy` that call. Two failures on one command → cause is elsewhere.
 - Filters can degrade silently: `diff`/`show` condensing; build wrappers misreport (`prettier` says "all formatted" on dirty files; `next`/`dotnet` log a failed build as "0 errors"/garbled) → trust exit codes; `rtk proxy` when exact output matters.
 - Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index` or `rtk proxy diff`.
+
+# fff search (tweakcc `rg-fff` — shadows `grep`/`find`)
+
+CC shell-snapshot repoints `grep`→`rg-fff` (argv0 ugrep), `find`→`rg-fff` (argv0 bfs); **fff-first = DEFAULT** → serves fff **RE2**, relevance-RANKED, with inline markers. `rg`=`/usr/bin/rg` (shadowed only if system rg absent → here untouched). Auto-spawns `rg-fff --daemon <cwd>` (warm idx, ~30m idle; accumulates per-cwd, harmless — `pgrep -af 'rg[-]fff --daemon'`). RTK passes `grep`/`find` thru to fff here (if it ever rewrites→`rtk grep`, fff bypassed).
+
+- **Output ≠ real grep** → RANKED not file-order, strips leading `./`, inline markers, lines capped 512B. Clean/order-stable/byte-exact/full-line → `command grep` (=GNU 3.11 BRE, `./`, file-order, untruncated) | `/usr/bin/rg` | `rtk proxy grep`.
+- **Zero-match grep ≠ empty (BIG)**: auto fuzzy-fallback → `# rg-fff: 0 EXACT…` hdr + N ` [~approx]` lines on **STDOUT** (survive `2>/dev/null`, flow into pipes/`$()`), shaped like real `path:line:text`. Truth = **exit 1** + `[~approx]`/leading-`#`, NOT line presence → piping/capturing a maybe-zero grep MUST filter `[~approx]`/`#` or use `command grep`. Off: `RG_FFF_NO_FUZZY_FALLBACK=1`.
+- **`[def]`** trailing tag = likely definition; rank does NOT float it up (junk/long lines outrank — observed def landing last) → trust tag, not position. "read top hit first" unreliable.
+- **>512B line** → served truncated + ` [...rg-fff: line truncated at ~512B; Read the file for the full line]` (`-c` counts it once); non-UTF-8 (U+FFFD) long line defers instead → Read file for full line.
+- **`find P -name|-iname PAT` [-type f] zero-match** → fuzzy filename suggest (`# rg-fff: 0 exact…` + `name [~approx]`), **exit 0** (find code, ≠ grep's 1); suggest lines lack `./`, real matches have `./`. `-type d`/`-exec`/`-delete`/`-mtime`/`-maxdepth`/… never augmented (+ never fff-captured → side-effect-safe). Off: same env.
+- **Served**: literals incl. phrases w/ space/`:`/quote (regex-escaped), RE2 regex (`\b \d \w + ( ) | {} ?`), `-i` (case-insensitive, any-case pat), `-A/-B/-C N`, `-l`, `-c`, `--include=*.ext`, multi reldir-under-cwd. No `-r` = top-level only (non-recursive; no "Is a directory" error).
+- **DEFERS → embedded ugrep -G = BRE** (clean, file-order, no markers): stdin/pipe (`…|grep` ALWAYS, ~52% of greps), single-file arg, `-o`, `-P`/PCRE, regex matching newline (`\s`/negated class) or empty (`x?`,`foo|`), non-ASCII pat, `--no-ignore`/`--include-dir`, abs/`./`/`.`-mixed path, glob ≠ `*.ext`. **Deferred regex = BRE** → RE2/ERE syntax misfires (`foo|bar` defers→matches literal "foo|bar").
+- **Dialect when SERVED = RE2** → bare `|`=alt, `+ * ?`=quant, `()`=group, `\d \w \b` classes; `\|` `\+` = LITERAL. Old BRE `\|`=alt / `\+`=1+ advice now valid ONLY for `command grep` / deferred path.
+- Knobs: `RG_FFF_FIRST=0` = regex→byte-equiv BRE-mirror (literals STAY fff-ranked+marked, NOT a declutter); `RG_FFF_LOG=<path>` per-call decision log; `RG_FFF_DEBUG=1` regex-defer reason.
 
 # Subagents
 
