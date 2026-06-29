@@ -35,6 +35,7 @@ CLI proxy auto-applied by the Claude Code hook (`git status` → `rtk git status
 - **`rtk format`**: WRITE mode by default (rewrites) → `--check` for read-only, or run the formatter directly (`black`/`ruff`/`prettier --check`; in project venvs → `uv run ruff`).
 - **`git diff`/`show`/`log`** + large output: drops diff context, drops `git show` body, truncates piped `git log` at 50 → full text/counts via `rtk proxy git …`, `git rev-list --count`, or redirect.
 - **`json`/`env`/`log`/`curl`** = lossy previews (`json` truncates+reorders, `env` hides ~half, `log` drops INFO, `curl` = schema) → `rtk proxy <cmd>` (or `Read`) for exact.
+- **`cargo test`** narrowed (`-p <pkg>` / a test-name filter / `--lib`/`--test`) → one-line summary `cargo test: N passed[, M filtered out] (K suites, Ts)` (per-test lines + `test result:` dropped) → grep/capture of such a run for test NAMES finds nothing (counts ACCURATE — trust them, or `rtk proxy cargo test` for per-test detail); a bare `cargo test`/`--workspace` with no narrowing passes raw per-test output through.
 - **`rtk: Failed to read file`/`execute command`** = missing file/binary → fix directly.
 
 ## Rules
