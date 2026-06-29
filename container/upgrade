@@ -81,3 +81,18 @@ printf '%s\n' "$out"
 # --- Codex CLI ---
 # Use Codex's own updater for the CLI.
 codex update
+
+# --- Docs mirror: agentlanguages.dev/llms.txt ---
+# Refresh the local llms.txt copy from upstream on every run. It is git-ignored
+# rather than tracked (see .gitignore), since it can always be re-fetched here.
+# Download to a temp file first, then move it into place, so an interrupted or
+# failed fetch leaves the existing copy intact. A fetch failure is non-fatal:
+# warn and keep the current copy rather than aborting the rest of the upgrade.
+agentlang_doc="$HOME/agents/docs/agentlanguages.dev/llms.txt"
+agentlang_tmp="$(mktemp)"
+if curl -fsSL -o "$agentlang_tmp" https://agentlanguages.dev/llms.txt; then
+  mv "$agentlang_tmp" "$agentlang_doc"
+else
+  rm -f "$agentlang_tmp"
+  echo "agentlanguages.dev/llms.txt fetch failed; keeping existing copy" >&2
+fi

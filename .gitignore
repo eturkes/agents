@@ -1,0 +1,3 @@
+# Fetched fresh from upstream on every `container/upgrade` run, so it is not
+# tracked here (see container/upgrade, "Docs mirror" section).
+/docs/agentlanguages.dev/llms.txt
