@@ -21,7 +21,7 @@ now=$(date +%s)  # one clock read, reused for reset-delta + idle
 # seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S] => "LABEL N% MM/DD HH:MM".
 #   LABEL+used% (one unit): green >=50, yellow >=75, red >=90.
 #   reset time (never the label): red <=RED_S away, yellow <=YELLOW_S, green <=GREEN_S.
-#   Defaults red<=1h, yellow<=2h, green=today (5h); 7d => red<=5h, yellow<=10h, green<=15h.
+#   Defaults red<=1h, yellow<=2h, green=today; 5h => red<=1h, yellow<=2h, green<=3h; 7d => red<=5h, yellow<=10h, green<=15h.
 seg() {
   pct=$(awk -v p="$1" -v l="$3" 'BEGIN{q=int(p+0.5)
     if(q>=90)printf "\033[31m%s %d%%\033[0m",l,q
@@ -38,7 +38,7 @@ seg() {
   printf '%s %s' "$pct" "$dt"
 }
 rl=""
-[ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h)"
+[ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800)"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000)"
 # "last" = turn-end via transcript mtime: tracks ~now while a turn streams, freezes once idle.
 # Idle >=30m green, >=45m yellow, >=60m red: staleness as cache TTL burns toward an uncached next turn.
