@@ -17,6 +17,7 @@
 # Reading
 
 - File contents → `Read` tool (shell dumps denied as backstop, even in a compound `Bash`).
+- PDF `Read` → its bundled rasterizer reports `pdftoppm is not installed` even after `apt-get install poppler-utils` (it ignores the system `/usr/bin/pdftoppm`; Bash sees it fine) → render pages via Bash `pdftoppm -png -r 80 f.pdf out` then `Read` the PNG(s); `pdfinfo` = page count/size, `pdftotext f.pdf -` = embedded text (empty ⇒ outlined/rasterized text, use the PNG).
 - Reads pass Headroom: lossy but reversible. Compression = a token-bag `[N … compressed … hash=…]` (high-entropy stays verbatim) → recover via `headroom_retrieve` on its `hash=`. Compressed read = browse-only; suspect the proxy before the source on garbled output. Byte-exact `Edit` `old_string` → verbatim via `headroom_retrieve` / narrow line-range `Read` / `grep -n`/`sed`/Python `read_text()`, anchoring on short distinctive raw bytes (compression re-wraps prose; the `\uXXXX` mismatch hint misleads). Dedups → past the TTL (86400s, `~/.profile`) or store cap, `headroom_retrieve` 404s → `grep -n`/Python.
 - `Edit`/`Write` decode `\uXXXX` only (`\n`, `\xNN` pass through) → a literal backslash-`u` gets rewritten (often still compiles); encode another way (byte array, `0x5c` = backslash) + re-read after writing.
 - Quote YAML frontmatter scalars opening with an indicator char (`[ { } ] , & * ! | > % @ # :`, backtick, double-quote): leading `[` → flow sequence → `ParserError` or silently-dropped field. Verify ad-hoc frontmatter with an ephemeral `pyyaml` parse.
