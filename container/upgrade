@@ -68,6 +68,14 @@ out="$(elan toolchain install stable 2>&1)" && rc=0 || rc=$?
 printf '%s\n' "$out"
 [[ $rc -eq 0 || "$out" == *"already installed"* ]] || exit "$rc"
 
+# --- MoonBit: moon toolchain ---
+# The MoonBit toolchain is installed user-global under ~/.moon (on PATH and
+# shared by every project), so keep it current here alongside the other
+# language toolchains. `moon upgrade` is its installer-based self-updater and
+# fetches the latest release. Per-project dependencies (each project's
+# .mooncakes) are resolved by `moon` inside that project, not from this script.
+moon upgrade
+
 # --- Pinned LSP binaries: manual upgrades only ---
 # lemminx, alloy.jar, dolmen-lsp, egglog-lsp, prolog-lsp, and souffle-lsp are
 # pinned manual installs; upgrade each on purpose via its recipe in
