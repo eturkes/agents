@@ -70,7 +70,7 @@ Headroom's PRIMARY code-context compressor (Serena = BACKUP). 34 langs; answers 
 
 # Subagents
 
-- Delegate independent subtasks to subagents and keep working while they run. Intervene if a subagent goes off track or is missing relevant context. Chunk sequentially to dodge rate-limit failures, confirm each completed.
+- Fan out several subagents/turn across items/files; chunk sequentially to dodge rate-limit failures, confirm each completed.
 - Subagent window = session's, via the terminal launch flag `CLAUDE_CODE_DISABLE_1M_CONTEXT`: `=1` → 200K, omit → 1M (a `claude` launch-command flag; settings files carry model slugs).
 - Subagents run compaction-free → window overflow = hard mid-task death: the next request is rejected INLINE as `Prompt is too long` (no result). Budget context with margin (a read+rewrite agent peaks ~100K on ~40KB) → chunk big rewrites at section boundaries. Transcripts: `~/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl` (`.message.usage`).
 
