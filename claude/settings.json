@@ -62,7 +62,9 @@
     "init": "off",
     "review": "off",
     "simplify": "off",
-    "deep-research": "off"
+    "deep-research": "off",
+    "dataviz": "off",
+    "artifact-design": "off"
   },
   "hooks": {
     "PreToolUse": [
