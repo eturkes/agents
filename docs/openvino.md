@@ -10,7 +10,7 @@ Detail ref for the OpenVINO stub (`CLAUDE.local.md`). Container-scoped, project-
 
 ## OpenVINO runtime
 - v2026.2.1 @ `/var/home/eturkes/.local/app/openvino_genai` (prebuilt, incl. GenAI)
-- reaches python via `PYTHONPATH` (set in login profile), NOT pip-installed. A pip `openvino` wheel = unneeded but harmless: `PYTHONPATH` precedes venv site-packages in `sys.path` → `import openvino` resolves to THIS accel build (no shadowing; modern wheels aren't plugin-less). Device access gated by sourcing the accel env, NOT by which package imports → both enumerate the same devices. Keep `PYTHONPATH` intact (isolated python `-E`/`-I`/some `uv run` modes strip it → fall back to the wheel)
+- reaches python via `PYTHONPATH` (host `~/.profile` sources OpenVINO `setupvars.sh`; container shells inherit it), NOT pip-installed. A pip `openvino` wheel = unneeded but harmless: `PYTHONPATH` precedes venv site-packages in `sys.path` → `import openvino` resolves to THIS accel build (no shadowing; modern wheels aren't plugin-less). Device access gated by sourcing the accel env, NOT by which package imports → both enumerate the same devices. Keep `PYTHONPATH` intact (isolated python `-E`/`-I`/some `uv run` modes strip it → fall back to the wheel)
 - compiled bindings = cpython-{310,311,312,313} → python MUST ∈ {3.10–3.13}, else `_pyopenvino` load fails
 
 ## Enable (per shell, BEFORE launching python)
