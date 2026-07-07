@@ -113,5 +113,6 @@
   "remoteControlAtStartup": false,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "useAutoModeDuringPlan": false
+  "useAutoModeDuringPlan": false,
+  "model": "claude-fable-5[1m]"
 }
