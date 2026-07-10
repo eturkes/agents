@@ -69,17 +69,28 @@ printf '%s\n' "$out"
 [[ $rc -eq 0 || "$out" == *"already installed"* ]] || exit "$rc"
 
 # --- MoonBit: moon toolchain + registry index ---
-# The MoonBit toolchain is installed user-global under ~/.moon (on PATH and
-# shared by every project), so keep it current here alongside the other
-# language toolchains. `moon upgrade` is its installer-based self-updater and
-# fetches the latest release. Unlike cargo/uv/pnpm/npm — which resolve against
-# the live registry on demand and keep no standing index to go stale — MoonBit
-# caches a persistent local package index (a git repo under
-# ~/.moon/registry/index), so `moon update` refreshes it (and the symbol index)
-# for all projects, the way `apt update` refreshes APT's. Per-project
-# dependencies (each project's .mooncakes) are still resolved by `moon` inside
-# that project.
-moon upgrade
+# The MoonBit toolchain is installed user-global under ~/.moon and shared by
+# every project, so keep it current here alongside the other language
+# toolchains. `moon upgrade` is its installer-based self-updater and fetches the
+# latest release. Unlike cargo/uv/pnpm/npm — which resolve against the live
+# registry on demand and keep no standing index to go stale — MoonBit caches a
+# persistent local package index (a git repo under ~/.moon/registry/index), so
+# `moon update` refreshes it (and the symbol index) for all projects, the way
+# `apt update` refreshes APT's. Per-project dependencies (each project's
+# .mooncakes) are still resolved by `moon` inside that project.
+moon_home="${MOON_HOME:-$HOME/.moon}"
+case ":$PATH:" in
+  *":$moon_home/bin:"*) ;;
+  *) export PATH="$moon_home/bin:$PATH" ;;
+esac
+
+if [[ -t 0 ]]; then
+  moon upgrade
+else
+  # Recent `moon upgrade` prompts via the terminal and exits with
+  # "not a terminal" without a pty. Feed the normal confirmation through one.
+  printf 'y\n' | script -qefc 'moon upgrade' /dev/null
+fi
 moon update
 
 # --- Pinned LSP binaries: manual upgrades only ---
