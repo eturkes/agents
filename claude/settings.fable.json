@@ -48,6 +48,7 @@
     ],
     "defaultMode": "dontAsk"
   },
+  "model": "claude-fable-5[1m]",
   "skillOverrides": {
     "claude-api": "off",
     "update-config": "off",
@@ -107,12 +108,10 @@
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
+  "preferredNotifChannel": "notifications_disabled",
   "autoCompactEnabled": false,
   "switchModelsOnFlag": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
-  "inputNeededNotifEnabled": true,
-  "agentPushNotifEnabled": true,
-  "useAutoModeDuringPlan": false,
-  "model": "claude-fable-5[1m]"
+  "useAutoModeDuringPlan": false
 }
