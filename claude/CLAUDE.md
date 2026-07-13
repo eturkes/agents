@@ -67,7 +67,7 @@ Headroom's PRIMARY code-context compressor (Serena = BACKUP). 34 langs; answers 
 
 # Subagents
 
-- Delegate independent subtasks to subagents and keep working while they run. Intervene if a subagent goes off track or is missing relevant context. Chunk sequentially to dodge rate-limit failures, confirm each completed.
+- Delegate independent subtasks to subagents and keep working while they run. Intervene if a subagent goes off track or is missing relevant context. Chunk sequentially to dodge rate-limit failures, confirm each completed. Join (TaskOutput) or TaskStop EVERY agent you spawned before the closing commit/handoff — orphaned MAX-EFFORT bg agents once burned 3h+ past their consumption point until the user killed them.
 - Model + effort parity: spawn every subagent / teammate / workflow-`agent()` to match THIS session → leave `model` blank = inherit the main-loop model (effort env rides along), so max effort stays effective.
 - Subagents run compaction-free → window overflow = hard mid-task death (next request rejected INLINE as `Prompt is too long`, no result); the 1M window makes this remote — a read+rewrite agent peaks ~100K on ~40KB (~10%), so chunk only genuinely huge rewrites. Transcripts: `~/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl` (`.message.usage`).
 
