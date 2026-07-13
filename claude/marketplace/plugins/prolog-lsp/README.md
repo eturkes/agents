@@ -22,4 +22,7 @@ Notes:
   (JSON-RPC -32001 on initialize). 3.16.3 does no such introspection. Re-check
   upstream before bumping the pin.
 
-Last verified: swi-prolog-nox 9.2.9 + lsp_server 3.16.3 on Debian 13 trixie.
+Last verified: swi-prolog-nox 9.2.9 + lsp_server 3.16.3 on Debian 13 trixie. Pin
+re-verified 2026-07-13 against v3.17.0 (still the latest tag): an `initialize`
+from a utf-16-only client still throws `instantiation_error` (JSON-RPC -32001),
+while a control client advertising utf-32 succeeds. Pin stays.

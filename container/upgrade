@@ -93,6 +93,18 @@ else
 fi
 moon update
 
+# --- SWI-Prolog packs ---
+# The interpreter and its built-in `pack` package manager (library(prolog_pack))
+# ship in Debian's swi-prolog-* apt packages, upgraded out of band with the rest
+# of apt (done manually), so this script only refreshes globally installed packs.
+# Upgrade every installed pack except lsp_server, which is pinned to 3.16.3 on
+# purpose (see the Pinned LSP binaries note below and prolog-lsp's README: 3.17.0
+# still regresses initialize for utf-16 clients like Claude Code -- re-verified
+# 2026-07-13). The pack list is computed at runtime, so packs added later are
+# upgraded automatically while the pin holds; the per-pack catch keeps one failing
+# upgrade from aborting the run.
+swipl -q -g 'use_module(library(prolog_pack)), Pinned = [lsp_server], findall(P, (pack_property(P, version(_)), \+ memberchk(P, Pinned)), Ps), forall(member(P, Ps), catch(pack_install(P, [upgrade(true), interactive(false)]), E, print_message(warning, E))), halt' -t 'halt(1)'
+
 # --- Pinned LSP binaries: manual upgrades only ---
 # lemminx, alloy.jar, dolmen-lsp, egglog-lsp, prolog-lsp, and souffle-lsp are
 # pinned manual installs; upgrade each on purpose via its recipe in
