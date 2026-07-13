@@ -54,7 +54,7 @@
     "update-config": "off",
     "schedule": "off",
     "run": "off",
-    "loop": "off",
+    "loop": "on",
     "verify": "off",
     "keybindings-help": "off",
     "code-review": "off",
