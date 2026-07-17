@@ -10,8 +10,9 @@ $(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or 
 EOF
 if [ -n "$u" ]; then c=1
 else
-  f=$(ls "$HOME"/.claude/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl 2>/dev/null)
-  [ -n "$f" ] || f=$(ls -t "$HOME"/.claude/projects/*/*.jsonl 2>/dev/null | head -1)
+  transcript_root="$HOME/.claude/projects"
+  f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name "$CLAUDE_CODE_SESSION_ID.jsonl" -print -quit 2>/dev/null)
+  [ -n "$f" ] || f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d ' ' -f 2- | head -1)
   u=$(jq -n 'last(inputs|select(.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object")|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty' "$f" 2>/dev/null)
   w=272000
   c=0
