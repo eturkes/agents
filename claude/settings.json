@@ -64,7 +64,8 @@
     "simplify": "off",
     "deep-research": "off",
     "dataviz": "off",
-    "artifact-design": "off"
+    "artifact-design": "off",
+    "artifact-capabilities": "off"
   },
   "hooks": {
     "PreToolUse": [
@@ -79,6 +80,7 @@
       }
     ]
   },
+  "enableArtifact": false,
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
