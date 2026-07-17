@@ -119,6 +119,9 @@ swipl -q -g 'use_module(library(prolog_pack)), Pinned = [lsp_server], findall(P,
 # Use Codex's own updater for the CLI.
 codex update
 
+# --- CLIProxyAPI ---
+curl -fsSL https://raw.githubusercontent.com/router-for-me/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer | bash -s -- upgrade
+
 # --- Docs mirror: agentlanguages.dev/llms.txt ---
 # Refresh the local llms.txt copy from upstream on every run. It is git-ignored
 # rather than tracked (see .gitignore), since it can always be re-fetched here.
