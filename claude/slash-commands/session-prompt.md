@@ -7,7 +7,7 @@ MODE ← active-milestone status (each mode advances it, then closes on a scoped
 - IN-PROGRESS (has an OPEN unit) → WORK-UNIT (lowest OPEN unit)
 - IMPLEMENTED (units all DONE, unreviewed) → MILESTONE-REVIEW
 
-After each mode's commit I compact and run `/codex-review`; you fix accepted findings in a follow-up commit. MILESTONE-REVIEW is the exception — its `/codex-review` runs in the same session without a deliberate pre-review compact (automatic compaction may still fire at 90%). Record context-usage in WORK-UNIT only.
+After each mode's scoped commit succeeds, immediately invoke the `codex-review` skill via the Skill tool in the same session; fix accepted findings in a follow-up commit before closing the mode. Proceed without waiting for user input. Record context-usage in WORK-UNIT only.
 
 PLANNING — split the scope into milestones if still unsplit, then plan only the next milestone.
 - Read the prior milestone's commit range, especially its recorded context-usage (it right-sizes units); for the first planned milestone, the scope-seed commit(s) the roadmap names.
