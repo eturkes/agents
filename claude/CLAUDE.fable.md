@@ -70,6 +70,7 @@ Headroom's PRIMARY code-context compressor (Serena = BACKUP). 34 langs; answers 
 # Subagents
 
 - Delegate independent subtasks to subagents and keep working while they run. Intervene if a subagent goes off track or is missing relevant context. Chunk sequentially to dodge rate-limit failures, confirm each completed. Join (TaskOutput) or TaskStop EVERY agent you spawned before the closing commit/handoff — orphaned MAX-EFFORT bg agents once burned 3h+ past their consumption point until the user killed them.
+- Global permission mode is `dontAsk`: dispatch scoped agents that need edits, tests, or Git with `mode: "bypassPermissions"`; configured deny/ask rules still apply. Keep `dontAsk` for agents whose self-contained task needs only pre-approved read operations.
 - Fixed subagent model + effort: every subagent / teammate / workflow-`agent()` runs `gpt-5.6-sol` regardless of per-call model selection; leave `model` blank (effort env rides along), so max effort stays effective.
 - Scope each compaction-free subagent to finish within its 272K window; main-session auto-compaction is separate. Budget margin + split large rewrites at section boundaries: a read+rewrite agent can peak ~100K on ~40KB (~37%). Transcripts: `~/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl` (`.message.usage`). Window exhaustion surfaces on the next request as inline `Prompt is too long`, with no subagent result.
 
