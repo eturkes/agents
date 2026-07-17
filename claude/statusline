@@ -1,11 +1,12 @@
 #!/bin/sh
 # Claude Code context gauge + rate limits.
 # Branch on stdin, NOT env: statusline pipes JSON + sets CLAUDE_CODE_SESSION_ID → env can't tell modes apart. JSON stdin = statusline; TTY/empty = manual (read transcript).
+# Live total_input_tokens includes cache reads/writes but excludes output; sum total_output_tokens to match the transcript fallback.
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u => manual.
 { read -r u; read -r w; read -r sp; read -r sr; read -r wp; read -r wr; read -r tp; read -r pd; } <<EOF
-$(printf '%s' "$j" | jq -r '.context_window.total_input_tokens // "", .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .transcript_path // "", .workspace.project_dir // ""' 2>/dev/null)
+$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .transcript_path // "", .workspace.project_dir // ""' 2>/dev/null)
 EOF
 if [ -n "$u" ]; then c=1
 else
