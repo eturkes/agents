@@ -1,8 +1,7 @@
 # Alignment — always on
 
 - Codex is the sole development agent for repos using this profile. Canonical runtime = Codex CLI/API from
-  the repo root; canonical instructions = this root profile. Keep Claude-specific and other
-  non-Codex agent project configs absent from git.
+  the repo root; canonical instructions = this root profile.
 - Session entry: when a repo provides the `$session-prompt` skill backed by
   `.codex/prompts/session.md`, treat the skill + prompt as one interface and update them together;
   keep legacy slash-command copies absent.
