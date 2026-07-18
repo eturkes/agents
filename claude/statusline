@@ -39,6 +39,36 @@ seg() {
   fi
   printf '%s %s' "$pct" "$dt"
 }
+# Native rate_limits (the jq above) come back empty when the upstream proxy hides them: Claude
+# Code reads 5h/7d usage from GET /api/oauth/usage, but with ANTHROPIC_BASE_URL pointed at the
+# Headroom->CLIProxyAPI chain, CLIProxyAPI 404s that path. Fall back to polling it directly (same
+# endpoint + OAuth token Claude Code itself uses), cached to a file and refreshed by a detached
+# background job so rendering never blocks on the network.
+if [ -z "$sp$wp" ]; then
+  uc="$HOME/.claude/.oauth_usage.json"; lk="$uc.lock"
+  ca=$(stat -c %Y "$uc" 2>/dev/null || echo 0)
+  if [ "$(( now - ca ))" -ge 180 ]; then
+    lm=$(stat -c %Y "$lk" 2>/dev/null || echo 0)  # reap a stale lock left by a killed fetch
+    [ "$lm" -gt 0 ] && [ "$(( now - lm ))" -ge 60 ] && rmdir "$lk" 2>/dev/null
+    if mkdir "$lk" 2>/dev/null; then
+      setsid -f sh -c '
+        t=$(jq -r ".claudeAiOauth.accessToken // empty" "$1" 2>/dev/null)
+        if [ -n "$t" ]; then
+          r=$(curl -fsS --max-time 8 -H "Authorization: Bearer $t" -H "anthropic-beta: oauth-2025-04-20" https://api.anthropic.com/api/oauth/usage 2>/dev/null)
+          [ -n "$r" ] && printf %s "$r" | jq -e .five_hour >/dev/null 2>&1 && printf %s "$r" >"$2.tmp" && mv "$2.tmp" "$2"
+        fi
+        rmdir "$3" 2>/dev/null
+      ' _ "$HOME/.claude/.credentials.json" "$uc" "$lk" </dev/null >/dev/null 2>&1 &
+    fi
+  fi
+  if [ -s "$uc" ]; then  # render the last good poll; utilization is a %, ISO resets_at -> epoch
+    { read -r sp; read -r sri; read -r wp; read -r wri; } <<EOF2
+$(jq -r '.five_hour.utilization // "", .five_hour.resets_at // "", .seven_day.utilization // "", .seven_day.resets_at // ""' "$uc" 2>/dev/null)
+EOF2
+    [ -n "$sri" ] && sr=$(date -d "$sri" +%s 2>/dev/null)
+    [ -n "$wri" ] && wr=$(date -d "$wri" +%s 2>/dev/null)
+  fi
+fi
 rl=""
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800)"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000)"
