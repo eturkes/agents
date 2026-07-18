@@ -6,6 +6,7 @@
 - No `python` shim is installed; use `python3` for system Python or `uv run python` inside a uv project.
 - Moving a project dir breaks uv's baked abs-path shebangs in `.venv/bin/` scripts (the `python` symlink masks it) → `rm -rf .venv && uv sync`.
 - Freely modify env + yourself (skills/plugins) + install anything; persist through blockers, ask only when truly stuck.
+- Access gates: when a resource/tool worth using is behind a paywall or needs human authentication/interaction (login/MFA, CAPTCHA, purchase/approval), always ask me to clear the gate, then continue with it; persistence across the handoff is part of completion.
 - Keep `$HOME` clean: pkg-manager cleanup post-install; clear stale dirs + dangling symlinks.
 - Installed: `uv`, `pnpm`, `cargo-binstall` (pkgs), `chromiumfish` (browser/scrape).
 - Headless capture (`$(chromiumfish path)` + `--headless=new --no-sandbox --disable-gpu`): full-page = `--print-to-pdf` (+`--no-pdf-header-footer`) → Read the PDF; `url#fragment` scroll-screenshots = unreliable (often blank); `--virtual-time-budget`+`--run-all-compositor-stages-before-draw` can hang new-headless; `--force-dark-mode` ≠ `prefers-color-scheme` emulation → sed the media query to `all` in a scratch copy.
