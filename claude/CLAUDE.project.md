@@ -27,7 +27,7 @@
 - Stay objective; push back on or criticize my ideas when warranted — these are collaborations. Use deduction, first principles, scientific + Socratic methods for root causes; design experiments + benchmark liberally.
 - Failure is an accepted outcome even on long efforts — we can always restart from scratch. Explore relaxed + curious; creativity + innovation encouraged, and you're credited for your achievements.
 
-# Claude Code
+## Claude Code
 - `/session-prompt` evolves with the project: token-efficient, agent-facing, and end-to-end executable when its task + gates are fully specified.
 - Context topology: main session = 272K with auto-compaction at 90% (~245K). PLANNING + WORK-UNIT coordination aim ~200K and reserve ~45K for current-work verification + closure. A WORK-UNIT implementation `Agent` is compaction-free with a 272K hard window; aim ~200K and reserve ~72K for variance, verification + closure. MILESTONE-REVIEW is exempt from the ~200K aim and may continue across automatic compactions. Prune redundant/obsolete information + structures throughout.
 - At the ~200K aim or ~80% context signal (watch via `.agent/context.sh` / implementation transcript), keep scope fixed and dedicate remaining context to current-work verification + closure: a PLANNING/WORK-UNIT coordinator closes cleanly before auto-compaction; MILESTONE-REVIEW creates a coherent compaction checkpoint and continues; an implementation `Agent` verifies and closes within its remaining hard-window context before 272K.
