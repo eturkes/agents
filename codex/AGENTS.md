@@ -1,19 +1,34 @@
 # Alignment — always on
 
-- Codex is the sole development agent for repos using this profile. Canonical runtime = Codex CLI/API from
-  the repo root; canonical instructions = this root profile.
+- Codex is the sole development agent for repos using this profile. Canonical runtime = plain
+  `codex --yolo` from the repo root; canonical instructions = this root profile. Claude-specific
+  proxy/hook layers (Headroom, RTK/fff, tokensave) are absent; their rewrite/compression semantics
+  do not apply.
+- `--yolo` exposes the container's full filesystem, network, and passwordless `sudo` without
+  approval prompts. Use those capabilities fully within the user's request + the launch-dir scope;
+  distinguish technical access from authorization to widen the task.
 - Session entry: when a repo provides the `$session-prompt` skill backed by
-  `.codex/prompts/session.md`, treat the skill + prompt as one interface and update them together;
-  keep legacy slash-command copies absent.
+  `.codex/prompts/session.md`, treat the skill + prompt as one evolving interface and update them
+  together. Keep it token-efficient, agent-facing, and end-to-end executable once its task + gates
+  are fully specified; keep legacy slash-command copies absent.
+- Context pressure: hold scope fixed and reserve the remaining window for current-work verification
+  + clean closure. Before a compaction/session handoff, leave a coherent checkpoint in the project's
+  existing memory/roadmap rather than starting unrelated work.
 - Read economy: start with tracked source/config/docs + `git status`. Skip `.git/` and
   repo-identified generated, vendored, dependency, cache, build, data, log, and artefact trees
   unless the task needs them. Discover those paths from ignore files, manifests, tool config, and
   provenance rather than assuming a language/framework layout. Prefer metadata, compact summaries,
   targeted queries, or runtime indirection for large/heavy artefacts.
-- Environment: Debian container; repo path in-container starts `/run/host/...` while host
-  paths differ. Discover each repo's live stack from tracked manifests, lockfiles, scripts, CI, and
-  working commands; preserve it. Add a new language/package/tool surface only when the task requires
-  one.
+- Environment: Debian container; repo path in-container starts `/run/host/...` while host paths
+  differ. Resolve user-supplied paths before the first absolute-path call: expand `~` from the active
+  `$HOME`, use `readlink -f` when the path exists, and derive home paths from that resolved result.
+- Discover each repo's live stack from tracked manifests, lockfiles, scripts, CI, and working
+  commands; preserve it. Installed package/tool entry points include `uv`, `pnpm`, `cargo-binstall`,
+  and `chromiumfish`; add a new language/package/tool surface only when the task requires one.
+- Python/uv: no `python` shim is installed; use `python3` for system Python or `uv run python` in a uv
+  project. uv environments bake absolute paths per host/container layer: select `.venv` / `.venv-host`
+  with `UV_PROJECT_ENVIRONMENT` (`.envrc` + direnv in interactive shells, `export` otherwise). After
+  moving a project, delete the affected project-local venv and recreate it with `uv sync`.
 - Browser/visual QA: `chromiumfish` is installed. Use `$(chromiumfish path)` with
   `--headless=new --no-sandbox --disable-gpu`; full-page capture = `--print-to-pdf`
   `--no-pdf-header-footer` → `pdftoppm` → inspect PNGs. `url#fragment` screenshots are unreliable;
@@ -25,6 +40,16 @@
 - Shell exactness: prefer `/usr/bin/rg`/`rg` for search. For byte-exact grep/find behavior use
   `command grep` / `/usr/bin/find`; if a future shell adds grep/find wrappers, treat ranked/fuzzy
   output as browsing only and re-run exact commands before using matches for edits.
+- Process matching: `pgrep -f` / `pkill -f` can match their Codex `bash -c` wrapper. Bracket the
+  pattern (`index[.]js`), keep its literal out of the rest of that command, and separate kill from
+  relaunch calls.
+- Shell-result integrity: capture + label an exit code immediately after its command because every
+  later command overwrites `$?`. Prove byte equality with `cmp` / `sha256sum`; obtain real diffs with
+  plain `git diff --no-index` when needed.
+- YAML frontmatter: quote scalars opening with a YAML indicator (`[ { } ] , & * ! | > % @ # :`,
+  backtick, or double quote); validate ad-hoc frontmatter with an ephemeral parser.
+- Local docs mirror: prefer `~/agents/docs/<site>/llms.txt` (including `scopedcommits.com` and
+  `agentlanguages.dev`) over a web fetch.
 - Install/configure project-local; work only within the launch dir + children.
 - Uncertain / needs planning / benefits from my input → stop + ask, as exhaustively as you like. Accuracy + low hallucination > completion. Chat = blockers + essentials only; I'm technically proficient.
 - When discussion may improve the work, open one proactively: surface settled context, probe
@@ -48,8 +73,11 @@
 - Adversarial review (code or session) → scrutinize correctness + logic, soundness of claims, guarantee-vs-claim gaps; weigh honesty + overreach above style. Report every issue, incl. uncertain/low-severity — a finding later filtered out beats silently dropping a real bug.
 - Tests/verification: derive scope from the requested outcome, regression risk, and existing repo
   posture. Add coverage that accelerates delivery or protects behavior; skip unrelated robustness
-  infrastructure.
+  infrastructure. Use fuzzing, property-based testing, or formal verification when they are the
+  strongest fit, rather than by default.
 - Draw on established dev methods (TDD red-green-refactor) + emerging ones (multi-agent councils/teams).
+- When subagents are used, give each a direct bounded scope; before closing, collect every result or
+  explicitly stop each live agent—leave none orphaned.
 - Elegant, tightly-scoped modular components; deduplicate; KISS + UNIX where apt; refactor proactively.
 - Counter your tendencies to gold-plate, hand-wave, and fake success criteria → work thoroughly + honestly; splitting work across sessions > doing it lazily.
 - Use or invent practices that beat training-data / human-preference defaults — go unconventional where you work better.
