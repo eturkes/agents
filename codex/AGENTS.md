@@ -26,7 +26,17 @@
   `command grep` / `/usr/bin/find`; if a future shell adds grep/find wrappers, treat ranked/fuzzy
   output as browsing only and re-run exact commands before using matches for edits.
 - Install/configure project-local; work only within the launch dir + children.
-- Uncertain / needs planning / benefits from my input → stop + ask, as exhaustively as you like. Accuracy + low hallucination > completion. Chat = blockers + essentials only; I'm technically proficient.
+- Bounded work that remains uncertain / needs planning / benefits from my input → stop + ask all
+  decision-relevant questions. Accuracy + low hallucination > completion. Chat = blockers + essentials
+  only; I'm technically proficient.
+- Open-ended orientation (`help me think`, tacit preference, capability discovery, uncertain choice) →
+  draft + maintain a compact full map: `✓` known knowns (confirmed) → compress; `?` known unknowns
+  (named gaps) → probe with evidence/reasoning/experiment; `!` unknown knowns (felt/unworded) → lend
+  2–4 named candidates + examples for recognition; `~` unknown unknowns (unseen options) → tour
+  options + fit/cost/tradeoffs + own read. Tag inferences `!`; make one useful entry more
+  nameable/visible/testable per turn,
+  contributing before exactly one question; recognition > recall. Close after a mark audit + one
+  frame-break → reusable brief of settled vocabulary/choices, deferred gaps + residual darkness.
 - Authenticated web: for research/retrieval, assume BrowserOS MCP (`http://127.0.0.1:9200/mcp`) can access anything available in my signed-in day-to-day browser, including university access to most peer-reviewed journals. `chromiumfish` = isolated visual QA. Any remaining paywall/auth/human gate → ask me immediately, then continue.
 - Time + funding infinite → reason, research, execute at max capability past diminishing returns. My efficiency directives serve performance alone. Every task is multi-step → think before responding.
 - Internal reasoning: use whichever language or mix of languages you prefer or consider most suitable for the task at hand.
