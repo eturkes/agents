@@ -1,0 +1,95 @@
+#!/bin/sh
+# Claude Code context gauge + rate limits.
+# Branch on stdin, NOT env: statusline pipes JSON + sets CLAUDE_CODE_SESSION_ID → env can't tell modes apart. JSON stdin = statusline; TTY/empty = manual (read transcript).
+# Live total_input_tokens includes cache reads/writes but excludes output; sum total_output_tokens to match the transcript fallback.
+j=""
+[ -t 0 ] || j=$(cat)
+# One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u => manual.
+{ read -r u; read -r w; read -r sp; read -r sr; read -r wp; read -r wr; read -r tp; read -r pd; } <<EOF
+$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .transcript_path // "", .workspace.project_dir // ""' 2>/dev/null)
+EOF
+if [ -n "$u" ]; then c=1
+else
+  transcript_root="$HOME/.claude/projects"
+  f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name "$CLAUDE_CODE_SESSION_ID.jsonl" -print -quit 2>/dev/null)
+  [ -n "$f" ] || f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d ' ' -f 2- | head -1)
+  u=$(jq -n 'last(inputs|select(.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object")|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty' "$f" 2>/dev/null)
+  w=272000
+  c=0
+fi
+[ "$w" -gt 0 ] 2>/dev/null || w=272000
+now=$(date +%s)  # one clock read, reused for reset-delta + idle
+# Rate-limit suffix; empty without rate_limits (manual mode, or pre-first-response).
+# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S] => "LABEL N% MM/DD HH:MM".
+#   LABEL+used% (one unit): green >=50, yellow >=75, red >=90.
+#   reset time (never the label): red <=RED_S away, yellow <=YELLOW_S, green <=GREEN_S.
+#   Defaults red<=1h, yellow<=2h, green=today; 5h => red<=1h, yellow<=2h, green<=3h; 7d => red<=5h, yellow<=10h, green<=15h.
+seg() {
+  pct=$(awk -v p="$1" -v l="$3" 'BEGIN{q=int(p+0.5)
+    if(q>=90)printf "\033[31m%s %d%%\033[0m",l,q
+    else if(q>=75)printf "\033[33m%s %d%%\033[0m",l,q
+    else if(q>=50)printf "\033[32m%s %d%%\033[0m",l,q
+    else printf "%s %d%%",l,q}')
+  dt=$(date -d "@$2" +'%m/%d %H:%M'); delta=$(( $2 - now ))
+  rs=${4:-3600}; ys=${5:-7200}
+  if [ "$delta" -le "$rs" ]; then dt=$(printf '\033[31m%s\033[0m' "$dt")
+  elif [ "$delta" -le "$ys" ]; then dt=$(printf '\033[33m%s\033[0m' "$dt")
+  elif [ -n "$6" ]; then [ "$delta" -le "$6" ] && dt=$(printf '\033[32m%s\033[0m' "$dt")
+  elif [ "$(date -d "@$2" +%Y%m%d)" = "$(date +%Y%m%d)" ]; then dt=$(printf '\033[32m%s\033[0m' "$dt")
+  fi
+  printf '%s %s' "$pct" "$dt"
+}
+# Native rate_limits (the jq above) come back empty when the upstream proxy hides them: Claude
+# Code reads 5h/7d usage from GET /api/oauth/usage, but with ANTHROPIC_BASE_URL pointed at the
+# Headroom->CLIProxyAPI chain, CLIProxyAPI 404s that path. Fall back to polling it directly (same
+# endpoint + OAuth token Claude Code itself uses), cached to a file and refreshed by a detached
+# background job so rendering never blocks on the network.
+if [ -z "$sp$wp" ]; then
+  uc="$HOME/.claude/.oauth_usage.json"; lk="$uc.lock"
+  ca=$(stat -c %Y "$uc" 2>/dev/null || echo 0)
+  if [ "$(( now - ca ))" -ge 180 ]; then
+    lm=$(stat -c %Y "$lk" 2>/dev/null || echo 0)  # reap a stale lock left by a killed fetch
+    [ "$lm" -gt 0 ] && [ "$(( now - lm ))" -ge 60 ] && rmdir "$lk" 2>/dev/null
+    if mkdir "$lk" 2>/dev/null; then
+      setsid -f sh -c '
+        t=$(jq -r ".claudeAiOauth.accessToken // empty" "$1" 2>/dev/null)
+        if [ -n "$t" ]; then
+          r=$(curl -fsS --max-time 8 -H "Authorization: Bearer $t" -H "anthropic-beta: oauth-2025-04-20" https://api.anthropic.com/api/oauth/usage 2>/dev/null)
+          [ -n "$r" ] && printf %s "$r" | jq -e .five_hour >/dev/null 2>&1 && printf %s "$r" >"$2.tmp" && mv "$2.tmp" "$2"
+        fi
+        rmdir "$3" 2>/dev/null
+      ' _ "$HOME/.claude/.credentials.json" "$uc" "$lk" </dev/null >/dev/null 2>&1 &
+    fi
+  fi
+  if [ -s "$uc" ]; then  # render the last good poll; utilization is a %, ISO resets_at -> epoch
+    { read -r sp; read -r sri; read -r wp; read -r wri; } <<EOF2
+$(jq -r '.five_hour.utilization // "", .five_hour.resets_at // "", .seven_day.utilization // "", .seven_day.resets_at // ""' "$uc" 2>/dev/null)
+EOF2
+    [ -n "$sri" ] && sr=$(date -d "$sri" +%s 2>/dev/null)
+    [ -n "$wri" ] && wr=$(date -d "$wri" +%s 2>/dev/null)
+  fi
+fi
+rl=""
+[ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800)"
+[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000)"
+# "last" = turn-end via transcript mtime: tracks ~now while a turn streams, freezes once idle.
+# Idle >=30m green, >=45m yellow, >=60m red: staleness as cache TTL burns toward an uncached next turn.
+te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
+  ts="last $(date -d "@$te" +'%m/%d %H:%M')"
+  idle=$(( now - te ))
+  if [ "$idle" -ge 3600 ]; then ts=$(printf '\033[31m%s\033[0m' "$ts")
+  elif [ "$idle" -ge 2700 ]; then ts=$(printf '\033[33m%s\033[0m' "$ts")
+  elif [ "$idle" -ge 1800 ]; then ts=$(printf '\033[32m%s\033[0m' "$ts")
+  fi
+  rl="$rl | $ts"
+}
+# TZ column qualifying all timestamps, then launch-dir basename.
+[ -n "$rl" ] && rl="$rl | $(date +%Z)"
+[ -n "$rl" ] && [ -n "$pd" ] && rl="$rl | ${pd##*/}"
+awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
+function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}
+              return sprintf("%dK",int(n/1000+0.5)) }
+BEGIN{ if(u==""){ print "? ?/" h(w) r; exit }
+       p=int(u*100/w+0.5); s=p "% " h(u) "/" h(w)
+       if(c&&p>=80) s="\033[31m" s "\033[0m"; else if(c&&p>=60) s="\033[33m" s "\033[0m"; else if(c&&p>=40) s="\033[32m" s "\033[0m"
+       print s r }'

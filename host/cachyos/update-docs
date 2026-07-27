@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# --- Docs mirror: agentlanguages.dev/llms.txt ---
+# Refresh the local llms.txt copy from upstream. It is git-ignored rather than
+# tracked (see .gitignore), since it can always be re-fetched here. Download to
+# a temp file first, then move it into place, so an interrupted or failed fetch
+# leaves the existing copy intact. A fetch failure is non-fatal: warn and keep
+# the current copy rather than aborting the rest of the run.
+#
+# This machine runs everything as the normal user on the host, so unlike the
+# container profile there is almost no toolchain-upgrade work to do here —
+# pacman/paru own nearly every package (headroom, cli-proxy-api, codex, rust,
+# uv, pnpm, node, npm), and the remaining self-updaters (`headroom update`,
+# `tokensave upgrade`) are run on purpose rather than on a schedule. The one
+# unpackaged exception is the chromiumfish pnpm workspace at
+# ~/.local/share/chromiumfish, upgraded intentionally rather than here:
+#   pnpm -C ~/.local/share/chromiumfish update --latest && chromiumfish fetch
+# Bumping it re-pins the bundled browser version, so verify a capture still
+# works afterwards (see the chromiumfish note in the CLAUDE.md profiles).
+# Docs are the one mirror that has to be pulled explicitly, so that is all this
+# script does.
+agentlang_doc="$HOME/Projects/agents/docs/agentlanguages.dev/llms.txt"
+agentlang_tmp="$(mktemp)"
+mkdir -p "$(dirname "$agentlang_doc")"
+if curl -fsSL -o "$agentlang_tmp" https://agentlanguages.dev/llms.txt; then
+  mv "$agentlang_tmp" "$agentlang_doc"
+  echo "agentlanguages.dev/llms.txt updated"
+else
+  rm -f "$agentlang_tmp"
+  echo "agentlanguages.dev/llms.txt fetch failed; keeping existing copy" >&2
+fi
+
+# docs/scopedcommits.com/llms.txt is deliberately NOT fetched here: the site is
+# live but has never published an llms.txt, so the repo's tracked copy is the
+# original rather than a mirror. Maintain it by hand; adding a fetch would
+# overwrite it with a 404.
