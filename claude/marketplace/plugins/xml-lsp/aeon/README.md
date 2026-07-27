@@ -1,12 +1,12 @@
 # xml-lsp
 
-Generic XML LSP via Eclipse LemMinX. Covers DMN, BPMN, SHACL-XML, XSD.
+Eclipse LemMinX XML LSP: DMN, BPMN, SHACL-XML, XSD.
 
 Install / upgrade:
 1. `sudo apt-get install -y openjdk-21-jre-headless`
-2. Download the uber jar:
+2. Install pinned uber jar:
    `curl -sSL -o ~/.local/share/lemminx/lemminx.jar https://repo.eclipse.org/content/repositories/lemminx-releases/org/eclipse/lemminx/org.eclipse.lemminx/0.31.1/org.eclipse.lemminx-0.31.1-uber.jar`
-3. Drop a `lemminx` wrapper into `~/.local/bin/` that runs
+3. Add `~/.local/bin/lemminx`:
    `java -jar ~/.local/share/lemminx/lemminx.jar "$@"`.
 
 Last verified: LemMinX 0.31.1 on Debian 13 trixie.
