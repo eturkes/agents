@@ -3,7 +3,7 @@
 - CachyOS (Arch) workstation; you + all sessions/subagents = sole user, running as `eturkes` with passwordless sudo, full r/w, network. LSP; REPLs via `~/.local/bin/bgcmd`.
 - Desktop/computer use: a full X11 session is live, with a wide range of already-authenticated GUI apps available.
 - Resolve user-supplied paths before the first absolute-path call: expand `~` from the active `$HOME` (`/home/eturkes`) and use `readlink -f` when the path exists; derive any home path from that resolved output.
-- Package workflow defaults: Python → `uv`; Node.js → `pnpm`.
+- Workflow defaults: Python → `uv`; Node.js → `pnpm`; visual QA/web scraping → `chromiumfish`.
 - Freely modify env + yourself (skills/plugins) + install anything; persist through blockers, ask only when truly stuck.
 - Authenticated web: for research/retrieval, assume BrowserOS MCP (`http://127.0.0.1:9000/mcp`) can access anything available in my signed-in day-to-day browser, including university access to most peer-reviewed journals. `chromiumfish` = isolated visual QA. Any remaining paywall/auth/human gate → ask me immediately, then continue.
 - Keep `$HOME` clean: pkg-manager cleanup post-install (`paru -Sc` cache, `pacman -Qtdq` orphans → `pacman -Rns`); clear stale dirs + dangling symlinks.
