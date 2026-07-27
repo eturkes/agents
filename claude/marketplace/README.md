@@ -12,8 +12,7 @@ languages via `solidlsp`, servers installed on first use. A server can be added
 to either layer at any time. This marketplace holds ONLY languages `solidlsp`
 can't do — prefer Serena; add here only for a real gap.
 
-Gaps (current): `xml`, `alloy`, `dolmen` (SMT-LIB/TPTP/DIMACS), `egglog`,
-`turtle`, `prolog`, `souffle`. Covered by Serena (not here): html, json,
+Gaps (current): `xml`, `prolog`. Covered by Serena (not here): html, json,
 markdown, python, yaml, toml, lean4.
 
 ## Add a plugin
@@ -25,5 +24,5 @@ markdown, python, yaml, toml, lean4.
 4. `plugins/<name>-lsp/aeon/README.md` with install + upgrade recipe.
 5. Enable: `enabledPlugins` (`settings.json`) + record in
    `installed_plugins.json`.
-6. Upkeep in `~/agents/container/aeon/upgrade` (pinned binary) or lsp-node (Node).
+6. Upkeep in `~/agents/container/aeon/upgrade` (pinned binary).
 7. Smoke-test the `initialize` handshake.

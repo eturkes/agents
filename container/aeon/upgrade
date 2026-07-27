@@ -30,12 +30,12 @@ PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 # the wait and skip pruning in that case rather than hanging the whole run.
 timeout 30 uv cache prune || echo "uv cache in use (resident uvx tool); prune skipped"
 
-# --- Node: Corepack, pnpm globals, and lsp-node ---
+# --- Node: Corepack and pnpm globals ---
 # pnpm is Corepack-managed; stay on latest v10 while this container uses Node 20.
 corepack install -g pnpm@latest-10
 
 # npm is required by Serena's LSP installer, which shells out to `npm install`.
-# It lives as a pnpm global rather than in lsp-node, so upgrade it explicitly.
+# It lives as a pnpm global, so upgrade it explicitly.
 pnpm add -g npm@latest
 
 # ChromiumFish auto-upgrade/fetch is disabled until its Linux release cache is
@@ -50,12 +50,7 @@ pnpm add -g npm@latest
 # pnpm add -g chromiumfish@latest playwright-core@latest
 # chromiumfish fetch
 
-# Keep the lsp-node workspace healthy across pnpm store major-version changes,
-# then take dependency updates intentionally for it (turtle-language-server).
-CI=true pnpm -C ~/.local/share/lsp-node install
-CI=true pnpm -C ~/.local/share/lsp-node update --latest
-
-# Drop unreachable package-store files after global and lsp-node updates.
+# Drop unreachable package-store files after global updates.
 pnpm store prune
 
 # --- Lean: elan and stable toolchain ---
@@ -106,14 +101,10 @@ moon update
 swipl -q -g 'use_module(library(prolog_pack)), Pinned = [lsp_server], findall(P, (pack_property(P, version(_)), \+ memberchk(P, Pinned)), Ps), forall(member(P, Ps), catch(pack_install(P, [upgrade(true), interactive(false)]), E, print_message(warning, E))), halt' -t 'halt(1)'
 
 # --- Pinned LSP binaries: manual upgrades only ---
-# lemminx, alloy.jar, dolmen-lsp, egglog-lsp, prolog-lsp, and souffle-lsp are
-# pinned manual installs; upgrade each on purpose via its recipe in
-# ~/agents/claude/marketplace/plugins/*/aeon/README.md. dolmen-lsp is a standalone
-# copied binary; its opam toolchain is installed only for a rebuild and removed
-# again afterwards (no resident opam to upgrade here). prolog-lsp is pinned to
-# lsp_server 3.16.3 deliberately: 3.17.0 regressed initialize for utf-16 clients
-# (see its README); re-check upstream before bumping. souffle-lsp is rebuilt
-# from source via gradlew.
+# lemminx and prolog-lsp are pinned manual installs; upgrade each on purpose via
+# its recipe in ~/agents/claude/marketplace/plugins/*/aeon/README.md. prolog-lsp
+# is pinned to lsp_server 3.16.3 deliberately: 3.17.0 regressed initialize for
+# utf-16 clients (see its README); re-check upstream before bumping.
 
 # --- Codex CLI ---
 # Use Codex's own updater for the CLI.

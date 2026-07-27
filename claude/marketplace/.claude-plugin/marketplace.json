@@ -28,79 +28,6 @@
       }
     },
     {
-      "name": "alloy-lsp",
-      "description": "Alloy 6 LSP via the `lsp` subcommand of org.alloytools.alloy.dist.jar",
-      "version": "1.0.0",
-      "source": "./plugins/alloy-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "alloy": {
-          "command": "alloy-lsp",
-          "extensionToLanguage": {
-            ".als": "alloy"
-          }
-        }
-      }
-    },
-    {
-      "name": "dolmen-lsp",
-      "description": "Dolmen LSP for SMT-LIB, TPTP, DIMACS, Zipperposition",
-      "version": "1.0.0",
-      "source": "./plugins/dolmen-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "dolmenls": {
-          "command": "dolmen-lsp",
-          "extensionToLanguage": {
-            ".smt2": "smtlib",
-            ".cnf": "dimacs",
-            ".icnf": "dimacs",
-            ".p": "tptp",
-            ".tptp": "tptp",
-            ".zf": "zf"
-          }
-        }
-      }
-    },
-    {
-      "name": "egglog-lsp",
-      "description": "egglog LSP via hatoo/egglog-language-server",
-      "version": "1.0.0",
-      "source": "./plugins/egglog-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "egglog": {
-          "command": "egglog-lsp",
-          "extensionToLanguage": {
-            ".egg": "egglog"
-          }
-        }
-      }
-    },
-    {
-      "name": "turtle-lsp",
-      "description": "Turtle/RDF LSP via Stardog turtle-language-server",
-      "version": "1.0.0",
-      "source": "./plugins/turtle-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "turtle": {
-          "command": "turtle-language-server",
-          "args": [
-            "--stdio"
-          ],
-          "extensionToLanguage": {
-            ".ttl": "turtle",
-            ".nt": "turtle"
-          }
-        }
-      }
-    },
-    {
       "name": "prolog-lsp",
       "description": "SWI-Prolog LSP via the lsp_server pack (jamesnvc/lsp_server), pinned to v3.16.3",
       "version": "1.0.0",
@@ -113,22 +40,6 @@
           "extensionToLanguage": {
             ".pl": "prolog",
             ".pro": "prolog"
-          }
-        }
-      }
-    },
-    {
-      "name": "souffle-lsp",
-      "description": "Souffle Datalog LSP via jdaridis/souffle-lsp-plugin",
-      "version": "1.0.0",
-      "source": "./plugins/souffle-lsp",
-      "category": "development",
-      "strict": false,
-      "lspServers": {
-        "souffle": {
-          "command": "souffle-lsp",
-          "extensionToLanguage": {
-            ".dl": "souffle"
           }
         }
       }

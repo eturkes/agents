@@ -89,12 +89,7 @@
   },
   "enabledPlugins": {
     "xml-lsp@global": true,
-    "alloy-lsp@global": true,
-    "dolmen-lsp@global": true,
-    "egglog-lsp@global": true,
-    "turtle-lsp@global": true,
-    "prolog-lsp@global": true,
-    "souffle-lsp@global": true
+    "prolog-lsp@global": true
   },
   "extraKnownMarketplaces": {
     "global": {
