@@ -1,6 +1,7 @@
 # Environment
 
 - CachyOS (Arch) workstation, bare metal — no container/Distrobox layer; you + all sessions/subagents = sole user, running as `eturkes` with passwordless sudo, full r/w, network. LSP; REPLs via `~/.local/bin/bgcmd`.
+- Desktop/computer use: a full X11 session is live, with a wide range of already-authenticated GUI apps available.
 - Single filesystem tree, one abs path per project (no host/container split) → uv venvs bake one path; project-local `.venv` is the only layer, so `UV_PROJECT_ENVIRONMENT` stays unset and no `.envrc`/direnv layer selection is needed.
 - Resolve user-supplied paths before the first absolute-path call: expand `~` from the active `$HOME` (`/home/eturkes`) and use `readlink -f` when the path exists; derive any home path from that resolved output.
 - `python` = `/usr/bin/python` (Arch ships the shim, unlike the container profile); system Python is EXTERNALLY-MANAGED (PEP 668) → `pip install` into it is refused by design. Install with pacman/paru (`python-<pkg>`), `uv tool install` for CLIs, or `uv run python` / a venv inside a project.
