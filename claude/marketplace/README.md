@@ -22,8 +22,8 @@ markdown, python, yaml, toml, lean4.
 2. Install the server on PATH; record the command in the plugin README.
 3. `lspServers` entry (command + `extensionToLanguage`) in
    `.claude-plugin/marketplace.json`.
-4. `plugins/<name>-lsp/README.md` with install + upgrade recipe.
+4. `plugins/<name>-lsp/aeon/README.md` with install + upgrade recipe.
 5. Enable: `enabledPlugins` (`settings.json`) + record in
    `installed_plugins.json`.
-6. Upkeep in `~/agents/container/upgrade` (pinned binary) or lsp-node (Node).
+6. Upkeep in `~/agents/container/aeon/upgrade` (pinned binary) or lsp-node (Node).
 7. Smoke-test the `initialize` handshake.
