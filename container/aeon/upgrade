@@ -92,19 +92,25 @@ moon update
 # The interpreter and its built-in `pack` package manager (library(prolog_pack))
 # ship in Debian's swi-prolog-* apt packages, upgraded out of band with the rest
 # of apt (done manually), so this script only refreshes globally installed packs.
-# Upgrade every installed pack except lsp_server, which is pinned to 3.16.3 on
-# purpose (see the Pinned LSP binaries note below and prolog-lsp's README: 3.17.0
-# still regresses initialize for utf-16 clients like Claude Code -- re-verified
-# 2026-07-13). The pack list is computed at runtime, so packs added later are
-# upgraded automatically while the pin holds; the per-pack catch keeps one failing
-# upgrade from aborting the run.
+# Upgrade every installed pack except lsp_server, which upgrade-servers owns (it
+# tracks the default branch and gates on an LSP handshake; upstream's newest TAG
+# still regresses initialize for utf-16 clients, so a plain pack upgrade here
+# would resolve backwards into the broken release). The pack list is computed at
+# runtime, so packs added later are upgraded automatically; the per-pack catch
+# keeps one failing upgrade from aborting the run.
 swipl -q -g 'use_module(library(prolog_pack)), Pinned = [lsp_server], findall(P, (pack_property(P, version(_)), \+ memberchk(P, Pinned)), Ps), forall(member(P, Ps), catch(pack_install(P, [upgrade(true), interactive(false)]), E, print_message(warning, E))), halt' -t 'halt(1)'
 
-# --- Pinned LSP binaries: manual upgrades only ---
-# lemminx and prolog-lsp are pinned manual installs; upgrade each on purpose via
-# its recipe in ~/agents/claude/marketplace/plugins/*/aeon/README.md. prolog-lsp
-# is pinned to lsp_server 3.16.3 deliberately: 3.17.0 regressed initialize for
-# utf-16 clients (see its README); re-check upstream before bumping.
+# --- Marketplace LSP servers ---
+# lemminx and prolog-lsp have no package manager behind them, so they move only
+# here. Each is taken to its latest upstream release, verified with a real LSP
+# handshake, and rolled back if that fails -- upstream has shipped a release that
+# broke Claude Code before, so latest is taken on evidence rather than faith.
+# No version numbers are recorded anywhere: that is what drifted before.
+# `|| true` because a rolled-back upgrade (exit 1) or an upstream outage (exit 2)
+# must not abort the rest of the run.
+if [[ -x "$HOME/agents/claude/marketplace/upgrade-servers" ]]; then
+  "$HOME/agents/claude/marketplace/upgrade-servers" || true
+fi
 
 # --- Codex CLI ---
 # Use Codex's own updater for the CLI.

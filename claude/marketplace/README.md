@@ -6,7 +6,7 @@ marketplace; install each server on `PATH` per its README.
 
 ## Scope
 
-Serena (Headroom's user-scope MCP) = primary global LSP: ~70 languages via
+Serena (user-scope MCP) = primary global LSP: ~70 languages via
 `solidlsp`, servers installed on first use. This marketplace = confirmed
 `solidlsp` gaps.
 
@@ -24,6 +24,31 @@ lean4.
    entry above is shared.
 5. Enable: `enabledPlugins` (`settings.json`) + record in
    `installed_plugins.json`.
-6. Upkeep: aeon → `~/agents/container/aeon/upgrade` (pinned binary); cachyos →
-   repo/AUR via `paru -Syu`; plugin README → manual jars/pins.
-7. Smoke-test the `initialize` handshake.
+6. Add the server to `upgrade-servers`: how to resolve its latest version, how
+   to install it, and what a good `initialize` response looks like.
+7. Upkeep is then automatic — aeon → `~/agents/container/aeon/upgrade`; cachyos
+   → `~/Projects/agents/host/cachyos/upgrade`. Both call `upgrade-servers`.
+
+## Upgrades
+
+No versions are recorded anywhere in this tree. `./upgrade-servers` resolves
+each server's current release from upstream at run time, installs it, and
+verifies it — hand-maintained version numbers are what drifted before.
+
+Taking latest is safe only because of the verification: upstream has shipped a
+release that broke Claude Code (lsp_server v3.17.0 crashed `initialize` for
+utf-16 clients). So every upgrade is staged, handshaked as a real LSP client,
+and **rolled back** if that fails; a server goes live only after answering
+correctly. Installed versions are tracked in state markers next to each server,
+not in this repo.
+
+Two consequences worth knowing:
+
+- prolog-lsp tracks the **default branch**, not tags, because the fix for that
+  regression is still untagged — "latest release" would resolve backwards into
+  the bug.
+- xml-lsp resolves from the Eclipse Maven repo's `<release>`, not GitHub
+  releases, which report an ancient version.
+
+Exit codes: 0 current/upgraded, 1 an upgrade failed and was rolled back,
+2 a check could not complete.

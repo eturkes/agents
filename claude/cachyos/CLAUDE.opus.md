@@ -8,7 +8,7 @@
 - Authenticated web: for research/retrieval, assume BrowserOS MCP (`http://127.0.0.1:9000/mcp`) can access anything available in my signed-in day-to-day browser, including university access to most peer-reviewed journals. `chromiumfish` = isolated visual QA. Any remaining paywall/auth/human gate → ask me immediately, then continue.
 - Keep `$HOME` clean: pkg-manager cleanup post-install (`paru -Sc` cache, `pacman -Qtdq` orphans → `pacman -Rns`); clear stale dirs + dangling symlinks.
 - Headless capture: use `$(chromiumfish path) --headless`. Screenshots: `--screenshot=<path>`; full-page: `--print-to-pdf=<path> --no-pdf-header-footer`. URL fragments render blank here. `--force-dark-mode` leaves `prefers-color-scheme` unchanged. SwANGLE/Vulkan `EGL` initialization errors plus `Exiting GPU process` are benign when the command succeeds and produces real output.
-- `grep` = CC shell-fn shadow → tweakcc `rg-fff` (**RE2**, relevance-ranked, fuzzy-fallback; see `# fff`), distinct from raw `ugrep -G`; `find` = CC shell-fn shadow → embedded `bfs`, and the RTK hook rewrites it → `rtk find`. `rg`=`/usr/bin/rg` (unshadowed). System `grep` binary = GNU grep, Arch-patched (`--version` says `-modified`; BRE). Byte-exact/clean → `command grep` | `/usr/bin/rg` | `rtk proxy grep`.
+- `grep` = CC shell-fn shadow → `rg-fff` (**RE2**, relevance-ranked, fuzzy-fallback; see `# fff`), distinct from raw `ugrep -G`; `find` = CC shell-fn shadow, rewritten by the RTK hook → `rtk find`. `rg`=`/usr/bin/rg` (unshadowed). System `grep` binary = GNU grep (BRE). Byte-exact/clean → `command grep` | `/usr/bin/rg` | `rtk proxy grep`.
 - `pgrep -f`/`pkill -f` can self-match their `bash -c 'eval …'` wrapper → use one bracketed pattern (`index[.]js`) + `|| echo none` per command; separate kill/relaunch calls. CC's `pkill` guard blocks CLI-matching patterns.
 - `bgcmd` = filesystem REPL, objects persist across separate Bash calls: `export BGCMDDIR=<dir> BGCMDPROMPT='>>> '` (re-export each call) → `bgcmd START <interp> -i -q` → `bgcmd '<oneliner>'` → `bgcmd 'exit()'; rm -rf "$BGCMDDIR"`.
 - Session-scratchpad writes via Bash heredoc (`V=<scratchpad> && mkdir -p "$V" && cat > "$V/f" <<'EOF'`) can be permission-DENIED despite the scratchpad's no-prompt design (harness-level, heredoc/compound shape suspected) → prefer fileless construction (inline data as program args) or the Write tool.
@@ -30,7 +30,7 @@
 - `API Error: <ConnectionTerminated error_code:0 …>` = transient HTTP/2 GOAWAY mid-stream through Headroom; context survives → `git status`, resume.
 - Context occupancy = latest assistant `usage` sum (`input_tokens` + cache create/read + `output_tokens`), the authoritative window cost. It exceeds on-disk transcript size because redacted reasoning remains billed cache + fixed system/tools/CLAUDE overhead; window counts input+output. CLAUDE markers may appear ~2× at session/compaction boundaries, then disappear from `.jsonl`; high usage remains real. Inspect `jq .message.usage ~/.claude/projects/<proj>/<sid>.jsonl`. Effort changes the usage/stored ratio → remeasure.
 
-## RTK (Rust Token Killer)
+## RTK
 
 CLI proxy auto-applied by the Claude Code hook (`git status` → `rtk git status`, 0-token). Hook rewrites `git status/log/diff/show`, `find`, `ls`, `curl`, `cargo test`, `head`/`tail`→`rtk read` (perm-denied → use `Read`); it passes `grep`/`rg`/`sed`/`awk`/`env`/`diff`/`jq`/`sudo` through untouched. Compresses when it has a filter, else passes through. Search = bash `grep`/`rg`. `rtk proxy <cmd>` = raw passthrough → for exact bytes.
 
@@ -49,20 +49,20 @@ CLI proxy auto-applied by the Claude Code hook (`git status` → `rtk git status
 - Filtered `git status` can falsely print `Clean working tree` and return 0 when `-C` names a missing path. Repository/path gates must first test `[ -d "$repo" ]`, then use `rtk proxy git -C "$repo" rev-parse --is-inside-work-tree` and raw status as the sole existence proof.
 - Shell result integrity: capture each exit code immediately (`cmd; rc=$?`) before any `printf`, command substitution, or next command, and label the result; every command overwrites `$?`.
 
-## fff search (tweakcc `rg-fff` — shadows `grep`)
+## fff search (`rg-fff` — shadows `grep`)
 
-CC maps `grep`→`rg-fff` (argv0 ugrep): default fff RE2, relevance-ranked + marked. Serving requires repo cwd; other contexts defer to ugrep. `rg`=`/usr/bin/rg` (pacman `ripgrep`). Per-repo daemon auto-spawns (~30m idle). Fresh writes can lag its index → use `command grep` or re-query. RTK passes `grep`; rewrites `find`→`rtk find`.
+CC maps `grep`→`rg-fff`: default fff RE2, relevance-ranked + marked. Serving requires repo cwd; other contexts defer to ugrep. `rg`=`/usr/bin/rg`. Per-repo daemon auto-spawns. Fresh writes can lag its index → use `command grep` or re-query. RTK passes `grep`; rewrites `find`→`rtk find`.
 
 - **Output ≠ real grep** → RANKED by relevance over file-order, strips leading `./`, inline markers, lines capped 512B. Clean/order-stable/byte-exact/full-line → `command grep` (=GNU grep BRE, `./`, file-order, untruncated) | `/usr/bin/rg` | `rtk proxy grep`.
 - **Zero-match grep ≠ empty (BIG)**: auto fuzzy-fallback → `# rg-fff: 0 EXACT…` hdr + N ` [~approx]` lines on **STDOUT** (survive `2>/dev/null`, flow into pipes/`$()`), shaped like real `path:line:text`. Truth = **exit 1** + `[~approx]`/leading-`#` (lines appear regardless) → piping/capturing a maybe-zero grep MUST filter `[~approx]`/`#` or use `command grep`. Off: `RG_FFF_NO_FUZZY_FALLBACK=1`.
 - **`[def]`** trailing tag = likely definition; rank treats it like any other line (junk/long lines outrank — observed def landing last) → trust the tag over position; "read top hit first" misleads here.
 - **>512B line** → served truncated + ` [...rg-fff: line truncated at ~512B; Read the file for the full line]` (`-c` counts it once); non-UTF-8 (U+FFFD) long line defers instead → Read file for full line.
 - **Served**: literals incl. phrases w/ space/`:`/quote (regex-escaped), RE2 regex (`\b \d \w + * ( ) | {} ?`, empty-capable `x?` OK), `-i`, `-A/-B/-C N`, `-l`, `-c`, `--include=*.ext`, reldirs + `.`. **Serve requirement: add `-r`/`-R` to every fff query.** Verify via `RG_FFF_LOG=<path>` (`served-daemon`/`served-cold`); a missing flag yields `fallback-ineligible` + deferred BRE, where RE2 syntax can silently misfire (`grep -c 'a|b' <dir>` = 0, exit 1).
-- **DEFERS → embedded ugrep -G = BRE** (clean, file-order, no markers): missing `-r`/`-R` (ALL queries — the most common cause by far), non-repo cwd (ALL queries), stdin/pipe (`…|grep` ALWAYS, ~52% of greps), single-file arg, `-o`, `-P`/PCRE, regex matching newline (`\s`/negated class), non-ASCII pat, `--no-ignore`/`--include-dir`, abs path, glob ≠ `*.ext`. **Deferred regex = BRE** → RE2/ERE syntax misfires (piped `foo|bar` → matches literal "foo|bar").
+- **DEFERS → embedded ugrep -G = BRE** (clean, file-order, no markers): missing `-r`/`-R` (ALL queries — the most common cause by far), non-repo cwd (ALL queries), stdin/pipe (`…|grep` ALWAYS), single-file arg, `-o`, `-P`/PCRE, regex matching newline (`\s`/negated class), non-ASCII pat, `--no-ignore`/`--include-dir`, abs path, glob ≠ `*.ext`. **Deferred regex = BRE** → RE2/ERE syntax misfires (piped `foo|bar` → matches literal "foo|bar").
 - **Dialect when SERVED = RE2** → bare `|`=alt, `+ * ?`=quant, `()`=group, `\d \w \b` classes; `\|` `\+` = LITERAL. Old BRE `\|`=alt / `\+`=1+ advice now valid ONLY for `command grep` / deferred path.
 - Knobs: `RG_FFF_FIRST=0` = regex→byte-equiv BRE-mirror (literals STAY fff-ranked+marked); `RG_FFF_LOG=<path>` per-call decision log (`served-daemon`/`fallback-*`); `RG_FFF_DEBUG=1` serve/defer reason on stderr.
 
-## tokensave (Headroom-vendored code-graph MCP)
+## tokensave (code-graph MCP)
 
 Headroom's primary code-context compressor (Serena backup): 34-lang semantic graph → token-efficient code-nav. Start "understand/navigate code" with tokensave; each call prompts by design.
 

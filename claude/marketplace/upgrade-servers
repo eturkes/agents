@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Upgrade the user-global marketplace LSP servers to their latest upstream
+# release, verifying each one before it goes live.
+#
+# These servers have no package manager behind them -- one is a hand-fetched jar,
+# the other a SWI-Prolog pack -- so without this they only move when someone
+# edits a version number by hand. That is what drifted before: a pin outlived its
+# reason and nothing noticed. So no version numbers are recorded here. Each
+# server's current release is resolved from upstream at run time and installed.
+#
+# The reason it is safe to always take latest is the smoke test. Upstream HAS
+# shipped a release that breaks Claude Code (lsp_server v3.17.0 crashed
+# `initialize` for utf-16 clients), so "latest" alone is not a safety property --
+# every upgrade here is staged, handshaked as a real LSP client, and rolled back
+# on failure. A server only goes live if it answered correctly.
+#
+# Exit codes: 0 = every server current or upgraded, 1 = an upgrade failed and was
+# rolled back (previous version still live), 2 = a check could not complete
+# (network/tooling). Callers under `set -e` should use `|| true`.
+
+status=0
+
+info()   { printf '  %s\n' "$*"; }
+ok()     { printf '  ok: %s\n' "$*"; }
+fail()   { printf '  FAIL: %s\n' "$*" >&2; status=1; }
+skip()   { printf '  -- %s\n' "$*" >&2; [[ $status -eq 0 ]] && status=2; return 0; }
+
+for tool in curl java git swipl; do
+  command -v "$tool" >/dev/null 2>&1 || missing+=" $tool"
+done
+if [[ -n "${missing:-}" ]]; then
+  echo "upgrade-servers: missing required tools:$missing" >&2
+  echo "install them, or run the per-plugin README recipe by hand" >&2
+  exit 2
+fi
+
+# Speak one LSP `initialize` over stdio and confirm the server answers with a
+# capabilities result. This is the gate that lets us track latest: it is a real
+# client handshake, not a --version check, so it catches exactly the class of
+# regression that made the old pin necessary. Args: <cmd> [expected-substring]
+lsp_handshake() {
+  local cmd=$1 want=${2:-'"capabilities"'} req out
+  req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{"general":{"positionEncodings":["utf-16"]}}}}'
+  out=$(printf 'Content-Length: %d\r\n\r\n%s' "${#req}" "$req" | timeout 60 "$cmd" 2>/dev/null) || true
+  case "$out" in
+    *"$want"*) return 0 ;;
+    *) printf '%s\n' "    handshake output: ${out:0:200}" >&2; return 1 ;;
+  esac
+}
+
+# --- xml-lsp: Eclipse LemMinX ---
+# Version truth is the Eclipse Maven repo's <release>, NOT GitHub releases: that
+# project's releases/latest reports 0.11.0, an ancient entry that would pin us
+# years behind forever. Upgrade = swap the jar, so rollback is a file move.
+echo "xml-lsp (Eclipse LemMinX)"
+lemminx_meta="https://repo.eclipse.org/content/repositories/lemminx-releases/org/eclipse/lemminx/org.eclipse.lemminx/maven-metadata.xml"
+lemminx_jar="$HOME/.local/share/lemminx/lemminx.jar"
+if ! meta=$(curl -fsSL --max-time 30 "$lemminx_meta"); then
+  skip "maven-metadata fetch failed; keeping current jar"
+else
+  latest=$(printf '%s' "$meta" | grep -o '<release>[^<]*</release>' | sed -e 's/<[^>]*>//g')
+  if [[ -z "$latest" ]]; then
+    skip "could not read <release>; keeping current jar"
+  else
+    # No local version marker exists (the jar does not report one usefully), so
+    # record what we installed alongside it and compare against that.
+    stamp="${lemminx_jar%.jar}.version"
+    current=$(cat "$stamp" 2>/dev/null || echo "none")
+    if [[ "$current" == "$latest" && -f "$lemminx_jar" ]]; then
+      ok "already at $latest"
+    else
+      info "upgrading ${current} -> ${latest}"
+      mkdir -p "$(dirname "$lemminx_jar")"
+      tmp=$(mktemp)
+      url="https://repo.eclipse.org/content/repositories/lemminx-releases/org/eclipse/lemminx/org.eclipse.lemminx/$latest/org.eclipse.lemminx-$latest-uber.jar"
+      if ! curl -fsSL --max-time 300 -o "$tmp" "$url"; then
+        rm -f "$tmp"
+        skip "download failed; keeping current jar"
+      else
+        backup="${lemminx_jar}.prev"
+        [[ -f "$lemminx_jar" ]] && cp -p "$lemminx_jar" "$backup"
+        mv "$tmp" "$lemminx_jar"
+        if lsp_handshake "$HOME/.local/bin/lemminx"; then
+          printf '%s\n' "$latest" > "$stamp"
+          rm -f "$backup"
+          ok "upgraded to $latest (handshake verified)"
+        elif [[ -f "$backup" ]]; then
+          mv "$backup" "$lemminx_jar"
+          fail "$latest failed its handshake; rolled back to $current"
+        else
+          rm -f "$lemminx_jar"
+          fail "$latest failed its handshake; removed (no previous version)"
+        fi
+      fi
+    fi
+  fi
+fi
+
+# --- prolog-lsp: jamesnvc/lsp_server ---
+# Tracks the default branch rather than a tag on purpose. Upstream's newest tag
+# (v3.17.0) is the release that broke utf-16 `initialize`; the fix landed on
+# master and was never tagged, so "latest release" resolves BACKWARDS into the
+# bug while master is correct. The handshake below is what makes that safe -- if
+# master ever regresses, the upgrade is rejected and the working pack stays.
+#
+# Install is from a local checkout because swipl's resolver does not honour
+# commit()/branch selection through a git URL (verified on swipl 10.0.2): a git
+# URL errors with "pack `lsp_server' does not exist" and a bare pack name pulls
+# the broken tag. A file:// install sidesteps the resolver entirely.
+echo "prolog-lsp (jamesnvc/lsp_server)"
+pack_dir="$HOME/.local/share/swi-prolog/pack/lsp_server"
+if ! head_sha=$(curl -fsSL --max-time 30 "https://api.github.com/repos/jamesnvc/lsp_server/commits/HEAD" | sed -n 's/^  "sha": "\(.*\)",$/\1/p' | head -1); then
+  skip "upstream HEAD lookup failed; keeping current pack"
+elif [[ -z "$head_sha" ]]; then
+  skip "could not parse upstream HEAD; keeping current pack"
+else
+  stamp="$pack_dir/.installed-commit"
+  current=$(cat "$stamp" 2>/dev/null || echo "none")
+  if [[ "$current" == "$head_sha" && -d "$pack_dir" ]]; then
+    ok "already at ${head_sha:0:8}"
+  else
+    info "upgrading ${current:0:8} -> ${head_sha:0:8}"
+    src=$(mktemp -d)
+    if ! git clone -q --depth 1 https://github.com/jamesnvc/lsp_server.git "$src" 2>/dev/null; then
+      rm -rf "$src"
+      skip "clone failed; keeping current pack"
+    else
+      backup=""
+      if [[ -d "$pack_dir" ]]; then
+        backup="${pack_dir}.prev"
+        rm -rf "$backup"
+        cp -a "$pack_dir" "$backup"
+      fi
+      # pack_install refuses to overwrite, so remove first. Failure is tolerated:
+      # a missing pack is exactly the state install expects.
+      swipl -q -g "use_module(library(prolog_pack)), catch(pack_remove(lsp_server,[interactive(false),dependencies(false)]),_,true)" -t halt >/dev/null 2>&1 || true
+      if swipl -q -g "use_module(library(prolog_pack)), pack_install('file://$src',[interactive(false),test(false),register(false)])" -t halt >/dev/null 2>&1 \
+         && lsp_handshake "$HOME/.local/bin/prolog-lsp" '"positionEncoding":"utf-16"'; then
+        printf '%s\n' "$head_sha" > "$stamp"
+        rm -rf "$backup"
+        ok "upgraded to ${head_sha:0:8} (utf-16 handshake verified)"
+      elif [[ -n "$backup" ]]; then
+        rm -rf "$pack_dir"
+        mv "$backup" "$pack_dir"
+        fail "${head_sha:0:8} failed its handshake; rolled back to ${current:0:8}"
+      else
+        fail "${head_sha:0:8} failed to install (no previous version to restore)"
+      fi
+      rm -rf "$src"
+    fi
+  fi
+fi
+
+echo
+case $status in
+  0) echo "upgrade-servers: all servers current" ;;
+  1) echo "upgrade-servers: an upgrade failed and was rolled back (see FAIL above)" >&2 ;;
+  2) echo "upgrade-servers: some checks did not complete (see -- above)" >&2 ;;
+esac
+exit "$status"

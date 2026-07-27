@@ -2,11 +2,17 @@
 
 Eclipse LemMinX XML LSP: DMN, BPMN, SHACL-XML, XSD.
 
-Install / upgrade:
-1. `sudo apt-get install -y openjdk-21-jre-headless`
-2. Install pinned uber jar:
-   `curl -sSL -o ~/.local/share/lemminx/lemminx.jar https://repo.eclipse.org/content/repositories/lemminx-releases/org/eclipse/lemminx/org.eclipse.lemminx/0.31.1/org.eclipse.lemminx-0.31.1-uber.jar`
-3. Add `~/.local/bin/lemminx`:
-   `java -jar ~/.local/share/lemminx/lemminx.jar "$@"`.
+Tracks latest. `../../../upgrade-servers` resolves the current release from the
+Eclipse Maven repo, swaps the jar, verifies an LSP handshake, and rolls back on
+failure. It runs from `container/aeon/upgrade`, so there is nothing to do by
+hand and no version recorded here.
 
-Last verified: LemMinX 0.31.1 on Debian 13 trixie.
+Prerequisites:
+1. `sudo apt-get install -y openjdk-21-jre-headless`
+2. `~/.local/bin/lemminx`: `java -jar ~/.local/share/lemminx/lemminx.jar "$@"`.
+
+Version truth is the Maven repo's `maven-metadata.xml` `<release>`, NOT GitHub
+releases: that project's `releases/latest` reports 0.11.0, an ancient entry that
+would hold upgrades back indefinitely.
+
+Status: verified here.

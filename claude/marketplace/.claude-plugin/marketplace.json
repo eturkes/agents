@@ -29,7 +29,7 @@
     },
     {
       "name": "prolog-lsp",
-      "description": "SWI-Prolog LSP via the lsp_server pack (jamesnvc/lsp_server), pinned to v3.16.3",
+      "description": "SWI-Prolog LSP via the lsp_server pack (jamesnvc/lsp_server), tracking the default branch",
       "version": "1.0.0",
       "source": "./plugins/prolog-lsp",
       "category": "development",

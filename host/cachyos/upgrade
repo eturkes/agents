@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Upgrade run for this CachyOS workstation, the host counterpart to
+# container/aeon/upgrade.
+#
+# The two machines need very different scripts. Aeon is a Debian container where
+# every toolchain was installed by its own installer, so its script drives a long
+# list of self-updaters (rustup, uv, corepack, elan, moon, ...). Here almost
+# everything is a pacman/AUR package -- rust, uv, pnpm, node, npm, rtk, ripgrep,
+# headroom, cli-proxy-api and codex are all repo-owned -- so `paru -Syu` IS the
+# toolchain upgrade, and running those installers' self-updaters on top would
+# fight the package manager over the same files. What remains is the handful of
+# things pacman does not own; this script covers exactly those, then checks the
+# pins nothing upgrades automatically.
+#
+# Run it deliberately, not on a timer: a full -Syu on Arch is a rolling upgrade
+# that can want intervention (.pacnew files, keyring bumps, manual pacman -Sy
+# fallout). Anything requiring judgement is left to you and merely reported.
+
+repo_root="$HOME/Projects/agents"
+
+echo "=== System packages (pacman/AUR) ==="
+# paru covers repo + AUR in one pass. This is the upgrade path for nearly every
+# tool on this box, so it runs first: later steps assume current binaries.
+paru -Syu
+
+echo
+echo "=== tokensave ==="
+# The one agent tool NOT under pacman -- it lives in ~/.local/bin and ships its
+# own GitHub-release updater. `upgrade` is a no-op when already current.
+if command -v tokensave >/dev/null 2>&1; then
+  tokensave upgrade
+else
+  echo "tokensave not installed; skipping"
+fi
+
+echo
+echo "=== chromiumfish ==="
+# A pnpm workspace under ~/.local/share/chromiumfish, deliberately NOT upgraded
+# automatically: bumping it re-pins the bundled browser version, and the aeon
+# profile records a release whose Linux cache unpacked without
+# chrome_crashpad_handler while the fetcher accepted it anyway. A silently broken
+# browser would take visual QA down with it, so this reports and leaves it.
+#   pnpm -C ~/.local/share/chromiumfish update --latest && chromiumfish fetch
+# After bumping, verify a real capture still works before relying on it.
+if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
+  echo "manual by design; upgrade + verify a capture before relying on it:"
+  echo "  pnpm -C ~/.local/share/chromiumfish update --latest && chromiumfish fetch"
+else
+  echo "chromiumfish workspace not present; skipping"
+fi
+
+echo
+echo "=== Docs mirror ==="
+# Delegates rather than duplicates: update-docs owns the fetch and documents why
+# only agentlanguages.dev is mirrored (scopedcommits.com publishes no llms.txt,
+# so its tracked copy is an original that a fetch would overwrite with a 404).
+if [[ -x "$repo_root/host/cachyos/update-docs" ]]; then
+  "$repo_root/host/cachyos/update-docs"
+else
+  echo "update-docs not found at $repo_root/host/cachyos/update-docs; skipping"
+fi
+
+echo
+echo "=== Marketplace LSP servers ==="
+# Nothing above touches these: no package manager owns a hand-fetched jar or a
+# SWI-Prolog pack, so they only move here. Each is taken to its latest upstream
+# release, verified with a real LSP handshake, and rolled back if that fails --
+# upstream has shipped a release that broke Claude Code before, so latest is
+# taken on evidence rather than on faith.
+# `|| true` because a rolled-back upgrade (exit 1) or an upstream outage (exit 2)
+# must not fail the whole run: the previous working server is still in place.
+if [[ -x "$repo_root/claude/marketplace/upgrade-servers" ]]; then
+  "$repo_root/claude/marketplace/upgrade-servers" || true
+else
+  echo "upgrade-servers not found at $repo_root/claude/marketplace/upgrade-servers; skipping"
+fi
+
+echo
+echo "=== Cleanup ==="
+# Trim the package cache, then REPORT orphans rather than removing them.
+#
+# Auto-removing whatever `pacman -Qtdq` prints is tempting but wrong here: the
+# query means "no longer required by anything", which on a rolling distro also
+# catches packages that merely lost a dependency edge in this upgrade, and it
+# does not distinguish a stale build dep from something load-bearing. On this
+# machine the list currently includes kwin -- removing a window manager
+# unattended, mid-script, would be a genuinely bad afternoon. Removal is also
+# not reversible in one step (-Rns takes configs with it). So: print the list,
+# let a human read it, and remove on purpose.
+paru -Sc --noconfirm
+if orphans=$(pacman -Qtdq 2>/dev/null) && [[ -n "$orphans" ]]; then
+  count=$(printf '%s\n' "$orphans" | wc -l)
+  echo "$count orphaned package(s) -- review before removing:"
+  printf '%s\n' "$orphans" | sed -e 's/^/  /'
+  echo
+  echo "remove the ones you actually want gone:"
+  echo "  sudo pacman -Rns <pkg>..."
+else
+  echo "no orphaned packages"
+fi
+
+echo
+echo "upgrade: done"
