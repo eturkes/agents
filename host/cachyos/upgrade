@@ -40,7 +40,16 @@ echo "=== tokensave ==="
 # server, hooks and permissions first and only then exits 1 on the blocked
 # rename -- which under `set -e` would abort every step below. So that one
 # failure is tolerated by message, and any other reinstall failure still stops
-# the run. Editing the rules file means unpinning and re-pinning it by hand.
+# the run.
+#
+# To edit that file:
+#   sudo chattr -i ~/.claude/rules/tokensave.md
+#   <edit>
+#   sudo chattr +i ~/.claude/rules/tokensave.md
+# `tokensave doctor` accepts any body containing "tokensave" and never rewrites,
+# so the rewritten wording keeps passing its check. This note lives here rather
+# than in the rules file itself, which is loaded into every session and so pays
+# for its own length; maintenance reads it from the script instead.
 if command -v tokensave >/dev/null 2>&1; then
   tokensave upgrade
   if ! ts_reinstall="$(tokensave reinstall 2>&1)"; then
