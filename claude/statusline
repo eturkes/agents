@@ -26,10 +26,10 @@ acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
 [ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
 w=$((w - 33000))
 now=$(date +%s)  # one clock read, reused for reset-delta + idle
-# Rate-limit suffix; empty without rate_limits (manual mode, or pre-first-response).
+# Rate-limit suffix; present once rate_limits arrives (manual mode + pre-first-response render bare).
 # seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S] => "LABEL N% MM/DD HH:MM".
 #   LABEL+used% (one unit): green >=50, yellow >=75, red >=90.
-#   reset time (never the label): red <=RED_S away, yellow <=YELLOW_S, green <=GREEN_S.
+#   reset time alone (the label keeps its used% color): red <=RED_S away, yellow <=YELLOW_S, green <=GREEN_S.
 #   Defaults red<=1h, yellow<=2h, green=today; 5h => red<=1h, yellow<=2h, green<=3h; 7d => red<=5h, yellow<=10h, green<=15h.
 seg() {
   pct=$(awk -v p="$1" -v l="$3" 'BEGIN{q=int(p+0.5)
@@ -50,7 +50,7 @@ seg() {
 # Code reads 5h/7d usage from GET /api/oauth/usage, but with ANTHROPIC_BASE_URL pointed at the
 # Headroom->CLIProxyAPI chain, CLIProxyAPI 404s that path. Fall back to polling it directly (same
 # endpoint + OAuth token Claude Code itself uses), cached to a file and refreshed by a detached
-# background job so rendering never blocks on the network.
+# background job so rendering stays synchronous with the cache alone.
 if [ -z "$sp$wp" ]; then
   uc="$HOME/.claude/.oauth_usage.json"; lk="$uc.lock"
   ca=$(stat -c %Y "$uc" 2>/dev/null || echo 0)

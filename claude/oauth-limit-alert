@@ -1,9 +1,9 @@
 #!/bin/sh
 # Claude Code PostToolUse hook: alert once per limit-window when 5h or 7d usage hits 100%.
 # Reads the statusline's oauth-usage cache (utilization is a 0-100 %); self-refreshes it in the
-# background when stale (>=180s) so long tool-only runs stay current even if the statusline isn't
-# rendering. Silent below 100%; on a cross it injects a stop-now instruction, self-contained so no
-# counterpart in CLAUDE.md is needed: work resumes on renewed credits, so stopping beats a handoff.
+# background when stale (>=180s) so long tool-only runs stay current on this hook alone, independent
+# of statusline renders. Silent below 100%; on a cross it injects a self-contained stop-now
+# instruction: work resumes on renewed credits, so stopping beats a handoff.
 uc="${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}"
 cred="${OAUTH_CRED_FILE:-$HOME/.claude/.credentials.json}"
 mk="${OAUTH_ALERT_MARK:-$HOME/.claude/.oauth_limit_alerted}"
