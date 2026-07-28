@@ -17,7 +17,6 @@ Roles:
 - MAIN owns acceptance restatement, precondition confirmation, SIZE-CHECK/respec, Agent task definition, diff inspection, decisive gate reruns, context recording + close.
 - MAIN alone creates repository commits; AGENT returns working-tree changes.
 - AGENT owns implementation of the accepted scope, required quality gates, durable-guidance routing, and returns the diff + evidence.
-- Autonomous implementation/review Agents inherit the session permission mode; agent-definition frontmatter overrides it, and configured deny/ask rules stay in force.
 - WORKFLOW LENS = analysis; implementation findings return to MAIN for Agent routing.
 
 PLANNING — split scope into milestones as needed; plan the next milestone.
@@ -42,7 +41,7 @@ Closure signal = the `context-alert` hook, arriving at the ~200K aim + again nea
 MILESTONE-REVIEW — dynamic workflow; exempt from the ~200K aim and may continue across automatic compactions. MAIN creates a coherent checkpoint before compaction and continues afterward.
 - Read every milestone commit, planning commits included.
 - Run analysis-only review lenses for: correctness/spec; cross-unit integration; instruction/memory conformance; token-efficiency/obsolescence. Each finding supplies severity + `file:line` + divergence + impact + acceptance check.
-- MAIN validates + deduplicates findings. Accepted implementation findings become one Agent task per cohesive fix batch under the same permission + MAIN-commit contract, carrying locations + acceptance checks; each Agent returns diff + evidence, and MAIN independently inspects + reruns decisive gates.
+- MAIN validates + deduplicates findings. Accepted implementation findings become one Agent task per cohesive fix batch under the same MAIN-commit contract, carrying locations + acceptance checks; each Agent returns diff + evidence, and MAIN independently inspects + reruns decisive gates.
 - A requirement-changing design reaches the user before any scope-source edit.
 - Close: set the milestone REVIEWED, commit `<scope> (M<m> review): …`. The next session plans the next milestone.
 
