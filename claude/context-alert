@@ -1,12 +1,10 @@
 #!/bin/sh
-# PostToolUse hook → injects ONE wrap-up notice per session once context passes a threshold, replacing
-# self-monitoring via `context.sh` (polling burns context + biases the agent toward premature closure).
-# Reads the same last-assistant-turn usage sum as the gauges; fires once per tier, then stays silent.
+# PostToolUse hook → pushes the closure signal to the agent: ONE wrap-up notice per tier per session,
+# freeing it to work until told. Same last-assistant-turn usage sum as the gauges; silent between tiers.
 #
-# Thresholds track the budget each session actually runs under:
-#   main session  ACW=273000 → warn 220K → auto-compact 240K; notice at 200K = 40K of runway.
+# Tier 1 = 200K (both contexts); tier 2 = each context's own final-warning point:
+#   main session  ACW=273000 → warn 220K → auto-compact 240K; 200K notice = 40K of runway.
 #   subagent      raw 272K − 20K reserve = 252K effective, hard block 249K (compaction-free).
-# Tier 1 = 200K for both; tier 2 = each context's own final-warning point.
 IN=$(cat)
 { read -r tp; read -r at; read -r sid; } <<EOF
 $(printf '%s' "$IN" | jq -r '.transcript_path // "", .agent_type // "", .session_id // ""' 2>/dev/null)
@@ -33,13 +31,13 @@ marker=$state_dir/${sid:-unknown}.$tier
 k=$((u / 1000))
 if [ "$at" = "main" ] || [ -z "$at" ]; then
   case $tier in
-    200)   msg="Context at ${k}K of a 240K auto-compaction budget (~40K left). Hold scope fixed and steer toward closure: finish the current unit, verify it, commit. Ample room remains — wrap up deliberately rather than abruptly." ;;
-    final) msg="Context at ${k}K; auto-compaction fires at 240K (~20K left). Close now: commit finished work and record anything unfinished where the next session will find it." ;;
+    200)   msg="Context ${k}K/240K (~40K left, auto-compaction at 240K). Hold scope fixed and steer toward closure: finish the current unit, verify it, commit. The remaining room is ample — work through closure deliberately." ;;
+    final) msg="Context ${k}K/240K (~20K left). Close now: commit finished work, and record open threads in the roadmap where the next session picks them up." ;;
   esac
 else
   case $tier in
-    200)   msg="Context at ${k}K of a 252K effective window; this agent is compaction-free and hard-stops at 249K (~49K left). Hold scope fixed, finish and verify the current unit, and return your result before the wall." ;;
-    final) msg="Context at ${k}K; hard stop at 249K (~19K left) with no compaction. Return your result now — an overrun loses the work entirely." ;;
+    200)   msg="Context ${k}K/252K (~49K left; compaction-free, hard stop 249K). Hold scope fixed, finish and verify the current unit, and return your result while the room lasts." ;;
+    final) msg="Context ${k}K/252K (~19K left; compaction-free). Return your result now — reaching 249K ends the agent and the work returns empty." ;;
   esac
 fi
 

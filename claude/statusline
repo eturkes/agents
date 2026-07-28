@@ -2,7 +2,7 @@
 # Claude Code context gauge + rate limits.
 # Branch on stdin, NOT env: statusline pipes JSON + sets CLAUDE_CODE_SESSION_ID → env can't tell modes apart. JSON stdin = statusline; TTY/empty = manual (read transcript).
 # Live total_input_tokens includes cache reads/writes but excludes output; sum total_output_tokens to match the transcript fallback.
-# Gauge colors compare TOKENS, holding their meaning at any denominator: green >=120K, yellow >=180K, red >=220K (= the CLI's own context-low warning).
+# Gauge colors compare TOKENS → meaning holds at any denominator: green >=120K, yellow >=180K, red >=220K (= the CLI's own context-low warning).
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u => manual.
@@ -19,9 +19,9 @@ else
   c=0
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=272000
-# Gauge denominator = the AUTO-COMPACTION POINT, the number that actually ends a turn; the raw model window
-# (what the JSON reports, 1M for a `[1m]` id) is no limit worth watching. Budget = min(raw, ACW) from env, since
-# the JSON omits it; compaction then fires a fixed 33K lower (20K output reserve + 13K) → 273K budget = 240K here.
+# Gauge denominator = the AUTO-COMPACTION POINT = the number that ends a turn; the raw model window the JSON
+# reports (1M for a `[1m]` id) stays informational. Budget = min(raw, ACW) from env, since the JSON omits it;
+# compaction fires a fixed 33K lower (20K output reserve + 13K) → 273K budget = 240K here.
 acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
 [ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
 w=$((w - 33000))
