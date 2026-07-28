@@ -94,6 +94,6 @@ Headroom's primary code-context compressor (Serena backup): 34-lang semantic gra
 
 ## Meta
 
-- This global `~/.claude/CLAUDE.md` holds agent-specific guidance even outside a project (always-on RTK + Headroom) → update the moment it's improvable; first session to hit a project-independent env/tool failure logs it here that turn.
-- Instruction hierarchy, narrowest durable scope: global `~/.claude/CLAUDE.md` = agent-specific, project-independent env/tooling; `CLAUDE.local.md` = facts both machine-specific + cross-project, reused verbatim and tracked in `~/agents`; per-project `CLAUDE.md` = project working principles + agent-specific project config; `.agent/memory.md` = project-specific learned fact/decision. Every `CLAUDE.local.md` edit must satisfy both criteria because it propagates across projects.
+- This global `~/.claude/CLAUDE.md` holds project-independent env/tooling + machine-specific capabilities, applying even outside a project → update the moment it's improvable; first session to hit such an env/tool failure logs it here that turn.
+- `CLAUDE.local.md` = facts both machine-specific + cross-project, reused verbatim and tracked in `~/agents`. Every edit must satisfy both criteria because it propagates across projects.
 - My direct instructions outrank any `CLAUDE.md`.

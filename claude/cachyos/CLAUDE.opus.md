@@ -94,6 +94,5 @@ Headroom's primary code-context compressor (Serena backup): 34-lang semantic gra
 ## Meta
 
 - Symlinks (any path): `Read` follows them, `Edit`/`Write` refuse a symlinked FILE ("Refusing to write through symlink") → edit the `readlink -f` target, reach it via a symlinked PARENT DIR (allowed), or write through `Bash`.
-- This global `~/.claude/CLAUDE.md` holds agent-specific guidance even outside a project (always-on RTK + Headroom) → update the moment it's improvable; first session to hit a project-independent env/tool failure logs it here that turn.
-- Instruction hierarchy, narrowest durable scope: global `~/.claude/CLAUDE.md` = agent-specific, project-independent env/tooling + machine preferences; per-project `CLAUDE.md` = project working principles + agent-specific project config; `.agent/memory.md` = project-specific learned fact/decision.
+- This global `~/.claude/CLAUDE.md` holds project-independent env/tooling + machine-specific capabilities, applying even outside a project → update the moment it's improvable; first session to hit such an env/tool failure logs it here that turn.
 - My direct instructions outrank any `CLAUDE.md`.
