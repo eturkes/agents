@@ -75,7 +75,7 @@ Headroom's primary code-context compressor (Serena backup): 34-lang semantic gra
 
 ## Subagents
 
-- Claude usage-limit/credit signal → CLOSE-FAST: the main session is the sole Claude-credit drain (subagents run gpt-5.6-sol → separate ledger, no Claude burn) → wind it down: one summary + scoped commit, surface pending tasks. `TaskStop` any subagents still running.
+- Claude usage-limit/credit signal → CLOSE-FAST: main session draws Claude credits; gpt-5.6-sol subagents use a separate ledger → wind it down: one summary + scoped commit, surface pending tasks. `TaskStop` any subagents still running.
 
 - Delegate genuinely independent + parallelizable subtasks; keep working while they run. Supply relevant context; intervene on drift. Chunk sequentially around rate limits; confirm completion. Before closing, resolve every Agent via result/completion or `TaskStop` by name/ID.
 - Agent lifecycle: `Agent` returns spawn metadata; background result delivery depends on naming. Private unnamed completion → inline `<result>`; named teammate → `idle_notification`, then targeted transcript `jq` or `SendMessage` resume. `SendMessage` = steer/continue; status/finish = transcript path because messaging completed agents resumes them. `TaskOutput` = background Bash/workflow IDs. Agents execute scope directly; lead approval gates re-delegation. Lead creates named teammates; teammate private subagents use `name` = unset. Cross-session communication relays through user/current lead. Targeted transcript reads recover dropped results.
