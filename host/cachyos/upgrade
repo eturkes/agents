@@ -76,16 +76,11 @@ git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only
 
 echo
 echo "=== chromiumfish ==="
-# A pnpm workspace under ~/.local/share/chromiumfish, deliberately NOT upgraded
-# automatically: bumping it re-pins the bundled browser version, and the aeon
-# profile records a release whose Linux cache unpacked without
-# chrome_crashpad_handler while the fetcher accepted it anyway. A silently broken
-# browser would take visual QA down with it, so this reports and leaves it.
-#   pnpm -C ~/.local/share/chromiumfish update --latest && chromiumfish fetch
-# After bumping, verify a real capture still works before relying on it.
+# Upgrade the pnpm workspace and fetch the browser release pinned by the updated
+# chromiumfish package.
 if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
-  echo "manual by design; upgrade + verify a capture before relying on it:"
-  echo "  pnpm -C ~/.local/share/chromiumfish update --latest && chromiumfish fetch"
+  pnpm -C "$HOME/.local/share/chromiumfish" update --latest
+  chromiumfish fetch
 else
   echo "chromiumfish workspace not present; skipping"
 fi
