@@ -36,7 +36,7 @@ WORK-UNIT.
 - Close (implemented unit): record `main=<.agent/context.sh full pct used/240K>` and `impl=<implementing Agent transcript final pct used/240K>` in the roadmap; planning sizes from `impl` and treats `main` as coordination overhead. Set the unit DONE and, once all units are DONE, the milestone IMPLEMENTED; commit `<scope> (M<m>.<u>): …`.
 - Close (respec-only): replacement units remain OPEN/BLOCKED according to their gates; end at the respec commit.
 
-Closure signal = the `context-alert` hook, arriving at the ~200K aim + again at 220K; both contexts bound at 240K. Work until it arrives, then fix scope + close.
+Closure signal = the `context-alert` hook. Work until it arrives, then fix scope + close.
 
 MILESTONE-REVIEW — dynamic workflow; exempt from the ~200K aim and may continue across automatic compactions. MAIN creates a coherent checkpoint before compaction and continues afterward.
 - Read every milestone commit, planning commits included.

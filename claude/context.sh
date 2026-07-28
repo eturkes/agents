@@ -2,7 +2,7 @@
 # Context gauge → "N% used/window" (tokens) from the live Claude Code transcript = headroom.
 # Window = 240K = the auto-compaction point (ACW 273K − 20K output reserve − 13K) = the number that ends a turn,
 # so it denominates the gauge; the raw model window stays informational (`[1m]` id → 1M). CLI warn = 220K = 92%.
-# Subagents share the number and the mechanism: `Xn_` gates on querySource + model/window, never on sidechain.
+# Subagents share the number and the mechanism (ac60afb).
 # Sums the last assistant turn's real API tokens (input+cache_creation+cache_read+output) = that request's
 # occupancy floor for the NEXT turn — the dominant, authoritative headroom signal. It far exceeds the visible
 # conversation: sys-prompt/tools/CLAUDE.md + injected reminders + prior-turn redacted extended-thinking ride in

@@ -3,8 +3,7 @@
 # freeing it to work until told. Same last-assistant-turn usage sum as the gauges; silent between tiers.
 #
 # Tiers, both contexts: 200K notice (40K of runway) → 220K final warning → auto-compaction 240K.
-# ACW=273000 → 240K (− 20K output reserve − 13K). Subagents compact on the same path: the
-# `Xn_` predicate gates on querySource + model/window alone, with no sidechain exclusion.
+# ACW=273000 → 240K (− 20K output reserve − 13K); subagents compact on the same path (ac60afb).
 IN=$(cat)
 { read -r tp; read -r at; read -r sid; } <<EOF
 $(printf '%s' "$IN" | jq -r '.transcript_path // "", .agent_type // "", .session_id // ""' 2>/dev/null)
@@ -31,13 +30,13 @@ marker=$state_dir/${sid:-unknown}.$tier
 k=$((u / 1000))
 if [ "$at" = "main" ] || [ -z "$at" ]; then
   case $tier in
-    200)   msg="Context ${k}K/240K (~40K left, auto-compaction at 240K). Hold scope fixed and steer toward closure: finish the current unit, verify it, commit. The remaining room is ample — work through closure deliberately." ;;
-    final) msg="Context ${k}K/240K (~20K left). Close now: commit finished work, and record open threads in the roadmap where the next session picks them up." ;;
+    200)   msg="Context ${k}K/240K (~40K left). Hold scope fixed and steer toward closure: finish the current unit, verify it, commit. The room is ample — work through closure deliberately." ;;
+    final) msg="Context ${k}K/240K (~20K left). Close now: commit finished work, and record open threads in the roadmap for the next session." ;;
   esac
 else
   case $tier in
     200)   msg="Context ${k}K/240K (~40K left). Hold scope fixed, finish and verify the current unit, and return your result while the room lasts." ;;
-    final) msg="Context ${k}K/240K (~20K left, auto-compaction at 240K). Return your result now: compaction past 240K keeps the agent alive but costs a turn and drops detail." ;;
+    final) msg="Context ${k}K/240K (~20K left). Return your result now: compacting keeps you alive but costs a turn and drops detail." ;;
   esac
 fi
 
