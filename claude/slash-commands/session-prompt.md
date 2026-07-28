@@ -1,6 +1,6 @@
 Continue this project (fresh session). Task present ⇒ execute exactly it; edit the roadmap when the task directs. Task empty ⇒ run MODE for the active milestone (first awaiting DONE/REVIEWED).
 
-Load `.agent/roadmap.md` (ledger + active detail), then `.agent/memory.md` (cross-session/subagent project context); `CLAUDE.md` auto-injects. Read step-implicated files. Navigate via tokensave/LSP where available, else grep.
+Load `.agent/roadmap.md` (ledger + active detail), then `.agent/memory.md`; `CLAUDE.md` auto-injects. Read step-implicated files.
 
 MODE ← active-milestone status (state-changing closes use a scoped commit; an unchanged BLOCKED recheck closes read-only; convention below):
 - UNPLANNED (incl. a still-unsplit future milestone) → PLANNING
@@ -16,7 +16,7 @@ Execution map:
 Roles:
 - MAIN owns acceptance restatement, precondition confirmation, SIZE-CHECK/respec, Agent task definition, diff inspection, decisive gate reruns, context recording + close.
 - MAIN alone creates repository commits; AGENT returns working-tree changes.
-- AGENT owns implementation of the accepted scope, required quality gates, durable guidance routed to its narrowest scope (`.agent/memory.md` = project context; `CLAUDE.md` = generalized principles), and returns the diff + evidence.
+- AGENT owns implementation of the accepted scope, required quality gates, durable-guidance routing, and returns the diff + evidence.
 - Autonomous implementation/review Agents inherit the session permission mode; agent-definition frontmatter overrides it, and configured deny/ask rules stay in force.
 - WORKFLOW LENS = analysis; implementation findings return to MAIN for Agent routing.
 
@@ -32,7 +32,7 @@ WORK-UNIT.
 - MAIN restates the accepted unit scope + acceptance checks in one line.
 - Precondition transition: recheck BLOCKED first. Met ⇒ clear block, set OPEN, continue. Unmet ⇒ retain BLOCKED; materially changed evidence ⇒ update + commit `roadmap (M<m>.<u> block): …`; stable evidence ⇒ read-only close. OPEN + unmet ⇒ set BLOCKED, record condition/evidence, make block commit, close. Accepted evidence traces permitted real inputs.
 - MAIN performs SIZE-CHECK before implementation: score scope + required read cost against one compaction-free Agent context (252K effective, hard block 249K), aiming ~200K with ~49K reserved for variance, verification + closure. A projection that would breach that reserve ⇒ respec-split at a confirmed seam into fresh self-contained units; bank prose decisions + confirmed facts + reading pointers, delete session wip, and commit `roadmap (M<m>.<u> respec): …`. Post-respec score source = the implementing Agent's fresh 252K budget; main-session compaction (240K) governs coordinator closure alone.
-- MAIN dispatches one Agent with accepted scope, locations, constraints, quality gates + acceptance checks. AGENT implements, reuses project modules/style, runs required lint/format/type-check/tests, confirms touched scripts exit cleanly, routes durable guidance to its narrowest scope, and returns diff + evidence; MAIN retains commit ownership.
+- MAIN dispatches one Agent with accepted scope, locations, constraints, quality gates + acceptance checks. AGENT implements, reuses project modules/style, runs required lint/format/type-check/tests, confirms touched scripts exit cleanly, routes durable guidance, and returns diff + evidence; MAIN retains commit ownership.
 - MAIN inspects the diff and reruns decisive gates independently. Accepted evidence must trace permitted real inputs.
 - Close (implemented unit): record `main=<.agent/context.sh full pct used/window>` and `impl=<implementing Agent transcript final pct used/252K>` in the roadmap; planning sizes from `impl` and treats `main` as coordination overhead. Set the unit DONE and, once all units are DONE, the milestone IMPLEMENTED; commit `<scope> (M<m>.<u>): …`.
 - Close (respec-only): replacement units remain OPEN/BLOCKED according to their gates; end at the respec commit.
