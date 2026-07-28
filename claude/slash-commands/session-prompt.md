@@ -16,7 +16,7 @@ Execution map:
 PLANNING — split scope into milestones as needed; plan the next milestone.
 - Read the prior milestone's commit range and recorded `impl=` context; for the first planned milestone, read the scope-seed commit(s) named by the roadmap. Size future units from implementation usage; treat `main=` as coordination overhead.
 - MAIN confirms each milestone precondition through project pipeline/tooling. Met ⇒ clear stale standing block + continue. Unmet ⇒ record standing block + evidence; changed record ⇒ commit `roadmap (M<m> block): …`; unchanged record ⇒ read-only close.
-- Web-search the open questions; discover code via tokensave (`tokensave_context` first, within its per-project call cap), then reconcile `git status`.
+- Web-search the open questions; discover code via Serena (`get_symbols_overview` → `find_symbol` → `find_referencing_symbols`), then reconcile `git status`.
 - Break the milestone into units that each project to fit one implementing agent inside the one-window aim; planning holds sole sizing authority, so every unit ships as scoped. Sequence gate-independent prep first; mark a gated unit BLOCKED until its precondition is met.
 - Close: set the milestone IN-PROGRESS (units enumerated), commit `roadmap (M<m> plan): …`.
 

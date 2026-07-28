@@ -26,50 +26,6 @@ echo "=== System packages (pacman/AUR) ==="
 paru -Syu
 
 echo
-echo "=== tokensave ==="
-# The one agent tool NOT under pacman -- it lives in ~/.local/bin and ships its
-# own GitHub-release updater. `upgrade` is a no-op when already current. Refresh
-# installed agent integrations afterward so any newly added tools receive their
-# explicit permissions immediately.
-#
-# ~/.claude/rules/tokensave.md is a hand-rewritten copy held with `chattr +i`,
-# because tokensave otherwise restores it from an embedded template: on
-# `reinstall`, and silently on `status`/`sync`/`list`/`gain` once the version
-# stamp in ~/.tokensave/state.toml trails the running binary. Those silent paths
-# fail harmlessly against the pin (exit 0), but `reinstall` refreshes the MCP
-# server, hooks and permissions first and only then exits 1 on the blocked
-# rename -- which under `set -e` would abort every step below. So that one
-# failure is tolerated by message, and any other reinstall failure still stops
-# the run.
-#
-# The pinned copy is tracked at host/cachyos/tokensave/tokensave.md, which is
-# what makes the rewrite recoverable if the pin is ever off when tokensave runs.
-# To edit it:
-#   sudo chattr -i ~/.claude/rules/tokensave.md
-#   <edit, then mirror into the repo copy>
-#   sudo chattr +i ~/.claude/rules/tokensave.md
-# `tokensave doctor` accepts any body containing "tokensave" and never rewrites,
-# so the rewritten wording keeps passing its check. This note lives here rather
-# than in the rules file itself, which is loaded into every session and so pays
-# for its own length; maintenance reads it from the script instead.
-if command -v tokensave >/dev/null 2>&1; then
-  tokensave upgrade
-  if ! ts_reinstall="$(tokensave reinstall 2>&1)"; then
-    echo "$ts_reinstall"
-    if ! grep -q 'rules/tokensave\.md.*Operation not permitted' <<<"$ts_reinstall"; then
-      echo "tokensave reinstall failed; see above" >&2
-      exit 1
-    fi
-    echo "rules file is pinned (chattr +i) and was kept; everything else refreshed"
-  fi
-  # tokensave drops a .bak beside the rules file on every write attempt, so the
-  # pinned copy accumulates a stale duplicate of itself here.
-  rm -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/rules/tokensave.md.bak"
-else
-  echo "tokensave not installed; skipping"
-fi
-
-echo
 echo "=== Local app repositories ==="
 git -C "$HOME/.local/app/bgcmd" pull --ff-only
 git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only

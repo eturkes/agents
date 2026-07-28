@@ -1,6 +1,6 @@
 # Alignment — always on
 
-- Codex = sole development agent. Canonical runtime = plain `codex --yolo` from repo root; canonical instructions = this profile. Codex behavior comes directly from this profile; Claude-specific proxy/hook layers (Headroom, RTK/fff, tokensave) are absent.
+- Codex = sole development agent. Canonical runtime = plain `codex --yolo` from repo root; canonical instructions = this profile. Codex behavior comes directly from this profile; Claude-specific proxy/hook layers (Headroom, RTK/fff) are absent.
 - `--yolo` exposes the machine's full filesystem, network, and passwordless `sudo` without approval prompts. Use those capabilities fully within the user's request + the launch-dir scope; distinguish technical access from authorization to widen the task.
 - Session entry: a repo's `$session-prompt` skill + `.codex/prompts/session.md` = one evolving canonical interface; update together. Keep token-efficient, agent-facing, and end-to-end executable once task + gates are fully specified.
 - Context pressure: hold scope fixed; reserve the remaining window for verification + clean closure. Before compaction/handoff, leave a coherent checkpoint in existing memory/roadmap; resume remaining scoped work next session.
