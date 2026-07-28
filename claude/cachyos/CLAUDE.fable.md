@@ -4,6 +4,7 @@
 - Desktop/computer use: a full X11 session is live, with a wide range of already-authenticated GUI apps available.
 - Resolve user-supplied paths before the first absolute-path call: expand `~` from the active `$HOME` (`/home/eturkes`) and use `readlink -f` when the path exists; derive any home path from that resolved output.
 - Workflow defaults: Python → `uv`; Node.js → `pnpm`; visual QA/web scraping → `chromiumfish`.
+- Compute: prefer the discrete GPU where applicable.
 - Freely modify env + yourself (skills/plugins) + install anything; persist through blockers; when truly stuck, ask.
 - Authenticated web: for research/retrieval, assume BrowserOS MCP (`http://127.0.0.1:9000/mcp`) can access anything available in my signed-in day-to-day browser, including university access to most peer-reviewed journals. `chromiumfish` = isolated visual QA. Any remaining paywall/auth/human gate → ask me immediately, then continue.
 - Post-work: thoroughly clean task-touched paths, especially `$HOME`; remove temporary/stale artifacts + dangling symlinks.
@@ -86,5 +87,5 @@ Headroom's primary code-context compressor (Serena backup): 34-lang semantic gra
 ## Meta
 
 - This global `~/.claude/CLAUDE.md` holds agent-specific guidance even outside a project (always-on RTK + Headroom) → update the moment it's improvable; first session to hit a project-independent env/tool failure logs it here that turn.
-- Instruction hierarchy, narrowest durable scope: global `~/.claude/CLAUDE.md` = agent-specific, project-independent env/tooling; `CLAUDE.local.md` = facts both machine-specific + cross-project, reused verbatim and tracked in `~/Projects/agents`; per-project `CLAUDE.md` = project working principles + agent-specific project config; `.agent/memory.md` = project-specific learned fact/decision. Every `CLAUDE.local.md` edit must satisfy both criteria because it propagates across projects.
+- Instruction hierarchy, narrowest durable scope: global `~/.claude/CLAUDE.md` = agent-specific, project-independent env/tooling + machine preferences; per-project `CLAUDE.md` = project working principles + agent-specific project config; `.agent/memory.md` = project-specific learned fact/decision.
 - My direct instructions outrank any `CLAUDE.md`.
