@@ -11,8 +11,8 @@ set -euo pipefail
 # headroom, cli-proxy-api and codex are all repo-owned -- so `paru -Syu` IS the
 # toolchain upgrade, and running those installers' self-updaters on top would
 # fight the package manager over the same files. What remains is the handful of
-# things pacman does not own; this script covers exactly those, then checks the
-# pins nothing upgrades automatically.
+# things pacman does not own; this script covers exactly those, rolling each to
+# its latest upstream release.
 #
 # Run it deliberately, not on a timer: a full -Syu on Arch is a rolling upgrade
 # that can want intervention (.pacnew files, keyring bumps, manual pacman -Sy
@@ -32,8 +32,8 @@ git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only
 
 echo
 echo "=== chromiumfish ==="
-# Upgrade the pnpm workspace and fetch the browser release pinned by the updated
-# chromiumfish package.
+# Upgrade the pnpm workspace, then fetch the browser build the freshly upgraded
+# chromiumfish package points at -- paru moves the package, `fetch` follows it.
 if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
   pnpm -C "$HOME/.local/share/chromiumfish" update --latest
   chromiumfish fetch
