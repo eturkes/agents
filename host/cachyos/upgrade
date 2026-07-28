@@ -39,6 +39,11 @@ else
 fi
 
 echo
+echo "=== Local app repositories ==="
+git -C "$HOME/.local/app/bgcmd" pull --ff-only
+git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only
+
+echo
 echo "=== chromiumfish ==="
 # A pnpm workspace under ~/.local/share/chromiumfish, deliberately NOT upgraded
 # automatically: bumping it re-pins the bundled browser version, and the aeon
