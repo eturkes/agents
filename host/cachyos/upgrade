@@ -42,9 +42,11 @@ echo "=== tokensave ==="
 # failure is tolerated by message, and any other reinstall failure still stops
 # the run.
 #
-# To edit that file:
+# The pinned copy is tracked at host/cachyos/tokensave/tokensave.md, which is
+# what makes the rewrite recoverable if the pin is ever off when tokensave runs.
+# To edit it:
 #   sudo chattr -i ~/.claude/rules/tokensave.md
-#   <edit>
+#   <edit, then mirror into the repo copy>
 #   sudo chattr +i ~/.claude/rules/tokensave.md
 # `tokensave doctor` accepts any body containing "tokensave" and never rewrites,
 # so the rewritten wording keeps passing its check. This note lives here rather
