@@ -18,6 +18,16 @@ else
   c=0
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=272000
+# JSON context_window_size = RAW model window (Xv()): `[1m]` id → 1M; CLAUDE_CODE_MAX_CONTEXT_TOKENS applies to
+# non-`claude-` ids + DISABLE_COMPACT. Turn-bounding budget = auto-compact window (o7()), absent from this JSON
+# → re-derive from env, mirroring o7(): numeric >0 → cap 1M → floor 100K → min(raw). Other values keep raw (o7()
+# treats them "invalid" → next source). Floor is real: 50000 → 100K here = in-process.
+acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
+if [ "$acw" -gt 0 ] 2>/dev/null; then
+  [ "$acw" -gt 1000000 ] && acw=1000000
+  [ "$acw" -lt 100000 ] && acw=100000
+  [ "$acw" -lt "$w" ] && w=$acw
+fi
 now=$(date +%s)  # one clock read, reused for reset-delta + idle
 # Rate-limit suffix; empty without rate_limits (manual mode, or pre-first-response).
 # seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S] => "LABEL N% MM/DD HH:MM".
