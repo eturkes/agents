@@ -28,9 +28,12 @@ paru -Syu
 echo
 echo "=== tokensave ==="
 # The one agent tool NOT under pacman -- it lives in ~/.local/bin and ships its
-# own GitHub-release updater. `upgrade` is a no-op when already current.
+# own GitHub-release updater. `upgrade` is a no-op when already current. Refresh
+# installed agent integrations afterward so any newly added tools receive their
+# explicit permissions immediately.
 if command -v tokensave >/dev/null 2>&1; then
   tokensave upgrade
+  tokensave reinstall
 else
   echo "tokensave not installed; skipping"
 fi

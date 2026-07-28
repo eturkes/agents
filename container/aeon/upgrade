@@ -112,6 +112,16 @@ if [[ -x "$HOME/agents/claude/marketplace/upgrade-servers" ]]; then
   "$HOME/agents/claude/marketplace/upgrade-servers" || true
 fi
 
+# --- TokenSave ---
+# Upgrade the standalone binary, then refresh installed agent integrations so
+# any newly added tools receive their explicit permissions immediately.
+if command -v tokensave >/dev/null 2>&1; then
+  tokensave upgrade
+  tokensave reinstall
+else
+  echo "tokensave not installed; skipping"
+fi
+
 # --- Codex CLI ---
 # Use Codex's own updater for the CLI.
 codex update
