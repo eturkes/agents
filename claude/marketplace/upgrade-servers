@@ -109,8 +109,16 @@ fi
 # commit()/branch selection through a git URL (verified on swipl 10.0.2): a git
 # URL errors with "pack `lsp_server' does not exist" and a bare pack name pulls
 # the broken tag. A file:// install sidesteps the resolver entirely.
+#
+# The rollback copy is staged OUTSIDE the pack root. swipl adds every directory
+# under the pack root to the library search path, so a sibling
+# `lsp_server.prev/` registers as a second pack and its prolog/ dir shadows the
+# real one -- `use_module(library(lsp_server))` then loads the OLD code and the
+# handshake tests the version we just replaced, failing every upgrade and
+# rolling it back forever.
 echo "prolog-lsp (jamesnvc/lsp_server)"
 pack_dir="$HOME/.local/share/swi-prolog/pack/lsp_server"
+pack_backup_dir="$HOME/.local/share/swi-prolog/pack-backup"
 if ! head_sha=$(curl -fsSL --max-time 30 "https://api.github.com/repos/jamesnvc/lsp_server/commits/HEAD" | sed -n 's/^  "sha": "\(.*\)",$/\1/p' | head -1); then
   skip "upstream HEAD lookup failed; keeping current pack"
 elif [[ -z "$head_sha" ]]; then
@@ -127,9 +135,15 @@ else
       rm -rf "$src"
       skip "clone failed; keeping current pack"
     else
+      # An older revision of this script staged the backup inside the pack root.
+      # A run interrupted between the copy and the restore leaves that shadowing
+      # sibling behind, which would silently reproduce the bug above, so clear
+      # the legacy location before staging.
+      rm -rf "${pack_dir}.prev"
       backup=""
       if [[ -d "$pack_dir" ]]; then
-        backup="${pack_dir}.prev"
+        backup="$pack_backup_dir/lsp_server.prev"
+        mkdir -p "$pack_backup_dir"
         rm -rf "$backup"
         cp -a "$pack_dir" "$backup"
       fi
@@ -148,7 +162,10 @@ else
       else
         fail "${head_sha:0:8} failed to install (no previous version to restore)"
       fi
+      # Leave no staging dir behind on any path; it must never become a
+      # long-lived sibling of the pack root.
       rm -rf "$src"
+      rmdir "$pack_backup_dir" 2>/dev/null || true
     fi
   fi
 fi
