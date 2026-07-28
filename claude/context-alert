@@ -4,6 +4,8 @@
 #
 # Tiers, both contexts: 200K notice → 220K final warning → auto-compaction 240K; each states the
 # live remainder to 240K, computed rather than assumed, since a turn can land well past its tier.
+# Prefix + override clause wrap every tier once: a mode may license working through compaction
+# (MILESTONE-REVIEW does), so the notice yields to that rather than contradicting it.
 # ACW=273000 → 240K (− 20K output reserve − 13K); subagents compact on the same path (ac60afb).
 IN=$(cat)
 { read -r tp; read -r at; read -r sid; } <<EOF
@@ -31,14 +33,15 @@ marker=$state_dir/${sid:-unknown}.$tier
 k=$((u / 1000)); left=$(( (240000 - u) / 1000 ))
 if [ "$at" = "main" ] || [ -z "$at" ]; then
   case $tier in
-    200)   msg="Context ${k}K/240K — ${left}K until auto-compaction. Hold scope fixed and steer toward closure: finish the current unit and verify it." ;;
-    final) msg="Context ${k}K/240K — ${left}K until auto-compaction. Close now: persist finished work and leave open threads where the next session picks them up." ;;
+    200)   msg="Hold scope fixed and steer toward closure: finish the current unit and verify it." ;;
+    final) msg="Close now: persist finished work and leave open threads where the next session picks them up." ;;
   esac
 else
   case $tier in
-    200)   msg="Context ${k}K/240K — ${left}K until auto-compaction. Hold scope fixed, finish and verify the current unit, then return your result." ;;
-    final) msg="Context ${k}K/240K — ${left}K until auto-compaction. Return your result now: compacting costs a turn and drops detail." ;;
+    200)   msg="Hold scope fixed, finish and verify the current unit, then return your result." ;;
+    final) msg="Return your result now: compacting costs a turn and drops detail." ;;
   esac
 fi
 
+msg="Context ${k}K/240K — ${left}K until auto-compaction. ${msg} Standing instructions to work past auto-compaction override this notice."
 jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
