@@ -32,7 +32,6 @@
 - Quote YAML frontmatter scalars opening with an indicator char (`[ { } ] , & * ! | > % @ # :`, backtick, double-quote): leading `[` → flow sequence → `ParserError` or silently-dropped field. Verify ad-hoc frontmatter with an ephemeral `pyyaml` parse.
 - `API Error: <ConnectionTerminated error_code:0 …>` = transient HTTP/2 GOAWAY mid-stream through Headroom; context survives → `git status`, resume.
 - Context occupancy = latest assistant `usage` sum (`input_tokens` + cache create/read + `output_tokens`), the authoritative window cost. It exceeds on-disk transcript size because redacted reasoning remains billed cache + fixed system/tools/CLAUDE overhead; window counts input+output. CLAUDE markers may appear ~2× at session/compaction boundaries, then disappear from `.jsonl`; high usage remains real. Inspect `jq .message.usage ~/.claude/projects/<proj>/<sid>.jsonl`. Effort changes the usage/stored ratio → remeasure.
-- Closure signal = the `context-alert` PostToolUse hook, firing in every context at 200K + 220K against the 240K auto-compaction point → work until it arrives, then follow it.
 
 ## RTK
 
