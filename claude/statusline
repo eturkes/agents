@@ -2,6 +2,7 @@
 # Claude Code context gauge + rate limits.
 # Branch on stdin, NOT env: statusline pipes JSON + sets CLAUDE_CODE_SESSION_ID → env can't tell modes apart. JSON stdin = statusline; TTY/empty = manual (read transcript).
 # Live total_input_tokens includes cache reads/writes but excludes output; sum total_output_tokens to match the transcript fallback.
+# Gauge colors compare TOKENS, holding their meaning at any denominator: green >=120K, yellow >=180K, red >=220K (= the CLI's own context-low warning).
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u => manual.
@@ -18,10 +19,12 @@ else
   c=0
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=272000
-# JSON context_window_size = RAW model window (`[1m]` id → 1M). Turn-bounding budget = auto-compact window,
-# absent from the JSON → re-derive from env = min(raw, 272K). Unset/garbage keeps raw (manual + subagent runs).
+# Gauge denominator = the AUTO-COMPACTION POINT, the number that actually ends a turn; the raw model window
+# (what the JSON reports, 1M for a `[1m]` id) is no limit worth watching. Budget = min(raw, ACW) from env, since
+# the JSON omits it; compaction then fires a fixed 33K lower (20K output reserve + 13K) → 273K budget = 240K here.
 acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
 [ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
+w=$((w - 33000))
 now=$(date +%s)  # one clock read, reused for reset-delta + idle
 # Rate-limit suffix; empty without rate_limits (manual mode, or pre-first-response).
 # seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S] => "LABEL N% MM/DD HH:MM".
@@ -95,5 +98,5 @@ function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);re
               return sprintf("%dK",int(n/1000+0.5)) }
 BEGIN{ if(u==""){ print "? ?/" h(w) r; exit }
        p=int(u*100/w+0.5); s=p "% " h(u) "/" h(w)
-       if(c&&p>=80) s="\033[31m" s "\033[0m"; else if(c&&p>=60) s="\033[33m" s "\033[0m"; else if(c&&p>=40) s="\033[32m" s "\033[0m"
+       if(c&&u>=220000) s="\033[31m" s "\033[0m"; else if(c&&u>=180000) s="\033[33m" s "\033[0m"; else if(c&&u>=120000) s="\033[32m" s "\033[0m"
        print s r }'

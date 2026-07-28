@@ -1,0 +1,46 @@
+#!/bin/sh
+# PostToolUse hook → injects ONE wrap-up notice per session once context passes a threshold, replacing
+# self-monitoring via `context.sh` (polling burns context + biases the agent toward premature closure).
+# Reads the same last-assistant-turn usage sum as the gauges; fires once per tier, then stays silent.
+#
+# Thresholds track the budget each session actually runs under:
+#   main session  ACW=273000 → warn 220K → auto-compact 240K; notice at 200K = 40K of runway.
+#   subagent      raw 272K − 20K reserve = 252K effective, hard block 249K (compaction-free).
+# Tier 1 = 200K for both; tier 2 = each context's own final-warning point.
+IN=$(cat)
+{ read -r tp; read -r at; read -r sid; } <<EOF
+$(printf '%s' "$IN" | jq -r '.transcript_path // "", .agent_type // "", .session_id // ""' 2>/dev/null)
+EOF
+[ -n "$tp" ] && [ -f "$tp" ] || exit 0
+
+# One notice per session+tier. State keyed by session id; stale files reaped after 7d.
+state_dir=$HOME/.claude/cache/context-alert
+mkdir -p "$state_dir" 2>/dev/null || exit 0
+find "$state_dir" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null
+
+u=$(jq -n 'last(inputs|select(.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object")|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty' "$tp" 2>/dev/null)
+[ -n "$u" ] || exit 0
+
+case $at in main|"") final=220000 ;; *) final=230000 ;; esac
+# Tiers ascend; report the highest crossed that has yet to fire, so a jump past both lands on the higher.
+if   [ "$u" -ge "$final" ]; then tier=final
+elif [ "$u" -ge 200000 ];   then tier=200
+else exit 0; fi
+marker=$state_dir/${sid:-unknown}.$tier
+[ -e "$marker" ] && exit 0
+: > "$marker"
+
+k=$((u / 1000))
+if [ "$at" = "main" ] || [ -z "$at" ]; then
+  case $tier in
+    200)   msg="Context at ${k}K of a 240K auto-compaction budget (~40K left). Hold scope fixed and steer toward closure: finish the current unit, verify it, commit. Ample room remains — wrap up deliberately rather than abruptly." ;;
+    final) msg="Context at ${k}K; auto-compaction fires at 240K (~20K left). Close now: commit finished work and record anything unfinished where the next session will find it." ;;
+  esac
+else
+  case $tier in
+    200)   msg="Context at ${k}K of a 252K effective window; this agent is compaction-free and hard-stops at 249K (~49K left). Hold scope fixed, finish and verify the current unit, and return your result before the wall." ;;
+    final) msg="Context at ${k}K; hard stop at 249K (~19K left) with no compaction. Return your result now — an overrun loses the work entirely." ;;
+  esac
+fi
+
+jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
