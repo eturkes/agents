@@ -80,12 +80,14 @@ Headroom's primary code-context compressor (Serena backup): 34-lang semantic gra
 
 - Delegate genuinely independent + parallelizable subtasks; keep working while they run. Supply relevant context; intervene on drift. Chunk sequentially around rate limits; confirm completion. Before closing, resolve every Agent via result/completion or `TaskStop` by name/ID.
 - Agent lifecycle: `Agent` returns spawn metadata; background result delivery depends on naming. Private unnamed completion → inline `<result>`; named teammate → `idle_notification`, then targeted transcript `jq` or `SendMessage` resume. `SendMessage` = steer/continue; status/finish = transcript path because messaging completed agents resumes them. `TaskOutput` = background Bash/workflow IDs. Agents execute scope directly; lead approval gates re-delegation. Lead creates named teammates; teammate private subagents use `name` = unset. Cross-session communication relays through user/current lead. Targeted transcript reads recover dropped results.
-- Permission mode = `dontAsk`. Dispatch self-contained agents with `mode: "bypassPermissions"` when required calls lack proven pre-approval; configured deny/ask rules still apply. Use `dontAsk` when every required call is pre-approved.
+- Permission mode = `bypassPermissions` everywhere (settings `defaultMode` + agent dispatch); `permissions.deny` still fires.
 - Fixed subagent model + effort: every subagent / teammate / workflow-`agent()` runs `gpt-5.6-sol`; `model` = blank so effort env carries through.
 - Scope each compaction-free subagent to finish + return its result within its 272K window; main-session auto-compaction is separate. Budget margin + split large rewrites at section boundaries: a read+rewrite agent can peak ~100K on ~40KB (~37%). Transcripts: `~/.claude/projects/<project>/<session>/subagents/agent-<id>.jsonl` (`.message.usage`). Window exhaustion surfaces on the next request as inline `Prompt is too long`.
 
 ## Meta
 
+- Symlinks (any path): `Read` follows them, `Edit`/`Write` refuse a symlinked FILE ("Refusing to write through symlink") → edit the `readlink -f` target, reach it via a symlinked PARENT DIR (allowed), or write through `Bash`.
+- Claude config tracked in `~/Projects/agents/claude/cachyos/` → mirror every edit back to `~/.claude/` as a plain-file copy.
 - This global `~/.claude/CLAUDE.md` holds agent-specific guidance even outside a project (always-on RTK + Headroom) → update the moment it's improvable; first session to hit a project-independent env/tool failure logs it here that turn.
 - Instruction hierarchy, narrowest durable scope: global `~/.claude/CLAUDE.md` = agent-specific, project-independent env/tooling + machine preferences; per-project `CLAUDE.md` = project working principles + agent-specific project config; `.agent/memory.md` = project-specific learned fact/decision.
 - My direct instructions outrank any `CLAUDE.md`.
