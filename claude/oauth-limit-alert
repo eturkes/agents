@@ -2,8 +2,8 @@
 # Claude Code PostToolUse hook: alert once per limit-window when 5h or 7d usage hits 100%.
 # Reads the statusline's oauth-usage cache (utilization is a 0-100 %); self-refreshes it in the
 # background when stale (>=180s) so long tool-only runs stay current even if the statusline isn't
-# rendering. Silent below 100%; on a cross it injects the whole CLOSE-FAST protocol, since a hook
-# that carries its own instruction needs no counterpart in CLAUDE.md. Paths overridable for testing.
+# rendering. Silent below 100%; on a cross it injects a stop-now instruction, self-contained so no
+# counterpart in CLAUDE.md is needed: work resumes on renewed credits, so stopping beats a handoff.
 uc="${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}"
 cred="${OAUTH_CRED_FILE:-$HOME/.claude/.credentials.json}"
 mk="${OAUTH_ALERT_MARK:-$HOME/.claude/.oauth_limit_alerted}"
@@ -43,5 +43,5 @@ prev=""; [ -f "$mk" ] && IFS= read -r prev <"$mk" 2>/dev/null
 [ "$prev" = "$rid" ] && exit 0                                   # already alerted for this window
 printf '%s' "$rid" >"$mk" 2>/dev/null
 
-msg="⚠ USAGE LIMIT at 100% (${win} window; usage credits now billing) → CLOSE-FAST: this session draws Claude credits while gpt-5.6-sol subagents bill a separate ledger, so wind it down now — one summary, surface pending tasks, persist work where the project's conventions put it, and \`TaskStop\` any subagents still running."
+msg="⚠ USAGE LIMIT at 100% (${win} window; usage credits now billing) → STOP NOW: \`TaskStop\` any running subagents, then report in one line what is done and what is pending. Leave the work where it stands."
 jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
