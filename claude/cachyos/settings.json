@@ -213,6 +213,10 @@
           {
             "type": "command",
             "command": "$HOME/.claude/context-alert"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/oauth-limit-alert"
           }
         ]
       }
