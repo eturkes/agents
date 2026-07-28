@@ -24,6 +24,7 @@
 ## Reading
 
 - File contents → `Read` tool (shell dumps denied as backstop, even in a compound `Bash`).
+- Text inside a binary (JS bundled into an ELF, e.g. the `claude` CLI at `~/.local/share/claude/versions/<v>`) → `/usr/bin/rg -a -o '<pat>.{0,400}'`; `-a` is required, since plain `rg` prints `binary file matches` and withholds every line. `Read` returns mojibake and `strings`/`xxd`/`od` are deny-listed, so `rg -a` is the readable path. Widen with `.{N}` on both sides to walk minified call sites.
 - Headroom reads = lossy/reversible. `[N … hash=…]` → `mcp__headroom__headroom_retrieve`; hashless `[N lines omitted: …]` → narrow `Read`/`grep -n`. Treat compressed output as browse context. Byte-exact `Edit.old_string` → retrieve/narrow Read/grep/sed/`read_text()`, anchored on short distinctive bytes; compression rewraps prose and can mislead with `\uXXXX` hints. Expired/evicted hash 404 → narrow reads/Python.
 - Retrieve tool's sole name = full `mcp__headroom__headroom_retrieve`; an un-namespaced call leaves a dangling tool ref that 400s later requests until expiry. System-prompt-layer fixes load next fresh session/compaction → resume past a poisoned live session. Large retrieve may return `<<ccr:…,NN KB>>` → use narrow `Read`/`grep -n`/Python.
 - `Edit`/`Write` decode `\uXXXX` only (`\n`, `\xNN` pass through) → a literal backslash-`u` gets rewritten (often still compiles); encode another way (byte array, `0x5c` = backslash) + re-read after writing.
