@@ -1,6 +1,4 @@
-Continue this project (fresh session). Task present ⇒ execute exactly it; edit the roadmap when the task directs. Task empty ⇒ run MODE for the active milestone (first awaiting DONE/REVIEWED).
-
-Load `.agent/roadmap.md` (ledger + active detail), then `.agent/memory.md`; `CLAUDE.md` auto-injects. Read step-implicated files.
+Continue project. First load `.agent/roadmap.md` + `.agent/memory.md`. Task present ⇒ execute exactly it; update other files as needed for consistency. Task empty ⇒ run MODE for the active milestone (first awaiting DONE/REVIEWED).
 
 MODE ← active-milestone status (state-changing closes use a scoped commit; an unchanged BLOCKED recheck closes read-only; convention below):
 - UNPLANNED (incl. a still-unsplit future milestone) → PLANNING
@@ -9,40 +7,32 @@ MODE ← active-milestone status (state-changing closes use a scoped commit; an 
 - IMPLEMENTED (all units DONE; review pending) → MILESTONE-REVIEW
 
 Execution map:
-- PLANNING + MILESTONE-REVIEW → dynamic workflows.
-- WORK-UNIT implementation + cohesive implementation-fix batches → `Agent` subagents.
-- MAIN → scope, coordinate, independently verify. Context recording → implemented WORK-UNIT close only.
-
-Roles:
-- MAIN owns acceptance restatement, precondition confirmation, SIZE-CHECK/respec, Agent task definition, diff inspection, decisive gate reruns, context recording + close.
-- MAIN alone creates repository commits; AGENT returns working-tree changes.
-- AGENT owns implementation of the accepted scope, required quality gates, durable-guidance routing, and returns the diff + evidence.
-- WORKFLOW LENS = analysis; implementation findings return to MAIN for Agent routing.
+- Every MODE runs a dynamic workflow; its agents carry the fan-out. A supplied task runs one when MAIN judges it beneficial or the user requests it.
+- MAIN owns the one-line scope + acceptance restatement, precondition confirmation, workflow task definition, and close; MAIN alone creates repository commits. MAIN verifies independently: inspects every returned diff, reruns the decisive gates, and accepts evidence that traces permitted real inputs.
+- Workflow agents implement the accepted scope, reuse project modules/style, run the required lint/format/type-check/tests, confirm touched scripts exit cleanly, route durable guidance, and return diff + evidence as working-tree changes.
+- Review lenses stay analysis-only; their findings return to MAIN.
+- Context: PLANNING + MILESTONE-REVIEW run past auto-compaction — MAIN checkpoints coherently before each and continues after. Every other run completes within one window, and WORK-UNIT records its usage at close.
 
 PLANNING — split scope into milestones as needed; plan the next milestone.
 - Read the prior milestone's commit range and recorded `impl=` context; for the first planned milestone, read the scope-seed commit(s) named by the roadmap. Size future units from implementation usage; treat `main=` as coordination overhead.
-- MAIN confirms each milestone precondition through project pipeline/tooling with permitted real inputs. Met ⇒ clear stale standing block + continue. Unmet ⇒ record standing block + evidence; changed record ⇒ commit `roadmap (M<m> block): …`; unchanged record ⇒ read-only close.
-- Run a dynamic workflow + web search; discover code via tokensave (`tokensave_context` first, within its per-project call cap), then reconcile `git status`.
-- Break the milestone into units that project to fit one Agent context bounded at 240K → aim ~200K, reserve ~40K for variance, verification + closure. Sequence gate-independent prep first; mark a gated unit BLOCKED until its precondition is met.
+- MAIN confirms each milestone precondition through project pipeline/tooling. Met ⇒ clear stale standing block + continue. Unmet ⇒ record standing block + evidence; changed record ⇒ commit `roadmap (M<m> block): …`; unchanged record ⇒ read-only close.
+- Web-search the open questions; discover code via tokensave (`tokensave_context` first, within its per-project call cap), then reconcile `git status`.
+- Break the milestone into units that each project to fit one implementing agent inside the one-window aim; planning holds sole sizing authority, so every unit ships as scoped. Sequence gate-independent prep first; mark a gated unit BLOCKED until its precondition is met.
 - Close: set the milestone IN-PROGRESS (units enumerated), commit `roadmap (M<m> plan): …`.
 
 WORK-UNIT.
-- Read the last completed unit's commit(s), or the planning commit(s) for the milestone's first unit. A banked FAST-PATH/recipe block supersedes that discovery read: use the block + named authority commit as unit context.
-- MAIN restates the accepted unit scope + acceptance checks in one line.
-- Precondition transition: recheck BLOCKED first. Met ⇒ clear block, set OPEN, continue. Unmet ⇒ retain BLOCKED; materially changed evidence ⇒ update + commit `roadmap (M<m>.<u> block): …`; stable evidence ⇒ read-only close. OPEN + unmet ⇒ set BLOCKED, record condition/evidence, make block commit, close. Accepted evidence traces permitted real inputs.
-- MAIN performs SIZE-CHECK before implementation: score scope + required read cost against one Agent context bounded at 240K, aiming ~200K with ~40K reserved for variance, verification + closure. A projection that would breach that reserve ⇒ respec-split at a confirmed seam into fresh self-contained units; bank prose decisions + confirmed facts + reading pointers, delete session wip, and commit `roadmap (M<m>.<u> respec): …`. Post-respec score source = the implementing Agent's fresh 240K budget.
-- MAIN dispatches one Agent with accepted scope, locations, constraints, quality gates + acceptance checks. AGENT implements, reuses project modules/style, runs required lint/format/type-check/tests, confirms touched scripts exit cleanly, routes durable guidance, and returns diff + evidence; MAIN retains commit ownership.
-- MAIN inspects the diff and reruns decisive gates independently. Accepted evidence must trace permitted real inputs.
-- Close (implemented unit): record `main=<.agent/context.sh full pct used/240K>` and `impl=<implementing Agent transcript final pct used/240K>` in the roadmap; planning sizes from `impl` and treats `main` as coordination overhead. Set the unit DONE and, once all units are DONE, the milestone IMPLEMENTED; commit `<scope> (M<m>.<u>): …`.
-- Close (respec-only): replacement units remain OPEN/BLOCKED according to their gates; end at the respec commit.
+- Read the last completed unit's commit(s), or the planning commit(s) for the milestone's first unit.
+- Precondition transition: recheck BLOCKED first. Met ⇒ clear block, set OPEN, continue. Unmet ⇒ retain BLOCKED; materially changed evidence ⇒ update + commit `roadmap (M<m>.<u> block): …`; stable evidence ⇒ read-only close. OPEN + unmet ⇒ set BLOCKED, record condition/evidence, make block commit, close.
+- MAIN defines the workflow from the accepted scope, locations, constraints, quality gates + acceptance checks.
+- Close: record `main=<.agent/context.sh full pct used/240K>` + `impl=<peak implementing agent's transcript final pct used/240K>` in the roadmap. Set the unit DONE and, once all units are DONE, the milestone IMPLEMENTED; commit `<scope> (M<m>.<u>): …`.
 
-MILESTONE-REVIEW — dynamic workflow; exempt from the ~200K aim and may continue across automatic compactions. MAIN creates a coherent checkpoint before compaction and continues afterward.
-- Read every milestone commit, planning commits included.
-- Run analysis-only review lenses for: correctness/spec; cross-unit integration; instruction/memory conformance; token-efficiency/obsolescence. Each finding supplies severity + `file:line` + divergence + impact + acceptance check.
-- MAIN validates + deduplicates findings. Accepted implementation findings become one Agent task per cohesive fix batch under the same MAIN-commit contract, carrying locations + acceptance checks; each Agent returns diff + evidence, and MAIN independently inspects + reruns decisive gates.
+MILESTONE-REVIEW.
+- Read every commit within the milestone.
+- Run review lenses for: correctness/spec; cross-unit integration; instruction/memory conformance; token-efficiency/obsolescence. Each finding supplies severity + `file:line` + divergence + impact + acceptance check.
+- MAIN validates + deduplicates findings; accepted implementation findings become one agent task per cohesive fix batch, carrying locations + acceptance checks.
 - A requirement-changing design reaches the user before any scope-source edit.
 - Close: set the milestone REVIEWED, commit `<scope> (M<m> review): …`. The next session plans the next milestone.
 
-Commit convention — scoped (`<scope>: …`), trace key in parens: unit `(M<m>.<u>)`, block `(M<m> block)` / `(M<m>.<u> block)`, plan `(M<m> plan)`, respec `(M<m>.<u> respec)`, review `(M<m> review)`. Grep a milestone's history: `git log --grep "(M<m>[. ]"`.
+Commit convention — scoped (`<scope>: …`), trace key in parens: unit `(M<m>.<u>)`, block `(M<m> block)` / `(M<m>.<u> block)`, plan `(M<m> plan)`, review `(M<m> review)`. Grep a milestone's history: `git log --grep "(M<m>[. ]"`.
 
 Task: $ARGUMENTS
