@@ -90,28 +90,4 @@ else
 fi
 
 echo
-echo "=== Cleanup ==="
-# Trim the package cache, then REPORT orphans rather than removing them.
-#
-# Auto-removing whatever `pacman -Qtdq` prints is tempting but wrong here: the
-# query means "no longer required by anything", which on a rolling distro also
-# catches packages that merely lost a dependency edge in this upgrade, and it
-# does not distinguish a stale build dep from something load-bearing. On this
-# machine the list currently includes kwin -- removing a window manager
-# unattended, mid-script, would be a genuinely bad afternoon. Removal is also
-# not reversible in one step (-Rns takes configs with it). So: print the list,
-# let a human read it, and remove on purpose.
-paru -Sc --noconfirm
-if orphans=$(pacman -Qtdq 2>/dev/null) && [[ -n "$orphans" ]]; then
-  count=$(printf '%s\n' "$orphans" | wc -l)
-  echo "$count orphaned package(s) -- review before removing:"
-  printf '%s\n' "$orphans" | sed -e 's/^/  /'
-  echo
-  echo "remove the ones you actually want gone:"
-  echo "  sudo pacman -Rns <pkg>..."
-else
-  echo "no orphaned packages"
-fi
-
-echo
 echo "upgrade: done"
