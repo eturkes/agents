@@ -1,8 +1,7 @@
 #!/bin/sh
 # Context gauge → "N% used/window" (tokens) from the live Claude Code transcript = headroom.
-# Window = 272K = CLAUDE_CODE_AUTO_COMPACT_WINDOW (o7()), the turn-bounding budget. Raw model window stays separate:
-# `[1m]` id → 1M, and CLAUDE_CODE_MAX_CONTEXT_TOKENS governs non-`claude-` ids + DISABLE_COMPACT.
-# Thresholds: reserve min(maxOutput,20K) → warn 219K = 80% → auto-compact 239K = 88% (272K-20K-13K).
+# Window = 272K = CLAUDE_CODE_AUTO_COMPACT_WINDOW, the turn-bounding budget; the raw model window stays separate
+# (`[1m]` id → 1M). Thresholds: warn 219K = 80% → auto-compact 239K = 88% (272K − 20K output reserve − 13K).
 # Sums the last assistant turn's real API tokens (input+cache_creation+cache_read+output) = that request's
 # occupancy floor for the NEXT turn — the dominant, authoritative headroom signal. It far exceeds the visible
 # conversation: sys-prompt/tools/CLAUDE.md + injected reminders + prior-turn redacted extended-thinking ride in
