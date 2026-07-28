@@ -2,9 +2,9 @@
 # PostToolUse hook → pushes the closure signal to the agent: ONE wrap-up notice per tier per session,
 # freeing it to work until told. Same last-assistant-turn usage sum as the gauges; silent between tiers.
 #
-# Tiers, both contexts: 200K notice (40K of runway) → 220K final warning, bound 240K.
-#   main session  ACW=273000 → auto-compaction at 240K (− 20K output reserve − 13K).
-#   subagent      compaction-free → 240K = policy bound, clear of its 249K hard block.
+# Tiers, both contexts: 200K notice (40K of runway) → 220K final warning → auto-compaction 240K.
+# ACW=273000 → 240K (− 20K output reserve − 13K). Subagents compact on the same path: the
+# `Xn_` predicate gates on querySource + model/window alone, with no sidechain exclusion.
 IN=$(cat)
 { read -r tp; read -r at; read -r sid; } <<EOF
 $(printf '%s' "$IN" | jq -r '.transcript_path // "", .agent_type // "", .session_id // ""' 2>/dev/null)
@@ -37,7 +37,7 @@ if [ "$at" = "main" ] || [ -z "$at" ]; then
 else
   case $tier in
     200)   msg="Context ${k}K/240K (~40K left). Hold scope fixed, finish and verify the current unit, and return your result while the room lasts." ;;
-    final) msg="Context ${k}K/240K (~20K left). Return your result now — work still held at 240K returns empty." ;;
+    final) msg="Context ${k}K/240K (~20K left, auto-compaction at 240K). Return your result now: compaction past 240K keeps the agent alive but costs a turn and drops detail." ;;
   esac
 fi
 
