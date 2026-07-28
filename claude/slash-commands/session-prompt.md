@@ -17,25 +17,27 @@ Roles:
 - MAIN owns acceptance restatement, precondition confirmation, SIZE-CHECK/respec, Agent task definition, diff inspection, decisive gate reruns, context recording + close.
 - MAIN alone creates repository commits; AGENT returns working-tree changes.
 - AGENT owns implementation of the accepted scope, required quality gates, relevant durable `.agent/memory.md` updates, and returns the diff + evidence.
-- Autonomous implementation/review Agents run with `mode: "bypassPermissions"` under the user-level `dontAsk` default; configured deny/ask rules still apply.
+- Autonomous implementation/review Agents inherit the session permission mode (the `Agent` `mode` param is deprecated + ignored; agent-definition frontmatter overrides); configured deny/ask rules still apply.
 - WORKFLOW LENS = analysis; implementation findings return to MAIN for Agent routing.
 
 PLANNING — split scope into milestones as needed; plan the next milestone.
 - Read the prior milestone's commit range and recorded `impl=` context; for the first planned milestone, read the scope-seed commit(s) named by the roadmap. Size future units from implementation usage; treat `main=` as coordination overhead.
 - MAIN confirms each milestone precondition through project pipeline/tooling with permitted real inputs. Met ⇒ clear stale standing block + continue. Unmet ⇒ record standing block + evidence; changed record ⇒ commit `roadmap (M<m> block): …`; unchanged record ⇒ read-only close.
-- Run a dynamic workflow + web search; use read-only `Explore` finders, then reconcile `git status`.
-- Break the milestone into units that project to fit one compaction-free 272K Agent context: aim ~200K and reserve ~72K for variance, verification + closure. Sequence gate-independent prep first; mark a gated unit BLOCKED until its precondition is met.
+- Run a dynamic workflow + web search; discover code via tokensave (`tokensave_context` first, within its per-project call cap), then reconcile `git status`.
+- Break the milestone into units that project to fit one compaction-free Agent context: 252K effective (raw 272K − 20K output reserve), hard block 249K → aim ~200K and reserve ~49K for variance, verification + closure. Sequence gate-independent prep first; mark a gated unit BLOCKED until its precondition is met.
 - Close: set the milestone IN-PROGRESS (units enumerated), commit `roadmap (M<m> plan): …`.
 
 WORK-UNIT.
 - Read the last completed unit's commit(s), or the planning commit(s) for the milestone's first unit. A banked FAST-PATH/recipe block supersedes that discovery read: use the block + named authority commit as unit context.
 - MAIN restates the accepted unit scope + acceptance checks in one line.
 - Precondition transition: recheck BLOCKED first. Met ⇒ clear block, set OPEN, continue. Unmet ⇒ retain BLOCKED; materially changed evidence ⇒ update + commit `roadmap (M<m>.<u> block): …`; stable evidence ⇒ read-only close. OPEN + unmet ⇒ set BLOCKED, record condition/evidence, make block commit, close. Accepted evidence traces permitted real inputs.
-- MAIN performs SIZE-CHECK before implementation: score scope + required read cost against one compaction-free 272K Agent context, aiming ~200K with ~72K reserved for variance, verification + closure. A projection that would breach that reserve ⇒ respec-split at a confirmed seam into fresh self-contained units; bank prose decisions + confirmed facts + reading pointers, delete session wip, and commit `roadmap (M<m>.<u> respec): …`. Post-respec score source = the implementing Agent's fresh 272K hard-window budget; main-session auto-compaction governs coordinator closure only.
+- MAIN performs SIZE-CHECK before implementation: score scope + required read cost against one compaction-free Agent context (252K effective, hard block 249K), aiming ~200K with ~49K reserved for variance, verification + closure. A projection that would breach that reserve ⇒ respec-split at a confirmed seam into fresh self-contained units; bank prose decisions + confirmed facts + reading pointers, delete session wip, and commit `roadmap (M<m>.<u> respec): …`. Post-respec score source = the implementing Agent's fresh 252K budget; main-session auto-compaction (240K) governs coordinator closure only.
 - MAIN dispatches one Agent with accepted scope, locations, constraints, quality gates + acceptance checks. AGENT implements, reuses project modules/style, runs required lint/format/type-check/tests, confirms touched scripts exit cleanly, updates relevant durable memory, and returns diff + evidence; MAIN retains commit ownership.
 - MAIN inspects the diff and reruns decisive gates independently. Accepted evidence must trace permitted real inputs.
-- Close (implemented unit): record `main=<.agent/context.sh full pct used/window>` and `impl=<implementing Agent transcript final pct used/272K>` in the roadmap; planning sizes from `impl` and treats `main` as coordination overhead. Set the unit DONE and, once all units are DONE, the milestone IMPLEMENTED; commit `<scope> (M<m>.<u>): …`.
+- Close (implemented unit): record `main=<.agent/context.sh full pct used/window>` and `impl=<implementing Agent transcript final pct used/252K>` in the roadmap; planning sizes from `impl` and treats `main` as coordination overhead. Set the unit DONE and, once all units are DONE, the milestone IMPLEMENTED; commit `<scope> (M<m>.<u>): …`.
 - Close (respec-only): replacement units remain OPEN/BLOCKED according to their gates; end at the respec commit.
+
+Closure signal — the `context-alert` hook announces the ~200K aim once per session, then again near each context's limit (MAIN 220K → auto-compaction 240K; AGENT 230K → hard block 249K). Treat its arrival as the trigger to fix scope and close; let it come rather than polling `.agent/context.sh`, which spends context and biases toward premature closure.
 
 MILESTONE-REVIEW — dynamic workflow; exempt from the ~200K aim and may continue across automatic compactions. MAIN creates a coherent checkpoint before compaction and continues afterward.
 - Read every milestone commit, planning commits included.
@@ -44,6 +46,6 @@ MILESTONE-REVIEW — dynamic workflow; exempt from the ~200K aim and may continu
 - A requirement-changing design reaches the user before any scope-source edit.
 - Close: set the milestone REVIEWED, commit `<scope> (M<m> review): …`. The next session plans the next milestone.
 
-Commit convention — scoped (`<scope>: …`), trace key in parens: unit `(M<m>.<u>)`, block `(M<m> block)` / `(M<m>.<u> block)`, plan `(M<m> plan)`, review `(M<m> review)`. Grep a milestone's history: `git log --grep "(M<m>[. ]"`.
+Commit convention — scoped (`<scope>: …`), trace key in parens: unit `(M<m>.<u>)`, block `(M<m> block)` / `(M<m>.<u> block)`, plan `(M<m> plan)`, respec `(M<m>.<u> respec)`, review `(M<m> review)`. Grep a milestone's history: `git log --grep "(M<m>[. ]"`.
 
 Task: $ARGUMENTS
