@@ -6,7 +6,7 @@
 - Workflow defaults: Python → `uv`; Node.js → `pnpm`; visual QA/web scraping → `chromiumfish`.
 - Freely modify env + yourself (skills/plugins) + install anything; persist through blockers; when truly stuck, ask.
 - Authenticated web: for research/retrieval, assume BrowserOS MCP (`http://127.0.0.1:9000/mcp`) can access anything available in my signed-in day-to-day browser, including university access to most peer-reviewed journals. `chromiumfish` = isolated visual QA. Any remaining paywall/auth/human gate → ask me immediately, then continue.
-- Keep `$HOME` clean: pkg-manager cleanup post-install (`paru -Sc` cache, `pacman -Qtdq` orphans → `pacman -Rns`); clear stale dirs + dangling symlinks.
+- Post-work: thoroughly clean task-touched paths, especially `$HOME`; remove temporary/stale artifacts + dangling symlinks.
 - Headless capture: use `$(chromiumfish path) --headless`. Screenshots: `--screenshot=<path>`; full-page: `--print-to-pdf=<path> --no-pdf-header-footer`. URL fragments render blank here. `--force-dark-mode` leaves `prefers-color-scheme` unchanged. SwANGLE/Vulkan `EGL` initialization errors plus `Exiting GPU process` are benign when the command succeeds and produces real output.
 - `grep` = CC shell-fn shadow → `rg-fff` (**RE2**, relevance-ranked, fuzzy-fallback; see `# fff`), distinct from raw `ugrep -G`; `find` = CC shell-fn shadow, rewritten by the RTK hook → `rtk find`. `rg`=`/usr/bin/rg` (unshadowed). System `grep` binary = GNU grep (BRE). Byte-exact/clean → `command grep` | `/usr/bin/rg` | `rtk proxy grep`.
 - `pgrep -f`/`pkill -f` can self-match their `bash -c 'eval …'` wrapper → use one bracketed pattern (`index[.]js`) + `|| echo none` per command; separate kill/relaunch calls. CC's `pkill` guard blocks CLI-matching patterns.
