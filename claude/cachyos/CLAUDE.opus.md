@@ -31,6 +31,7 @@
 - Quote YAML frontmatter scalars opening with an indicator char (`[ { } ] , & * ! | > % @ # :`, backtick, double-quote): leading `[` → flow sequence → `ParserError` or silently-dropped field. Verify ad-hoc frontmatter with an ephemeral `pyyaml` parse.
 - `API Error: <ConnectionTerminated error_code:0 …>` = transient HTTP/2 GOAWAY mid-stream through Headroom; context survives → `git status`, resume.
 - Context occupancy = latest assistant `usage` sum (`input_tokens` + cache create/read + `output_tokens`), the authoritative window cost. It exceeds on-disk transcript size because redacted reasoning remains billed cache + fixed system/tools/CLAUDE overhead; window counts input+output. CLAUDE markers may appear ~2× at session/compaction boundaries, then disappear from `.jsonl`; high usage remains real. Inspect `jq .message.usage ~/.claude/projects/<proj>/<sid>.jsonl`. Effort changes the usage/stored ratio → remeasure.
+- Closure signal = the `context-alert` PostToolUse hook, firing in every context at 200K + 220K against the 240K auto-compaction point → work until it arrives, then follow it.
 
 ## RTK
 
@@ -76,7 +77,7 @@ Headroom's primary code-context compressor (Serena backup): 34-lang semantic gra
 
 ## Subagents
 
-- Claude usage-limit/credit signal → CLOSE-FAST: main session draws Claude credits; gpt-5.6-sol subagents use a separate ledger → wind it down: one summary + scoped commit, surface pending tasks. `TaskStop` any subagents still running.
+- Claude usage-limit/credit signal → CLOSE-FAST: main session draws Claude credits; gpt-5.6-sol subagents use a separate ledger → wind it down: one summary, surface pending tasks, persist work where the project's conventions put it. `TaskStop` any subagents still running.
 
 - Delegate large, genuinely independent + parallelizable tracks (wide multi-file investigation). Keep handful-call work + self-checks in-session. Use one subagent when sufficient; spawn count low. Chunk sequentially around rate limits; confirm completion. Before closing, resolve every Agent via result/completion or `TaskStop` by name/ID.
 - Agent lifecycle: `Agent` returns spawn metadata; background result delivery depends on naming. Private unnamed completion → inline `<result>`; named teammate → `idle_notification`, then targeted transcript `jq` or `SendMessage` resume. `SendMessage` = steer/continue; status/finish = transcript path because messaging completed agents resumes them. `TaskOutput` = background Bash/workflow IDs. Agents execute scope directly; lead approval gates re-delegation. Lead creates named teammates; teammate private subagents use `name` = unset. Cross-session communication relays through user/current lead. Targeted transcript reads recover dropped results.
