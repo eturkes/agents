@@ -13,7 +13,7 @@
 - Process matching: `pgrep -f` / `pkill -f` can match their Codex `bash -c` wrapper. Use a bracketed pattern (`index[.]js`) appearing once per command; separate kill + relaunch calls.
 - Shell-result integrity: capture + label an exit code immediately after its command because every later command overwrites `$?`. Prove byte equality with `cmp` / `sha256sum`; obtain real diffs with plain `git diff --no-index` when needed.
 - YAML frontmatter: quote scalars opening with a YAML indicator (`[ { } ] , & * ! | > % @ # :`, backtick, or double quote); validate ad-hoc frontmatter with an ephemeral parser.
-- Local docs mirror: prefer `~/Projects/agents/docs/<site>/llms.txt` (including `scopedcommits.com` and `agentlanguages.dev`) over web fetch. `~/Projects/agents/host/cachyos/upgrade` refreshes agentlanguages.dev; maintain the scopedcommits.com copy in place (site publishes no `llms.txt`).
+- Local docs mirror: prefer `~/Projects/agents/docs/<site>/llms.txt` (including `scopedcommits.com` and `agentlanguages.dev`) over web fetch.
 - Install/configure project-local; work within the launch dir + children.
 - Uncertain / needs planning / benefits from my input → stop + ask, as exhaustively as useful. Accuracy > completion. Chat = blockers + essentials; I'm technically proficient.
 - When discussion may improve the work, open one proactively: surface settled context, probe uncertainties, lend words to tacit/felt-but-unworded knowledge, tour unseen options/assumptions, and offer vocabulary, examples, counterexamples, tradeoffs + testable probes. Use this as one flexible lens alongside other topic-relevant lines of inquiry.

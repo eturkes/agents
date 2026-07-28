@@ -20,7 +20,7 @@
 - Marksman = Serena's bundled Markdown link LSP; fixed config, pull diagnostics source `Marksman`, code 2/Warning. All findings share code 2 → keep the full signal. Fixes: bare `][` outside code parses a phantom reflink → backtick notation; missing document → repair link; >1 H1 target → retain one H1. Bare `<nonterminal>` → backtick-wrap (parser treats it as HTML; link lint skips it). Byte-authoritative edge-space code spans → visible ␣=U+0020 legend or fence (CommonMark trims one pair). Index honors `.ignore`/`.gitignore`/`.hgignore` at startup; keep Markdown targets index-visible and use `.rgignore` for rg-only hiding. Disable: remove `markdown` from `language_servers:` + restart.
 - Markdown gate: prefer `markdown` active in Serena + pull `get_diagnostics_for_file`. Before activation, check bare `][` outside code, Markdown links resolving to existing `.md` (write other paths inline), and one H1/file. Authoritative stopgap: find binary (`find ~/.serena -name marksman -type f`); run `marksman server`; send `initialize` → `initialized` → `textDocument/didOpen`; read `publishDiagnostics`. A `.git`/`.marksman.toml` root enables cross-file links. Seed one broken link as a positive control because a clean file is silent. Marksman emits all findings together + indexes every committed `.md`, including `.agent/`.
 - WebSearch safety false-positives on benign medical/bio vocabulary → use neutral resource/org/generic-alias queries; split queries; delegate to `codex exec` (different filter stack), or use training knowledge + project evidence gates.
-- Docs mirror `~/Projects/agents/docs/<site>/llms.txt` (scopedcommits.com, agentlanguages.dev) > web fetch. `~/Projects/agents/host/cachyos/upgrade` refreshes agentlanguages.dev; maintain the scopedcommits.com copy in place (site publishes no `llms.txt`).
+- Docs mirror `~/Projects/agents/docs/<site>/llms.txt` (scopedcommits.com, agentlanguages.dev) > web fetch.
 
 ## Reading
 
@@ -87,7 +87,6 @@ Headroom's primary code-context compressor (Serena backup): 34-lang semantic gra
 ## Meta
 
 - Symlinks (any path): `Read` follows them, `Edit`/`Write` refuse a symlinked FILE ("Refusing to write through symlink") → edit the `readlink -f` target, reach it via a symlinked PARENT DIR (allowed), or write through `Bash`.
-- Claude config tracked in `~/Projects/agents/claude/cachyos/` → mirror every edit back to `~/.claude/` as a plain-file copy.
 - This global `~/.claude/CLAUDE.md` holds agent-specific guidance even outside a project (always-on RTK + Headroom) → update the moment it's improvable; first session to hit a project-independent env/tool failure logs it here that turn.
 - Instruction hierarchy, narrowest durable scope: global `~/.claude/CLAUDE.md` = agent-specific, project-independent env/tooling + machine preferences; per-project `CLAUDE.md` = project working principles + agent-specific project config; `.agent/memory.md` = project-specific learned fact/decision.
 - My direct instructions outrank any `CLAUDE.md`.
