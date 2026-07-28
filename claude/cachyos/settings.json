@@ -13,40 +13,6 @@
     "pr": ""
   },
   "permissions": {
-    "deny": [
-      "Bash(cat:*)",
-      "Bash(bat:*)",
-      "Bash(batcat:*)",
-      "Bash(ccat:*)",
-      "Bash(pygmentize:*)",
-      "Bash(highlight:*)",
-      "Bash(source-highlight:*)",
-      "Bash(less:*)",
-      "Bash(more:*)",
-      "Bash(most:*)",
-      "Bash(pg:*)",
-      "Bash(nl:*)",
-      "Bash(tac:*)",
-      "Bash(rev:*)",
-      "Bash(fold:*)",
-      "Bash(pr:*)",
-      "Bash(fmt:*)",
-      "Bash(od:*)",
-      "Bash(xxd:*)",
-      "Bash(hexdump:*)",
-      "Bash(hd:*)",
-      "Bash(hexyl:*)",
-      "Bash(strings:*)",
-      "Bash(rtk read:*)",
-      "Bash(vi:*)",
-      "Bash(vim:*)",
-      "Bash(nvim:*)",
-      "Bash(view:*)",
-      "Bash(nano:*)",
-      "Bash(emacs:*)",
-      "Bash(ed:*)"
-    ],
-    "defaultMode": "dontAsk",
     "allow": [
       "mcp__tokensave__tokensave_affected",
       "mcp__tokensave__tokensave_annotations",
@@ -131,7 +97,41 @@
       "mcp__tokensave__tokensave_type_hierarchy",
       "mcp__tokensave__tokensave_unsafe_patterns",
       "mcp__tokensave__tokensave_unused_imports"
-    ]
+    ],
+    "deny": [
+      "Bash(cat:*)",
+      "Bash(bat:*)",
+      "Bash(batcat:*)",
+      "Bash(ccat:*)",
+      "Bash(pygmentize:*)",
+      "Bash(highlight:*)",
+      "Bash(source-highlight:*)",
+      "Bash(less:*)",
+      "Bash(more:*)",
+      "Bash(most:*)",
+      "Bash(pg:*)",
+      "Bash(nl:*)",
+      "Bash(tac:*)",
+      "Bash(rev:*)",
+      "Bash(fold:*)",
+      "Bash(pr:*)",
+      "Bash(fmt:*)",
+      "Bash(od:*)",
+      "Bash(xxd:*)",
+      "Bash(hexdump:*)",
+      "Bash(hd:*)",
+      "Bash(hexyl:*)",
+      "Bash(strings:*)",
+      "Bash(rtk read:*)",
+      "Bash(vi:*)",
+      "Bash(vim:*)",
+      "Bash(nvim:*)",
+      "Bash(view:*)",
+      "Bash(nano:*)",
+      "Bash(emacs:*)",
+      "Bash(ed:*)"
+    ],
+    "defaultMode": "dontAsk"
   },
   "skillOverrides": {
     "claude-api": "off",
@@ -164,6 +164,7 @@
         ]
       },
       {
+        "matcher": "Agent|Grep|Bash",
         "hooks": [
           {
             "type": "command",
@@ -172,8 +173,7 @@
               "hook-pre-tool-use"
             ]
           }
-        ],
-        "matcher": "Agent|Grep|Bash"
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -210,7 +210,10 @@
     "command": "$HOME/.claude/statusline",
     "refreshInterval": 60
   },
-  "enabledPlugins": {},
+  "enabledPlugins": {
+    "xml-lsp@global": true,
+    "prolog-lsp@global": true
+  },
   "extraKnownMarketplaces": {
     "global": {
       "source": {
