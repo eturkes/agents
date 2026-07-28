@@ -2,7 +2,8 @@
 # PostToolUse hook → pushes the closure signal to the agent: ONE wrap-up notice per tier per session,
 # freeing it to work until told. Same last-assistant-turn usage sum as the gauges; silent between tiers.
 #
-# Tiers, both contexts: 200K notice (40K of runway) → 220K final warning → auto-compaction 240K.
+# Tiers, both contexts: 200K notice → 220K final warning → auto-compaction 240K; each states the
+# live remainder to 240K, computed rather than assumed, since a turn can land well past its tier.
 # ACW=273000 → 240K (− 20K output reserve − 13K); subagents compact on the same path (ac60afb).
 IN=$(cat)
 { read -r tp; read -r at; read -r sid; } <<EOF
@@ -27,16 +28,16 @@ marker=$state_dir/${sid:-unknown}.$tier
 [ -e "$marker" ] && exit 0
 : > "$marker"
 
-k=$((u / 1000))
+k=$((u / 1000)); left=$(( (240000 - u) / 1000 ))
 if [ "$at" = "main" ] || [ -z "$at" ]; then
   case $tier in
-    200)   msg="Context ${k}K/240K (~40K left). Hold scope fixed and steer toward closure: finish the current unit and verify it. The room is ample — work through closure deliberately." ;;
-    final) msg="Context ${k}K/240K (~20K left). Close now: persist finished work and leave open threads where the next session picks them up." ;;
+    200)   msg="Context ${k}K/240K — ${left}K until auto-compaction. Hold scope fixed and steer toward closure: finish the current unit and verify it." ;;
+    final) msg="Context ${k}K/240K — ${left}K until auto-compaction. Close now: persist finished work and leave open threads where the next session picks them up." ;;
   esac
 else
   case $tier in
-    200)   msg="Context ${k}K/240K (~40K left). Hold scope fixed, finish and verify the current unit, and return your result while the room lasts." ;;
-    final) msg="Context ${k}K/240K (~20K left). Return your result now: compacting keeps you alive but costs a turn and drops detail." ;;
+    200)   msg="Context ${k}K/240K — ${left}K until auto-compaction. Hold scope fixed, finish and verify the current unit, then return your result." ;;
+    final) msg="Context ${k}K/240K — ${left}K until auto-compaction. Return your result now: compacting costs a turn and drops detail." ;;
   esac
 fi
 
