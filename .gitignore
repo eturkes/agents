@@ -1,4 +1,4 @@
 # Fetched fresh from upstream on every `container/aeon/upgrade` (aeon) or
-# `host/cachyos/update-docs` (cachyos) run, so it is not tracked here (see the
+# `host/cachyos/upgrade` (cachyos) run, so it is not tracked here (see the
 # "Docs mirror" section in either script).
 /docs/agentlanguages.dev/llms.txt

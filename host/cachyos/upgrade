@@ -53,14 +53,26 @@ fi
 
 echo
 echo "=== Docs mirror ==="
-# Delegates rather than duplicates: update-docs owns the fetch and documents why
-# only agentlanguages.dev is mirrored (scopedcommits.com publishes no llms.txt,
-# so its tracked copy is an original that a fetch would overwrite with a 404).
-if [[ -x "$repo_root/host/cachyos/update-docs" ]]; then
-  "$repo_root/host/cachyos/update-docs"
+# Refresh the local llms.txt copy from upstream. It is git-ignored rather than
+# tracked (see .gitignore), since it can always be re-fetched here. Download to
+# a temp file first, then move it into place, so an interrupted or failed fetch
+# leaves the existing copy intact. A fetch failure is non-fatal: warn and keep
+# the current copy rather than aborting the rest of the run.
+agentlang_doc="$repo_root/docs/agentlanguages.dev/llms.txt"
+agentlang_tmp="$(mktemp)"
+mkdir -p "$(dirname "$agentlang_doc")"
+if curl -fsSL -o "$agentlang_tmp" https://agentlanguages.dev/llms.txt; then
+  mv "$agentlang_tmp" "$agentlang_doc"
+  echo "agentlanguages.dev/llms.txt updated"
 else
-  echo "update-docs not found at $repo_root/host/cachyos/update-docs; skipping"
+  rm -f "$agentlang_tmp"
+  echo "agentlanguages.dev/llms.txt fetch failed; keeping existing copy" >&2
 fi
+
+# docs/scopedcommits.com/llms.txt is deliberately NOT fetched here: the site is
+# live but has never published an llms.txt, so the repo's tracked copy is the
+# original rather than a mirror. Maintain it by hand; adding a fetch would
+# overwrite it with a 404.
 
 echo
 echo "=== Marketplace LSP servers ==="
