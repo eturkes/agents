@@ -42,7 +42,6 @@ echo
 echo "=== Local app repositories ==="
 git -C "$HOME/.local/app/bgcmd" pull --ff-only
 git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only
-git -C "$HOME/.local/app/gitignore" pull --ff-only
 
 echo
 echo "=== chromiumfish ==="
