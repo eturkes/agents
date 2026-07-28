@@ -30,8 +30,8 @@ marker=$state_dir/${sid:-unknown}.$tier
 k=$((u / 1000))
 if [ "$at" = "main" ] || [ -z "$at" ]; then
   case $tier in
-    200)   msg="Context ${k}K/240K (~40K left). Hold scope fixed and steer toward closure: finish the current unit, verify it, commit. The room is ample — work through closure deliberately." ;;
-    final) msg="Context ${k}K/240K (~20K left). Close now: commit finished work, and record open threads in the roadmap for the next session." ;;
+    200)   msg="Context ${k}K/240K (~40K left). Hold scope fixed and steer toward closure: finish the current unit and verify it. The room is ample — work through closure deliberately." ;;
+    final) msg="Context ${k}K/240K (~20K left). Close now: persist finished work and leave open threads where the next session picks them up." ;;
   esac
 else
   case $tier in
