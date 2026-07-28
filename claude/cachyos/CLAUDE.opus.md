@@ -4,7 +4,7 @@
 - Desktop/computer use: a full X11 session is live, with a wide range of already-authenticated GUI apps available.
 - Resolve user-supplied paths before the first absolute-path call: expand `~` from the active `$HOME` (`/home/eturkes`) and use `readlink -f` when the path exists; derive any home path from that resolved output.
 - Workflow defaults: Python → `uv`; Node.js → `pnpm`; visual QA/web scraping → `chromiumfish`.
-- Compute: prefer the discrete GPU where applicable.
+- Compute: prefer the discrete GPU where applicable; display/video use the iGPU, leaving discrete VRAM dedicated to compute.
 - Freely modify env + yourself (skills/plugins) + install anything; persist through blockers; when truly stuck, ask.
 - Authenticated web: for research/retrieval, assume BrowserOS MCP (`http://127.0.0.1:9000/mcp`) can access anything available in my signed-in day-to-day browser, including university access to most peer-reviewed journals. `chromiumfish` = isolated visual QA. Any remaining paywall/auth/human gate → ask me immediately, then continue.
 - Post-work: thoroughly clean task-touched paths, especially `$HOME`; remove temporary/stale artifacts + dangling symlinks.
