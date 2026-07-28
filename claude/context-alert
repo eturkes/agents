@@ -2,9 +2,9 @@
 # PostToolUse hook → pushes the closure signal to the agent: ONE wrap-up notice per tier per session,
 # freeing it to work until told. Same last-assistant-turn usage sum as the gauges; silent between tiers.
 #
-# Tier 1 = 200K (both contexts); tier 2 = each context's own final-warning point:
-#   main session  ACW=273000 → warn 220K → auto-compact 240K; 200K notice = 40K of runway.
-#   subagent      raw 272K − 20K reserve = 252K effective, hard block 249K (compaction-free).
+# Tiers, both contexts: 200K notice (40K of runway) → 220K final warning, bound 240K.
+#   main session  ACW=273000 → auto-compaction at 240K (− 20K output reserve − 13K).
+#   subagent      compaction-free → 240K = policy bound, clear of its 249K hard block.
 IN=$(cat)
 { read -r tp; read -r at; read -r sid; } <<EOF
 $(printf '%s' "$IN" | jq -r '.transcript_path // "", .agent_type // "", .session_id // ""' 2>/dev/null)
@@ -19,7 +19,7 @@ find "$state_dir" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null
 u=$(jq -n 'last(inputs|select(.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object")|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty' "$tp" 2>/dev/null)
 [ -n "$u" ] || exit 0
 
-case $at in main|"") final=220000 ;; *) final=230000 ;; esac
+final=220000
 # Tiers ascend; report the highest crossed that has yet to fire, so a jump past both lands on the higher.
 if   [ "$u" -ge "$final" ]; then tier=final
 elif [ "$u" -ge 200000 ];   then tier=200
@@ -36,8 +36,8 @@ if [ "$at" = "main" ] || [ -z "$at" ]; then
   esac
 else
   case $tier in
-    200)   msg="Context ${k}K/252K (~49K left; compaction-free, hard stop 249K). Hold scope fixed, finish and verify the current unit, and return your result while the room lasts." ;;
-    final) msg="Context ${k}K/252K (~19K left; compaction-free). Return your result now — reaching 249K ends the agent and the work returns empty." ;;
+    200)   msg="Context ${k}K/240K (~40K left). Hold scope fixed, finish and verify the current unit, and return your result while the room lasts." ;;
+    final) msg="Context ${k}K/240K (~20K left). Return your result now — work still held at 240K returns empty." ;;
   esac
 fi
 
