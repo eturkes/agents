@@ -127,5 +127,6 @@
   "switchModelsOnFlag": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
-  "useAutoModeDuringPlan": false
+  "useAutoModeDuringPlan": false,
+  "model": "claude-fable-5[1m]"
 }
