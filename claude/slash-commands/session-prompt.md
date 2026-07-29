@@ -1,4 +1,4 @@
-Continue project. First load `.agent/roadmap.md` + `.agent/memory.md`. Task present ⇒ execute exactly it; update other files as needed for consistency. Task empty ⇒ run MODE for the active milestone (first awaiting DONE/REVIEWED).
+Continue project. First load `.agent/roadmap.md` + `.agent/memory.md`; either missing ⇒ create a minimal stub (roadmap: goal + first UNPLANNED milestone from available context; memory: empty) before proceeding. Task present ⇒ execute exactly it; update other files as needed for consistency. Task empty ⇒ run MODE for the active milestone (first awaiting DONE/REVIEWED).
 
 MODE ← active-milestone status (state-changing closes use a scoped commit; an unchanged BLOCKED recheck closes read-only; convention below):
 - UNPLANNED (incl. a still-unsplit future milestone) → PLANNING
@@ -7,7 +7,7 @@ MODE ← active-milestone status (state-changing closes use a scoped commit; an 
 - IMPLEMENTED (all units DONE; review pending) → MILESTONE-REVIEW
 
 Execution map:
-- Every MODE runs a dynamic workflow; its agents carry the fan-out. A supplied task runs one when MAIN judges it beneficial or the user requests it.
+- Every MODE runs a dynamic workflow via the `Workflow` tool (this command = standing opt-in); its agents carry the fan-out. A supplied task runs one when MAIN judges it beneficial or the user requests it.
 - MAIN owns the one-line scope + acceptance restatement, precondition confirmation, workflow task definition, and close; MAIN alone creates repository commits. MAIN verifies independently: inspects every returned diff, reruns the decisive gates, and accepts evidence that traces permitted real inputs.
 - Workflow agents implement the accepted scope, reuse project modules/style, run the required lint/format/type-check/tests, confirm touched scripts exit cleanly, route durable guidance, and return diff + evidence as working-tree changes.
 - Review lenses stay analysis-only; their findings return to MAIN.

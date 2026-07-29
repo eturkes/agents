@@ -15,13 +15,13 @@ else
   f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name "$CLAUDE_CODE_SESSION_ID.jsonl" -print -quit 2>/dev/null)
   [ -n "$f" ] || f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d ' ' -f 2- | head -1)
   u=$(jq -n 'last(inputs|select(.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object")|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty' "$f" 2>/dev/null)
-  w=272000
+  w=273000
   c=0
 fi
-[ "$w" -gt 0 ] 2>/dev/null || w=272000
+[ "$w" -gt 0 ] 2>/dev/null || w=273000
 # Gauge denominator = the AUTO-COMPACTION POINT = the number that ends a turn; the raw model window the JSON
 # reports (1M for a `[1m]` id) stays informational. Budget = min(raw, ACW) from env, since the JSON omits it;
-# compaction fires a fixed 33K lower (20K output reserve + 13K) → 273K budget = 240K here.
+# compaction fires 33K below it → 273K budget = 240K here.
 acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
 [ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
 w=$((w - 33000))

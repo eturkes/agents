@@ -5,8 +5,8 @@
 # Tiers, both contexts: 200K notice → 220K final warning → auto-compaction 240K; each states the
 # live remainder to 240K, computed per call, since a turn can land well past the tier it crosses.
 # Prefix + override clause wrap every tier once: a mode may license working through compaction
-# (PLANNING + MILESTONE-REVIEW do), and the notice yields to that licence.
-# ACW=273000 → 240K (− 20K output reserve − 13K); subagents compact on the same path (ac60afb).
+# (PLANNING + MILESTONE-REVIEW do), and the notice yields to that license.
+# ACW=273000 → 240K trigger; subagents compact on the same path.
 IN=$(cat)
 { read -r tp; read -r at; read -r sid; } <<EOF
 $(printf '%s' "$IN" | jq -r '.transcript_path // "", .agent_type // "", .session_id // ""' 2>/dev/null)
@@ -30,7 +30,7 @@ marker=$state_dir/${sid:-unknown}.$tier
 [ -e "$marker" ] && exit 0
 : > "$marker"
 
-k=$((u / 1000)); left=$(( (240000 - u) / 1000 ))
+k=$((u / 1000)); left=$(( (240000 - u) / 1000 )); [ "$left" -lt 0 ] && left=0
 if [ "$at" = "main" ] || [ -z "$at" ]; then
   case $tier in
     200)   msg="Hold scope fixed and steer toward closure: finish the current unit and verify it." ;;

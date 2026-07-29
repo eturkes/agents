@@ -31,6 +31,19 @@ git -C "$HOME/.local/app/bgcmd" pull --ff-only
 git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only
 
 echo
+echo "=== Claude Code CLI ==="
+# Native-installer binary (~/.local/share/claude/versions), not pacman-owned,
+# with background auto-updates disabled in settings (DISABLE_AUTOUPDATER=1) --
+# this manual step is its only upgrade path.
+claude update
+
+# A fresh binary ships unpatched: reapply the saved tweakcc customizations
+# (~/.tweakcc/config.json -- fff search-stack wiring, system-prompt edits) so
+# the next session keeps the patched toolchain. Idempotent on an already-
+# patched binary; -y answers npx's install prompt, the second the apply prompt.
+npx -y tweakcc --apply -y
+
+echo
 echo "=== chromiumfish ==="
 # Upgrade the pnpm workspace, then fetch the browser build the freshly upgraded
 # chromiumfish package points at -- paru moves the package, `fetch` follows it.

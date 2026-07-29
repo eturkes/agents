@@ -43,5 +43,5 @@ prev=""; [ -f "$mk" ] && IFS= read -r prev <"$mk" 2>/dev/null
 [ "$prev" = "$rid" ] && exit 0                                   # already alerted for this window
 printf '%s' "$rid" >"$mk" 2>/dev/null
 
-msg="⚠ USAGE LIMIT at 100% (${win} window; usage credits now billing) → STOP NOW: and \`TaskStop\` any running subagents. Leave work where it stands, even if incomplete."
+msg="⚠ USAGE LIMIT at 100% (${win} window; usage credits now billing) → STOP NOW and \`TaskStop\` any running subagents. Leave work where it stands, even if incomplete."
 jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
