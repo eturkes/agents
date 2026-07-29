@@ -12,7 +12,8 @@ Prerequisites:
 2. `~/.local/bin/prolog-lsp`: runs swipl over stdio, asserting
    `/usr/lib/swi-prolog/library/ext/http/http` onto
    `file_search_path(library, ...)` so `library(json)` resolves, then
-   `lsp_server:main` with `-- stdio`.
+   `lsp_server:main` with `-- stdio`. Confirm the path with
+   `dpkg -L swi-prolog-core-packages | grep '/json\.pl$'`.
 
 Notes:
 - Branch, not tags, on purpose: the newest tag (v3.17.0) binds `Capabilities`
@@ -22,12 +23,16 @@ Notes:
   `Params.get(capabilities/...)` lookups) is on the branch and untagged, so
   "latest release" resolves *backwards* into the bug. The handshake gate is what
   makes tracking a branch safe: a regression is rejected, not installed.
-- Install is from a local checkout because swipl's resolver ignored
-  `commit()`/branch selection through a git URL on cachyos (swipl 10.0.2), and a
-  bare pack name silently pulls the broken tag. A `file://` install sidesteps
+- Install is from a local checkout because swipl's resolver ignores
+  `commit()`/branch selection through a git URL (observed on cachyos, swipl
+  10.0.2): a git URL fails with ``pack `lsp_server' does not exist`` —
+  `option_info/1` whitelists only `git`/`hash`/`version`/`branch`/`link` — and
+  a bare pack name silently pulls the broken tag. A `file://` install sidesteps
   the resolver.
 - `pack.pl` on the branch still declares `version('3.17.0')`, so the pack list
   reports 3.17.0 while running fixed code. The commit is the real identity.
+- The interpreter is apt-packaged (`swi-prolog-nox`), upgraded out of band with
+  the rest of apt.
 
-Status: verified here. The utf-16 regression was reproduced against v3.17.0:
-utf-16 `initialize` errors; utf-32 control succeeds.
+Status: installed + verified here. The utf-16 regression was reproduced against
+v3.17.0: utf-16 `initialize` errors; utf-32 control succeeds.

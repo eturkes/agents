@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Upgrade run for the Debian container on this Aeon machine, the container
+# counterpart to host/cachyos/upgrade.
+#
+# The two machines need very different scripts. On CachyOS almost everything is
+# a pacman/AUR package, so `paru -Syu` IS the toolchain upgrade there. Here
+# every toolchain was installed by its own installer, so this script drives
+# that long list of self-updaters (rustup, uv, corepack, elan, moon, ...),
+# rolling each to its latest upstream release. Debian's apt packages are
+# upgraded out of band (done manually) and are not covered here.
+
 # Make pnpm globals reachable when this script runs outside an interactive shell.
 export PNPM_HOME="${PNPM_HOME:-$HOME/.local/share/pnpm}"
 case ":$PATH:" in
@@ -38,17 +48,21 @@ corepack install -g pnpm@latest-10
 # It lives as a pnpm global, so upgrade it explicitly.
 pnpm add -g npm@latest
 
-# ChromiumFish auto-upgrade/fetch is disabled until its Linux release cache is
-# self-contained again. The 150.0.7844 archive unpacked without
-# chrome_crashpad_handler; the fetcher accepted that partial cache because it
-# only checks for the main chrome binary. This machine's cache was manually
-# repaired with an existing Chrome-for-Testing crashpad handler, but an
-# automatic package upgrade, browser-version bump, clear, or refetch can replace
-# it with an unverified/broken cache. Re-enable only after upstream publishes a
-# verified Linux archive that includes the handler, or after adding an explicit
-# post-fetch repair/validation step here.
-# pnpm add -g chromiumfish@latest playwright-core@latest
-# chromiumfish fetch
+# --- ChromiumFish ---
+# Upgrade the pnpm globals, then fetch the browser build the freshly upgraded
+# package points at. The 150.0.7844 Linux archive once unpacked without
+# chrome_crashpad_handler and the fetcher accepted that partial cache (it only
+# checks for the main chrome binary); this machine's cache was manually repaired
+# with an existing Chrome-for-Testing crashpad handler. So validate the handler
+# after every fetch and fail loudly if it is missing, rather than leaving a
+# silently broken cache for the next headless run.
+pnpm add -g chromiumfish@latest playwright-core@latest
+chromiumfish fetch
+chromiumfish_bin="$(chromiumfish path)"
+if [[ ! -x "$(dirname "$chromiumfish_bin")/chrome_crashpad_handler" ]]; then
+  echo "chromiumfish cache at $(dirname "$chromiumfish_bin") lacks chrome_crashpad_handler; repair it (see git history of this section) before headless use" >&2
+  exit 1
+fi
 
 # Drop unreachable package-store files after global updates.
 pnpm store prune
@@ -112,16 +126,6 @@ if [[ -x "$HOME/agents/claude/marketplace/upgrade-servers" ]]; then
   "$HOME/agents/claude/marketplace/upgrade-servers" || true
 fi
 
-# --- TokenSave ---
-# Upgrade the standalone binary, then refresh installed agent integrations so
-# any newly added tools receive their explicit permissions immediately.
-if command -v tokensave >/dev/null 2>&1; then
-  tokensave upgrade
-  tokensave reinstall
-else
-  echo "tokensave not installed; skipping"
-fi
-
 # --- Codex CLI ---
 # Use Codex's own updater for the CLI.
 codex update
@@ -137,9 +141,15 @@ curl -fsSL https://raw.githubusercontent.com/router-for-me/cliproxyapi-installer
 # warn and keep the current copy rather than aborting the rest of the upgrade.
 agentlang_doc="$HOME/agents/docs/agentlanguages.dev/llms.txt"
 agentlang_tmp="$(mktemp)"
+mkdir -p "$(dirname "$agentlang_doc")"
 if curl -fsSL -o "$agentlang_tmp" https://agentlanguages.dev/llms.txt; then
   mv "$agentlang_tmp" "$agentlang_doc"
+  echo "agentlanguages.dev/llms.txt updated"
 else
   rm -f "$agentlang_tmp"
   echo "agentlanguages.dev/llms.txt fetch failed; keeping existing copy" >&2
 fi
+# docs/scopedcommits.com/llms.txt is deliberately NOT fetched here: the site is
+# live but has never published an llms.txt, so the repo's tracked copy is the
+# original rather than a mirror. Maintain it by hand; adding a fetch would
+# overwrite it with a 404.
