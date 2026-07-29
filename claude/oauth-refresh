@@ -1,0 +1,23 @@
+#!/bin/sh
+# Poll GET /api/oauth/usage into the 5h/7d cache ($1, default ~/.claude/.oauth_usage.json) once it is
+# >=180s old, under a lock in a detached job => callers return at once and render from the cache alone.
+# Shared by statusline (per render) + oauth-limit-alert (per PostToolUse); token via ./oauth-token.
+uc="${1:-${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}}"
+lk="$uc.lock"
+now=$(date +%s)
+
+ca=$(stat -c %Y "$uc" 2>/dev/null || echo 0)
+[ "$(( now - ca ))" -ge 180 ] || exit 0
+lm=$(stat -c %Y "$lk" 2>/dev/null || echo 0)     # reap a lock left behind by a killed fetch
+[ "$lm" -gt 0 ] && [ "$(( now - lm ))" -ge 60 ] && rmdir "$lk" 2>/dev/null
+mkdir "$lk" 2>/dev/null || exit 0                # a live fetch holds it => let that one finish
+
+# Token stays in the child's files + variables, off the argv any local process can read.
+setsid -f sh -c '
+  t=$("$1" 2>/dev/null)
+  if [ -n "$t" ]; then
+    r=$(curl -fsS --max-time 8 -H "Authorization: Bearer $t" -H "anthropic-beta: oauth-2025-04-20" https://api.anthropic.com/api/oauth/usage 2>/dev/null)
+    [ -n "$r" ] && printf %s "$r" | jq -e .five_hour >/dev/null 2>&1 && printf %s "$r" >"$2.tmp" && mv "$2.tmp" "$2"
+  fi
+  rmdir "$3" 2>/dev/null
+' _ "${OAUTH_TOKEN_CMD:-$(dirname "$0")/oauth-token}" "$uc" "$lk" </dev/null >/dev/null 2>&1 &
