@@ -85,5 +85,4 @@ CC maps `grep`→`rg-fff`: default fff RE2, relevance-ranked + marked. Serving r
 
 - Symlinks (any path): `Read` follows them, `Edit`/`Write` refuse a symlinked FILE ("Refusing to write through symlink") → edit the `readlink -f` target, reach it via a symlinked PARENT DIR (allowed), or write through `Bash`.
 - `Edit` line deletion → trailing-newline form (`victim\n`→``) or anchor-keeping replace (`anchor\nvictim`→`anchor`); leading-`\n` old_string + empty new_string also eats the trailing newline → neighbors merge on a success-reported edit (multi-line inserts clean). Post-edit `command grep -n` a neighbor line.
-- This global `~/.claude/CLAUDE.md` holds project-independent env/tooling + machine-specific capabilities, applying even outside a project → update the moment it's improvable; first session to hit such an env/tool failure logs it here that turn.
 - My direct instructions outrank any `CLAUDE.md`.
