@@ -69,16 +69,8 @@
 - Text inside a binary (e.g. the `codex` ELF) → `/usr/bin/rg -a -o '<pat>.{0,400}'`; `-a` is required, since plain `rg` prints `binary file matches` and withholds every line. Widen with `.{N}` on both sides to walk minified call sites.
 - Quote YAML frontmatter scalars opening with an indicator char (`[ { } ] , & * ! | > % @ # :`, backtick, double quote): leading `[` → flow sequence → `ParserError` or silently-dropped field. Verify ad-hoc frontmatter with an ephemeral `pyyaml` parse.
 
-## Output
-
-- Chat: focused + brief, matching the configured low verbosity. Keep caveats short and spend the response on the main answer; "explain X" → high-level summary, then depth on request.
-- Progress updates: one sentence before the first tool call saying what's coming; update mid-work on a real finding or change of direction. Close by leading with the outcome, then supporting detail.
-- Written deliverables (reports, Markdown docs, summaries) → cover the substance at task-fit length.
-- Scope = exactly the requested breadth. Make routine judgment calls; check in when divergent readings materially change the work. Mistaken request / better approach → state it in one sentence + continue within scope. Finish the whole requested task.
-- Reporting: audit every claim against session evidence. Flag unverified work; report failed tests + output and skipped steps; state done + verified plainly.
-- Self-correction: state material errors plainly + briefly, then continue; silently correct immaterial slips.
-
 ## Meta
 
+- Reporting: audit every claim against this session's tool results; report evidence-backed work, flag unverified as unverified. Failed tests → report + output; skipped step → state skipped; done + verified → state plainly.
 - This root `AGENTS.md` = cross-project working principles + machine-specific Codex environment/config, reused verbatim across Codex-only projects on this machine. Every edit must remain project-independent because it propagates across projects.
 - My direct instructions outrank any `AGENTS.md`.
