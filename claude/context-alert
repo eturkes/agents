@@ -5,7 +5,7 @@
 # Tiers, both contexts: 200K notice → 220K final warning → auto-compaction 240K; each states the
 # live remainder to 240K, computed per call, since a turn can land well past the tier it crosses.
 # Prefix + override clause wrap every tier once: a mode may license working through compaction
-# (PLANNING + MILESTONE-REVIEW do), and the notice yields to that license.
+# (PLANNING/MILESTONE-REVIEW/user-requested tasks do), and the notice yields to that license.
 # ACW=273000 → 240K trigger; subagents compact on the same path.
 IN=$(cat)
 { read -r tp; read -r at; read -r sid; } <<EOF

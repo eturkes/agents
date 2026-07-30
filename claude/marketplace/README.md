@@ -31,22 +31,16 @@ lean4.
 
 ## Upgrades
 
-No versions are recorded anywhere in this tree. `./upgrade-servers` resolves
-each server's current release from upstream at run time, installs it, and
-verifies it — hand-maintained version numbers are what drifted before.
+No versions are recorded anywhere in this tree — hand-maintained pins drift.
+`./upgrade-servers` resolves each server's current release from upstream at
+run time, installs it, handshakes it as a real LSP client, and **rolls back**
+on failure; a server goes live only after answering correctly ("latest" alone
+can break `initialize`). Installed versions live in state markers next to each
+server.
 
-Taking latest is safe only because of the verification: upstream has shipped a
-release that broke Claude Code (lsp_server v3.17.0 crashed `initialize` for
-utf-16 clients). So every upgrade is staged, handshaked as a real LSP client,
-and **rolled back** if that fails; a server goes live only after answering
-correctly. Installed versions are tracked in state markers next to each server,
-not in this repo.
-
-Two consequences worth knowing:
-
-- prolog-lsp tracks the **default branch**, not tags, because the fix for that
-  regression is still untagged — "latest release" would resolve backwards into
-  the bug.
+- prolog-lsp tracks the **default branch**, not tags: the newest tag breaks
+  utf-16 `initialize` and the fix is untagged — "latest release" resolves
+  backwards into the bug.
 - xml-lsp resolves from the Eclipse Maven repo's `<release>`, not GitHub
   releases, which report an ancient version.
 

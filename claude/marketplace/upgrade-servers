@@ -4,17 +4,12 @@ set -euo pipefail
 # Upgrade the user-global marketplace LSP servers to their latest upstream
 # release, verifying each one before it goes live.
 #
-# These servers have no package manager behind them -- one is a hand-fetched jar,
-# the other a SWI-Prolog pack -- so without this they only move when someone
-# edits a version number by hand. That is what drifted before: a pin outlived its
-# reason and nothing noticed. So no version numbers are recorded here. Each
-# server's current release is resolved from upstream at run time and installed.
-#
-# The reason it is safe to always take latest is the smoke test. Upstream HAS
-# shipped a release that breaks Claude Code (lsp_server v3.17.0 crashed
-# `initialize` for utf-16 clients), so "latest" alone is not a safety property --
-# every upgrade here is staged, handshaked as a real LSP client, and rolled back
-# on failure. A server only goes live if it answered correctly.
+# No version numbers are recorded here: these servers sit behind no package
+# manager (a hand-fetched jar; a SWI-Prolog pack) and hand-edited pins drift.
+# Each server's current release is resolved from upstream at run time.
+# "Latest" alone is not a safety property ("latest" can break `initialize` for
+# utf-16 clients) -- every upgrade is staged, handshaked as a real LSP client,
+# and rolled back on failure; a server goes live only after answering correctly.
 #
 # Exit codes: 0 = every server current or upgraded, 1 = an upgrade failed and was
 # rolled back (previous version still live), 2 = a check could not complete
@@ -37,9 +32,8 @@ if [[ -n "${missing:-}" ]]; then
 fi
 
 # Speak one LSP `initialize` over stdio and confirm the server answers with a
-# capabilities result. This is the gate that lets us track latest: it is a real
-# client handshake, not a --version check, so it catches exactly the class of
-# regression that made the old pin necessary. Args: <cmd> [expected-substring]
+# capabilities result -- a real client handshake, not a --version check; the
+# gate that makes tracking latest safe. Args: <cmd> [expected-substring]
 lsp_handshake() {
   local cmd=$1 want=${2:-'"capabilities"'} req out
   req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{"general":{"positionEncodings":["utf-16"]}}}}'
@@ -51,9 +45,9 @@ lsp_handshake() {
 }
 
 # --- xml-lsp: Eclipse LemMinX ---
-# Version truth is the Eclipse Maven repo's <release>, NOT GitHub releases: that
-# project's releases/latest reports 0.11.0, an ancient entry that would pin us
-# years behind forever. Upgrade = swap the jar, so rollback is a file move.
+# Version truth = the Eclipse Maven repo's <release>, NOT GitHub releases: that
+# project's releases/latest reports 0.11.0, ancient. Upgrade = jar swap, so
+# rollback is a file move.
 echo "xml-lsp (Eclipse LemMinX)"
 lemminx_meta="https://repo.eclipse.org/content/repositories/lemminx-releases/org/eclipse/lemminx/org.eclipse.lemminx/maven-metadata.xml"
 lemminx_jar="$HOME/.local/share/lemminx/lemminx.jar"
@@ -64,8 +58,7 @@ else
   if [[ -z "$latest" ]]; then
     skip "could not read <release>; keeping current jar"
   else
-    # No local version marker exists (the jar does not report one usefully), so
-    # record what we installed alongside it and compare against that.
+    # The jar reports no usable version -> record the installed one alongside it.
     stamp="${lemminx_jar%.jar}.version"
     current=$(cat "$stamp" 2>/dev/null || echo "none")
     if [[ "$current" == "$latest" && -f "$lemminx_jar" ]]; then
@@ -99,23 +92,20 @@ else
 fi
 
 # --- prolog-lsp: jamesnvc/lsp_server ---
-# Tracks the default branch rather than a tag on purpose. Upstream's newest tag
-# (v3.17.0) is the release that broke utf-16 `initialize`; the fix landed on
-# master and was never tagged, so "latest release" resolves BACKWARDS into the
-# bug while master is correct. The handshake below is what makes that safe -- if
-# master ever regresses, the upgrade is rejected and the working pack stays.
+# Tracks the default branch, not tags: the newest tag (v3.17.0) breaks utf-16
+# `initialize` and the fix is untagged on master, so "latest release" resolves
+# BACKWARDS into the bug. The handshake below makes branch-tracking safe -- a
+# regressed master is rejected and the working pack stays.
 #
-# Install is from a local checkout because swipl's resolver does not honour
-# commit()/branch selection through a git URL (verified on swipl 10.0.2): a git
-# URL errors with "pack `lsp_server' does not exist" and a bare pack name pulls
-# the broken tag. A file:// install sidesteps the resolver entirely.
+# Install from a local checkout: swipl's resolver (10.0.2) rejects
+# commit()/branch selection through a git URL ("pack `lsp_server' does not
+# exist") and a bare pack name pulls the broken tag; file:// sidesteps the
+# resolver.
 #
-# The rollback copy is staged OUTSIDE the pack root. swipl adds every directory
-# under the pack root to the library search path, so a sibling
-# `lsp_server.prev/` registers as a second pack and its prolog/ dir shadows the
-# real one -- `use_module(library(lsp_server))` then loads the OLD code and the
-# handshake tests the version we just replaced, failing every upgrade and
-# rolling it back forever.
+# Stage the rollback copy OUTSIDE the pack root: swipl registers every
+# directory under the pack root as a pack, so a sibling `lsp_server.prev/`
+# shadows the real prolog/ -- the handshake then tests the OLD code and every
+# upgrade rolls back forever.
 echo "prolog-lsp (jamesnvc/lsp_server)"
 pack_dir="$HOME/.local/share/swi-prolog/pack/lsp_server"
 pack_backup_dir="$HOME/.local/share/swi-prolog/pack-backup"
@@ -135,10 +125,8 @@ else
       rm -rf "$src"
       skip "clone failed; keeping current pack"
     else
-      # An older revision of this script staged the backup inside the pack root.
-      # A run interrupted between the copy and the restore leaves that shadowing
-      # sibling behind, which would silently reproduce the bug above, so clear
-      # the legacy location before staging.
+      # A stray `lsp_server.prev` under the pack root would shadow the pack
+      # (see above) -- clear it before staging.
       rm -rf "${pack_dir}.prev"
       backup=""
       if [[ -d "$pack_dir" ]]; then

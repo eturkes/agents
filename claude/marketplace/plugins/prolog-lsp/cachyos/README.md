@@ -15,7 +15,7 @@ Prerequisites:
    path with `pacman -Fl swi-prolog | grep '/json\.pl$'`.
 
 Notes:
-- Branch, not tags, on purpose: the newest tag (v3.17.0) binds `Capabilities`
+- Branch, not tags: the newest tag (v3.17.0) binds `Capabilities`
   inside its utf-32 branch, so utf-16 clients — which is what Claude Code is —
   leave it unbound and `get_dict(textDocument, Capabilities, _)` throws
   `instantiation_error` (JSON-RPC -32001). The fix (`f67ded3a`, functional
@@ -30,6 +30,3 @@ Notes:
 - `pack.pl` on the branch still declares `version('3.17.0')`, so the pack list
   reports 3.17.0 while running fixed code. The commit is the real identity.
 - The interpreter is repo-packaged, so `pacman -Syu` keeps it current.
-
-Status: installed + verified here. swi-prolog 10.0.2; utf-16 `initialize`
-returns `"positionEncoding":"utf-16"`.

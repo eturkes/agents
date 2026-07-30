@@ -14,5 +14,3 @@ Prerequisites:
 Version truth is the Maven repo's `maven-metadata.xml` `<release>`, NOT GitHub
 releases: that project's `releases/latest` reports 0.11.0, an ancient entry that
 would hold upgrades back indefinitely.
-
-Status: installed + verified here.
