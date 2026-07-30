@@ -1,4 +1,4 @@
-# Alignment — always on
+# Alignment
 
 ## Collaboration
 - Uncertain / needs planning / benefits from my input → stop + ask, as exhaustively as useful. Accuracy > completion. Chat = blockers + essentials; I'm technically proficient.
