@@ -87,5 +87,4 @@ CC maps `grep`→`rg-fff`: default fff RE2, relevance-ranked + marked. Serving r
 
 - Symlinks (any path): `Read` follows them, `Edit`/`Write` refuse a symlinked FILE ("Refusing to write through symlink") → edit the `readlink -f` target, reach it via a symlinked PARENT DIR (allowed), or write through `Bash`.
 - `Edit` line deletion → trailing-newline form (`victim\n`→``) or anchor-keeping replace (`anchor\nvictim`→`anchor`); leading-`\n` old_string + empty new_string also eats the trailing newline → neighbors merge on a success-reported edit (multi-line inserts clean). Post-edit `command grep -n` a neighbor line.
-- `CLAUDE.local.md` = facts both machine-specific + cross-project, reused verbatim and tracked in `~/agents`. Every edit must satisfy both criteria because it propagates across projects.
 - My direct instructions outrank any `CLAUDE.md`.

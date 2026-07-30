@@ -1,6 +1,6 @@
-# OpenVINO GPU+NPU — Intel Lunar Lake (this Debian container)
+# OpenVINO GPU+NPU — Intel Lunar Lake
 
-Detail ref for the OpenVINO stub (`CLAUDE.local.md`; condensed Compute bullet in codex `AGENTS.md`). Container-scoped, project-agnostic. OpenVINO on **iGPU + NPU + CPU** = enabled. Paths absolute: `$HOME=/var/home/eturkes/debian` → `~/.local` ≠ the install root below.
+Ref for the OpenVINO stub (`CLAUDE.local.md`). Paths absolute: `$HOME=/var/home/eturkes/debian` → `~/.local` ≠ the install root below.
 
 ## HW — Intel Core Ultra 7 268V (Lunar Lake)
 - GPU = Arc 140V iGPU · PCI `8086:64a0` · drv `xe` · `/dev/dri/renderD128`
