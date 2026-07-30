@@ -101,6 +101,7 @@
     ]
   },
   "enableArtifact": false,
+  "enableWorkflows": false,
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
@@ -129,5 +130,5 @@
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "useAutoModeDuringPlan": false,
-  "enableWorkflows": false
+  "fileCheckpointingEnabled": false
 }
