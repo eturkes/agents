@@ -60,5 +60,5 @@
 ## Meta
 
 - Reporting: audit every claim against this session's tool results; report evidence-backed work, flag unverified as unverified. Failed tests → report + output; skipped step → state skipped; done + verified → state plainly.
-- This `AGENTS.md` = facts both machine-specific + cross-project, reused verbatim and tracked in `~/agents`. Every edit must satisfy both criteria because it propagates across projects.
+- This `AGENTS.md` = facts both machine-specific + cross-project, reused verbatim across projects. Every edit must satisfy both criteria because it propagates across projects.
 - My direct instructions outrank any `AGENTS.md`.

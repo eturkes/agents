@@ -73,5 +73,5 @@
 
 ## Meta
 
-- This root `AGENTS.md` = reusable working principles + machine-specific Codex environment/config, invariant across Codex-only projects on this machine and tracked in `~/Projects/agents`.
+- This root `AGENTS.md` = reusable working principles + machine-specific Codex environment/config, invariant across Codex-only projects on this machine.
 - My direct instructions outrank any `AGENTS.md`.
