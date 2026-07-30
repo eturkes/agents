@@ -21,27 +21,22 @@
 - AI agents = the sole developers → optimize every file (code, docs, instructions) for LLM readability + token efficiency: write them dense, symbol-forward, human-sparse — telegraphic phrasing, `→`/`=` notation. Aggressively compress whatever you read, however works best. Prune unhelpful, implicit, obsolete, redundant content + structures whenever encountered.
 - State rules, facts + warnings plainly; omit + prune provenance — dates, verification/discovery events, origin stories.
 - Future-facing text, esp. prompts → state the desired action/target positively (`always`/`must`); counter the LLM "pink elephant" bias.
-- Instruction + skill files = yours to maintain → update any the moment it's improvable. Route durable guidance to the appropriate scope: global `~/.codex/AGENTS.md` = project-independent env/tooling + machine-specific capabilities; per-project `AGENTS.md` = generalized principles + config rules for working within projects; `.agent/memory.md` = cross-session/subagent project context adding value beyond code/docs/git history; repo workflows = `.agents/skills/`.
+- Instruction + skill files = yours to maintain → update any the moment it's improvable. Route durable guidance to the appropriate scope: global `~/.codex/AGENTS.md` = project-independent env/tooling + machine-specific capabilities; per-project `AGENTS.md` = generalized principles + config rules for working within projects; `.agent/memory.md` = cross-session project context adding value beyond code/docs/git history; repo workflows = `.agents/skills/`.
 - UI/UX: unique fonts, cohesive colors/themes, style fitted to project + human audience. Human-facing text = natural + direct; code/comments optimize agent readability. For humans: hyphens, flexible enumeration, varied comparatives.
 
 ## Engineering
 
 - Elegant, tightly-scoped modular components; deduplicate; KISS + UNIX where apt; refactor proactively.
 - Target sufficient scope, evidence-backed claims, and real success criteria.
-- Draw on established dev methods (TDD red-green-refactor) + emerging ones (multi-agent councils/teams); use or invent practices that beat training-data / human-preference defaults — go unconventional where you work better.
+- Draw on established dev methods (TDD red-green-refactor); use or invent practices that beat training-data / human-preference defaults — go unconventional where you work better.
 - Open tooling decisions (language/library/package…) → web-search + select for SOTA task/agent fit; my preselection is authoritative. Training overweights human-popular convenience. Library availability alone = insufficient; code is cheap and reimplementation viable. Consider agent-oriented languages (agentlanguages.dev) + AI-targeted tooling. Build on mature work when it is genuinely SOTA.
 - Tests/verification: derive scope from requested outcome + regression risk + repo posture. Add coverage that accelerates delivery or protects behavior. Fuzzing/property/formal methods require a task-specific advantage.
 - Adversarial review (code or session) → scrutinize correctness + logic, claim soundness, guarantee-vs-claim gaps; weigh honesty + overreach above style. Report every issue, incl. uncertain/low-severity; I filter findings.
 - Remotely-exploitable code → highest security standard: periodically audit, update software to latest, verify behavior after.
 
-## Codex
-
-- `$session-prompt` evolves with the project: end-to-end executable when its task + gates are fully specified.
-- Context topology: auto-compaction uses the active model's default threshold; `/status` shows context usage and `/compact` manually summarizes the chat. One-window aim = reserve enough room for verification + closure. PLANNING + MILESTONE-REVIEW run past compaction across coherent checkpoints; every other run holds the one-window aim.
-
 ## Environment
 
-- Debian container; you + all sessions/subagents = sole user, running as `eturkes` through bare `codex --yolo` with passwordless sudo, full r/w, network.
+- Debian container; you + all sessions = sole user, running as `eturkes` through bare `codex --yolo` with passwordless sudo, full r/w, network.
 - Host & container share trees at different abs paths (in-container `/run/host/...`). uv venvs path-bake per-layer → pick by path-prefix. Per-layer `UV_PROJECT_ENVIRONMENT` (`.venv`/`.venv-host`, git-ignored); `.envrc`+direnv in interactive shells, else `export`.
 - Resolve user-supplied paths before the first absolute-path call: expand `~` from the active `$HOME` and use `readlink -f` when the path exists; derive any home path from that resolved output, since a username alone underspecifies `/var/home/<user>`.
 - Workflow defaults: Python → `uv`; Node.js → `pnpm`; visual QA/web scraping → `chromiumfish`.
@@ -61,14 +56,6 @@
 - File contents → native shell tools; outputs are uncompressed.
 - Text inside a binary (e.g. the `codex` ELF) → `/usr/bin/rg -a -o '<pat>.{0,400}'`; `-a` is required, since plain `rg` prints `binary file matches` and withholds every line. Widen with `.{N}` on both sides to walk minified call sites.
 - Quote YAML frontmatter scalars opening with an indicator char (`[ { } ] , & * ! | > % @ # :`, backtick, double-quote): leading `[` → flow sequence → `ParserError` or silently-dropped field. Verify ad-hoc frontmatter with an ephemeral `pyyaml` parse.
-
-## Subagents
-
-- Delegate genuinely independent + parallelizable subtasks; keep working while they run. Supply relevant context; intervene on drift. Chunk sequentially around rate limits; confirm completion. Before closing, resolve every subagent via result/completion or stop it.
-- Agent lifecycle: Codex handles spawning, follow-up routing, waiting, and closing. `/agent` inspects/switches threads; ask Codex to steer a running subagent, stop it, or close a completed thread.
-- Permission mode = `--yolo` everywhere; subagents inherit the parent runtime override.
-- Subagent model + effort = Codex defaults; leave both unpinned.
-- Scope each subagent to finish + return its result within one context window. Budget margin + split large rewrites at section boundaries.
 
 ## Meta
 
