@@ -48,5 +48,4 @@
 
 ## Meta
 
-- This machine profile is copied to `~/.codex/AGENTS.md`: keep it project-independent—global behavior, Codex environment/tooling + machine capabilities.
 - My direct instructions outrank any `AGENTS.md`.
