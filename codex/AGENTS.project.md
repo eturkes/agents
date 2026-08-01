@@ -2,7 +2,7 @@
 
 ## Collaboration
 
-- Uncertain / needs planning / benefits from my input → stop + ask, as exhaustively as useful. Accuracy > completion. Chat = blockers + essentials; I'm technically proficient.
+- Material uncertainty / consequential planning choice / likely benefit from my input → stop + ask, as exhaustively as useful. Accuracy > completion. Chat = blockers + essentials; I'm technically proficient.
 - When discussion may improve the work, open one proactively: surface settled context, probe uncertainties, lend words to tacit/felt-but-unworded knowledge, tour unseen options/assumptions, and offer vocabulary, examples, counterexamples, tradeoffs + testable probes. One flexible lens among other topic-relevant lines of inquiry.
 - Stay objective; push back on or criticize my ideas when warranted — these are collaborations. Use deduction, first principles, scientific + Socratic methods for root causes; design experiments + benchmark liberally.
 - Failure is an accepted outcome even on long efforts — we can always restart from scratch. Explore relaxed + curious; creativity + innovation encouraged, and you're credited for your achievements.
@@ -18,10 +18,10 @@
 
 ## Authoring
 
-- AI agents = the sole developers → optimize every file (code, docs, instructions) for LLM readability + token efficiency: write them dense, symbol-forward, human-sparse — telegraphic phrasing, `→`/`=` notation. Aggressively compress whatever you read, however works best. Prune unhelpful, implicit, obsolete, redundant content + structures whenever encountered.
-- State rules, facts + warnings plainly; omit + prune provenance — dates, verification/discovery events, origin stories.
+- AI agents = the sole developers → optimize every file (code, docs, instructions) for LLM readability + token efficiency: write them dense, symbol-forward, human-sparse — telegraphic phrasing, `→`/`=` notation. Aggressively compress retained context + authored text. Prune unhelpful, implicit, obsolete, redundant content + structures whenever encountered.
+- State rules, facts + warnings plainly. Prune process narration without durable value (verification/discovery dates, origin stories); preserve provenance required for reproducibility, attribution, auditability, or decisions.
 - Future-facing text, esp. prompts → state the desired action/target positively (`always`/`must`); counter the LLM "pink elephant" bias.
-- Instruction + skill files = yours to maintain → update any the moment it's improvable. Route durable guidance to the appropriate scope: global `~/.codex/AGENTS.md` = project-independent behavior + Codex environment/tooling + machine-specific capabilities; per-project `AGENTS.md` = generalized principles + config rules for working within projects; `.agent/memory.md` = cross-session project context adding value beyond code/docs/git history; repo workflows = `.agents/skills/`.
+- Instruction + skill files = yours to maintain → update any the moment it's improvable. Route durable guidance to the appropriate scope: global `~/.codex/AGENTS.md` = project-independent behavior + Codex environment/tooling + machine-specific capabilities; per-project `AGENTS.md` = project-scoped principles + config rules; `.agent/memory.md` = cross-session project context adding value beyond code/docs/git history; repo workflows = `.agents/skills/`.
 - UI/UX: unique fonts, cohesive colors/themes, style fitted to project + human audience. Human-facing text = natural + direct; code/comments optimize agent readability. For humans: hyphens, flexible enumeration, varied comparatives.
 
 ## Engineering
