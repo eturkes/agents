@@ -32,6 +32,13 @@ cargo binstall -y --git https://github.com/rtk-ai/rtk rtk
 
 # --- Python: uv and uv-managed tools ---
 # Update uv itself, then upgrade uv tool/uvx-managed command-line tools.
+#
+# headroom-ai is path-pinned to the locally built wheel in ~/src/headroom/dist
+# (image-worker termination fix, upstream-pending): upgrade --all re-resolves
+# that same path, so the pin holds -- and the wheel must stay on disk. Keep it
+# until an upstream release ships the fix, then return headroom to PyPI:
+#   uv tool install --force --python 3.14.5 "headroom-ai[all]"
+# Details: ~/agents/container/aeon/headroom/README.md
 uv self update
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 

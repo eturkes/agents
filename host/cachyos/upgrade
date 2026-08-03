@@ -25,6 +25,12 @@ echo "=== System packages (pacman/AUR) ==="
 # tool on this box, so it runs first: later steps assume current binaries.
 paru -Syu
 
+# headroom: the image-worker-termination fix (upstream-pending) deploys as a
+# patched uv-tool build shadowing the repo package on PATH; -Syu moving the
+# repo package underneath it is harmless. Once a repo release ships the fix,
+# drop the shadow: uv tool uninstall headroom-ai. State + recipe:
+#   $repo_root/host/cachyos/headroom/README.md
+
 echo
 echo "=== Local app repositories ==="
 git -C "$HOME/.local/app/bgcmd" pull --ff-only

@@ -1,0 +1,1508 @@
+From 99481d5a47e49d46804e5947856cb23205505b6a Mon Sep 17 00:00:00 2001
+From: Emir Turkes <eturkes@bu.edu>
+Date: Mon, 3 Aug 2026 16:56:39 +0900
+Subject: [PATCH] fix(proxy): hard-terminate timed-out image workers and honor
+ passthrough for images
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Timed-out image-compression jobs left their RapidOCR/ONNX worker
+processes running forever: _reset_image_pool() used
+shutdown(wait=False, cancel_futures=True), which cancels only queued
+futures. Every timeout then built a fresh one-worker pool, so ~1 GiB /
+65-thread workers accumulated until the host ran out of CPU and RAM
+(observed live: 10 concurrent workers, 10.5 GiB aggregate RSS, worker
+lifetimes >20 min past their 30 s timeout).
+
+Pool lifecycle:
+- Capture the exact pool a job ran on and retire that pool on failure.
+  Retirement is compare-and-swap (a stale timeout can never tear down a
+  newer replacement pool) and idempotent.
+- Hard-stop retired workers: terminate_workers() then kill_workers()
+  after a bounded grace on Python 3.14+, with a guarded private-table
+  fallback for 3.10–3.13. Signals are sent BEFORE shutdown() —
+  shutdown() drops the process table and turns them into no-ops.
+- Admission control: one in-flight job for the one-worker pool; extra
+  requests fail open after a short wait instead of queueing, so a
+  queued job's execution timeout can no longer expire before it runs.
+
+Operator controls:
+- New --no-image-optimize / HEADROOM_NO_IMAGE_OPTIMIZE (click + argparse
+  paths) disables the image path outright.
+- --no-optimize (global passthrough) now implies image_optimize=False,
+  enforced both in config wiring and in ImageCompressionDecision via a
+  new optimize_disabled gate.
+- --compressor/HEADROOM_COMPRESSORS selections without "image" now also
+  close the proxy-level image gate instead of only the in-router flag.
+
+OCR bounds:
+- RapidOCR sessions are created with intra/inter-op threads pinned to 1
+  (HEADROOM_OCR_INTRA_THREADS / HEADROOM_OCR_INTER_THREADS to override,
+  v1 and v3 APIs both handled, fail-open to an unbounded engine).
+---
+ docs/content/docs/configuration.mdx          |   6 +-
+ docs/content/docs/proxy.mdx                  |   7 +-
+ headroom/cli/proxy.py                        |  14 +
+ headroom/image/compressor.py                 |  63 ++-
+ headroom/proxy/image_compression_decision.py |  17 +-
+ headroom/proxy/image_compression_policy.py   |   9 +
+ headroom/proxy/image_isolation.py            | 229 +++++++++-
+ headroom/proxy/server.py                     |  41 ++
+ tests/test_cli_proxy_improvements.py         |  47 ++
+ tests/test_compressor_selection.py           |  62 +++
+ tests/test_image_compression_decision.py     |  57 +++
+ tests/test_image_compression_isolation.py    | 431 +++++++++++++++++++
+ tests/test_image_compression_policy.py       |  49 +++
+ tests/test_image_ocr_api_compat.py           | 104 +++++
+ 14 files changed, 1118 insertions(+), 18 deletions(-)
+
+diff --git a/docs/content/docs/configuration.mdx b/docs/content/docs/configuration.mdx
+index c4bf1bc8..e71b0d64 100644
+--- a/docs/content/docs/configuration.mdx
++++ b/docs/content/docs/configuration.mdx
+@@ -245,9 +245,13 @@ headroom proxy \
+ ### Feature Flags
+ 
+ ```bash
+-# Disable optimization (passthrough mode)
++# Disable optimization (passthrough mode, images included)
+ headroom proxy --no-optimize
+ 
++# Disable image compression only (skips the isolated OCR/ONNX image worker
++# process); text optimization stays on
++headroom proxy --no-image-optimize
++
+ # Disable semantic caching
+ headroom proxy --no-cache
+ 
+diff --git a/docs/content/docs/proxy.mdx b/docs/content/docs/proxy.mdx
+index 5de6a334..42bfed12 100644
+--- a/docs/content/docs/proxy.mdx
++++ b/docs/content/docs/proxy.mdx
+@@ -38,7 +38,8 @@ Telemetry is **local-only and off by default**. `HEADROOM_TELEMETRY=on` (or `--t
+ | `--max-keepalive` | `100` | Maximum upstream keep-alive connections |
+ | `--http-proxy` | None | HTTP proxy URL for upstream provider requests only; HTTPS provider APIs use CONNECT |
+ | `--mode` | `cache` | Optimization mode: `token` prioritizes compression, `cache` preserves provider prefix-cache stability. Default is `cache` (see [Savings profiles](#savings-profiles)) |
+-| `--no-optimize` | `false` | Disable optimization (passthrough mode) |
++| `--no-optimize` | `false` | Disable optimization (passthrough mode, images included) |
++| `--no-image-optimize` | `false` | Disable image compression only (tile alignment, OCR, and the isolated image worker process); text optimization stays on. Env: `HEADROOM_NO_IMAGE_OPTIMIZE` |
+ | `--no-cache` | `false` | Disable semantic caching |
+ | `--no-rate-limit` | `false` | Disable rate limiting |
+ | `--log-file` | None | Path to JSONL log file |
+@@ -305,6 +306,10 @@ See [Metrics](/docs/metrics) for the Prometheus and Grafana setup.
+ |---|---|---|
+ | `--embedding-server` / `HEADROOM_EMBEDDING_SERVER` | off | Share one ONNX embedder across workers (~600 MB RSS saved). |
+ | `--compression-max-workers` / `HEADROOM_COMPRESSION_MAX_WORKERS` | CPU count | Bound the CPU-bound compression threadpool. |
++| `--no-image-optimize` / `HEADROOM_NO_IMAGE_OPTIMIZE` | off | Disable image compression and its isolated OCR/ONNX worker process entirely. |
++| `HEADROOM_OCR_INTRA_THREADS` / `HEADROOM_OCR_INTER_THREADS` | `1` | ONNX Runtime thread bounds per RapidOCR session inside the image worker. |
++| `HEADROOM_IMAGE_TERMINATE_GRACE_SECONDS` | `5` | Grace between SIGTERM and SIGKILL when a timed-out image worker is terminated. |
++| `HEADROOM_IMAGE_ADMISSION_TIMEOUT_SECONDS` | `1` | How long a request waits for the (single) image worker before failing open. |
+ 
+ <Callout type="info" title="Full JSON config">
+ For programmatic deployment you can pass an entire proxy config as JSON via `HEADROOM_PROXY_CONFIG_JSON`, or point `HEADROOM_CONFIG_DIR` / `HEADROOM_WORKSPACE_DIR` at custom roots (see [Filesystem Contract](/docs/filesystem-contract)).
+diff --git a/headroom/cli/proxy.py b/headroom/cli/proxy.py
+index 30292a4e..d5c9c4ae 100644
+--- a/headroom/cli/proxy.py
++++ b/headroom/cli/proxy.py
+@@ -262,6 +262,16 @@ def dashboard(port: int, no_open: bool) -> None:
+     ),
+ )
+ @click.option("--no-optimize", is_flag=True, help="Disable optimization (passthrough mode)")
++@click.option(
++    "--no-image-optimize",
++    is_flag=True,
++    envvar="HEADROOM_NO_IMAGE_OPTIMIZE",
++    help=(
++        "Disable image compression only (tile alignment, OCR, and the isolated "
++        "image worker process) while keeping text optimization on. Implied by "
++        "--no-optimize. Env: HEADROOM_NO_IMAGE_OPTIMIZE."
++    ),
++)
+ @click.option("--no-cache", is_flag=True, help="Disable semantic caching")
+ @click.option("--no-rate-limit", is_flag=True, help="Disable rate limiting")
+ @click.option(
+@@ -927,6 +937,7 @@ def proxy(
+     http_proxy: str | None,
+     intercept_tool_results: bool,
+     no_optimize: bool,
++    no_image_optimize: bool,
+     no_cache: bool,
+     no_rate_limit: bool,
+     protect_tool_results: str | None,
+@@ -1181,6 +1192,9 @@ def proxy(
+         vertex_api_url=provider_api_overrides.vertex,
+         mode=effective_mode,
+         optimize=not no_optimize,
++        # --no-optimize is full passthrough, so it implies the image gate off
++        # too; --no-image-optimize turns off only image work.
++        image_optimize=not (no_optimize or no_image_optimize),
+         cache_enabled=not no_cache,
+         rate_limit_enabled=not no_rate_limit,
+         rate_limit_requests_per_minute=rpm if rpm is not None else 60,
+diff --git a/headroom/image/compressor.py b/headroom/image/compressor.py
+index 5dc7baa9..62252dfd 100644
+--- a/headroom/image/compressor.py
++++ b/headroom/image/compressor.py
+@@ -24,6 +24,7 @@ from __future__ import annotations
+ import base64
+ import io
+ import logging
++import os
+ import re
+ from dataclasses import dataclass
+ from typing import TYPE_CHECKING, Any
+@@ -97,6 +98,66 @@ def _reset_resolved_ocr_for_tests() -> None:
+     _RESOLVED_OCR = None
+ 
+ 
++def _ocr_thread_limit(env_var: str) -> int:
++    """Resolve an OCR ONNX thread bound from the environment (default 1)."""
++    try:
++        value = int(os.environ.get(env_var, "1"))
++    except ValueError:
++        return 1
++    return value if value >= 1 else 1
++
++
++def _build_ocr_engine(ocr_cls: Any, api_version: str | None) -> Any:
++    """Construct a RapidOCR engine with bounded ONNX Runtime threading.
++
++    RapidOCR defaults intra/inter-op thread counts to ``-1`` (automatic) for
++    EACH of its detector / classifier / recognizer sessions, so one engine
++    matured to ~65 native threads on an 8-CPU host. Since the engine runs in
++    Headroom's dedicated single-purpose image worker, bound it to 1 thread per
++    session (overridable via ``HEADROOM_OCR_INTRA_THREADS`` /
++    ``HEADROOM_OCR_INTER_THREADS``).
++
++    Falls back to a parameterless engine when the installed backend rejects
++    the settings (unknown key shapes in old/new releases) — a working
++    unbounded engine beats no OCR.
++    """
++    intra = _ocr_thread_limit("HEADROOM_OCR_INTRA_THREADS")
++    inter = _ocr_thread_limit("HEADROOM_OCR_INTER_THREADS")
++    if api_version == "v3":
++        # rapidocr 3.x: dotted keys override the engine config for the
++        # shared onnxruntime backend.
++        params = {
++            "EngineConfig.onnxruntime.intra_op_num_threads": intra,
++            "EngineConfig.onnxruntime.inter_op_num_threads": inter,
++        }
++        try:
++            return ocr_cls(params=params)
++        except Exception as exc:
++            logger.warning(
++                "OCR engine rejected thread bounds; retrying unbounded "
++                "(event=ocr_thread_bounds_rejected, api=v3): %s",
++                exc,
++            )
++            return ocr_cls()
++    if api_version == "v1":
++        # rapidocr-onnxruntime 1.4.x: `Global.`-prefixed kwargs override the
++        # bundled config's session settings.
++        params = {
++            "Global.intra_op_num_threads": intra,
++            "Global.inter_op_num_threads": inter,
++        }
++        try:
++            return ocr_cls(**params)
++        except Exception as exc:
++            logger.warning(
++                "OCR engine rejected thread bounds; retrying unbounded "
++                "(event=ocr_thread_bounds_rejected, api=v1): %s",
++                exc,
++            )
++            return ocr_cls()
++    return ocr_cls()
++
++
+ @dataclass
+ class CompressionResult:
+     """Result of image compression."""
+@@ -424,7 +485,7 @@ class ImageCompressor:
+ 
+         if not hasattr(self, "_ocr_engine"):
+             try:
+-                self._ocr_engine = ocr_cls()
++                self._ocr_engine = _build_ocr_engine(ocr_cls, api_version)
+             except Exception as exc:
+                 logger.warning(
+                     "OCR engine init failed (event=ocr_engine_init_failed, api=%s): %s",
+diff --git a/headroom/proxy/image_compression_decision.py b/headroom/proxy/image_compression_decision.py
+index 5a403524..3d2572bc 100644
+--- a/headroom/proxy/image_compression_decision.py
++++ b/headroom/proxy/image_compression_decision.py
+@@ -16,9 +16,10 @@ a value type still pays off:
+ Precedence (highest first):
+ 
+   1. ``bypass_header``           — user's explicit opt-out
+-  2. ``image_optimize_disabled`` — operator ``config.image_optimize=False``
+-  3. ``no_messages``             — empty / missing messages
+-  4. otherwise → ``should_compress=True``
++  2. ``optimize_disabled``       — global passthrough ``config.optimize=False``
++  3. ``image_optimize_disabled`` — operator ``config.image_optimize=False``
++  4. ``no_messages``             — empty / missing messages
++  5. otherwise → ``should_compress=True``
+ 
+ Distinct from text :class:`CompressionDecision`'s
+ ``compression_disabled`` reason: operators can enable text + disable
+@@ -54,6 +55,7 @@ class ImageCompressionDecision:
+     # in ``RequestOutcome.tags["image_skip_reason"]`` so the dashboard
+     # can slice image-skipped traffic by cause. One of:
+     #   * "bypass_header"           — user set x-headroom-bypass/mode
++    #   * "optimize_disabled"       — global passthrough (config.optimize off)
+     #   * "image_optimize_disabled" — operator config off
+     #   * "no_messages"             — empty / missing messages
+     # When ``should_compress`` is True, this is None.
+@@ -62,6 +64,7 @@ class ImageCompressionDecision:
+     # Observability: every constituent boolean exposed so debug tools
+     # answer "what did the decision see?" without re-running it.
+     bypass_header_set: bool
++    optimize_enabled: bool
+     image_optimize_enabled: bool
+     has_messages: bool
+ 
+@@ -82,13 +85,16 @@ class ImageCompressionDecision:
+             ``.get(key)`` method (dict, starlette Headers, mapping).
+             Bypass detected via ``_headroom_bypass_enabled``.
+         config
+-            ``HeadroomConfig``-shaped object; only ``image_optimize``
+-            is read.
++            ``HeadroomConfig``-shaped object; only ``optimize`` and
++            ``image_optimize`` are read. A missing ``optimize`` attr
++            counts as enabled (only an explicit ``optimize=False``
++            global passthrough turns images off through this gate).
+         messages
+             Request messages. ``None`` and ``[]`` are equivalent.
+         """
+         decision = decide_image_compression(
+             headers=headers,
++            optimize_enabled=bool(getattr(config, "optimize", True)),
+             image_optimize_enabled=bool(getattr(config, "image_optimize", False)),
+             has_messages=bool(messages),
+         )
+@@ -97,6 +103,7 @@ class ImageCompressionDecision:
+             should_compress=decision.should_compress,
+             passthrough_reason=decision.passthrough_reason,
+             bypass_header_set=decision.bypass_header_set,
++            optimize_enabled=decision.optimize_enabled,
+             image_optimize_enabled=decision.image_optimize_enabled,
+             has_messages=decision.has_messages,
+         )
+diff --git a/headroom/proxy/image_compression_policy.py b/headroom/proxy/image_compression_policy.py
+index e336c643..eb6e3792 100644
+--- a/headroom/proxy/image_compression_policy.py
++++ b/headroom/proxy/image_compression_policy.py
+@@ -15,6 +15,7 @@ class ImageCompressionPolicyResult:
+     should_compress: bool
+     passthrough_reason: str | None
+     bypass_header_set: bool
++    optimize_enabled: bool
+     image_optimize_enabled: bool
+     has_messages: bool
+ 
+@@ -22,6 +23,7 @@ class ImageCompressionPolicyResult:
+ def decide_image_compression(
+     *,
+     headers: Any,
++    optimize_enabled: bool = True,
+     image_optimize_enabled: bool,
+     has_messages: bool,
+ ) -> ImageCompressionPolicyResult:
+@@ -31,6 +33,12 @@ def decide_image_compression(
+     if bypass:
+         reason: str | None = "bypass_header"
+         should = False
++    elif not optimize_enabled:
++        # Global passthrough (--no-optimize / optimize=False) disables every
++        # optimization, images included. Before this gate existed, passthrough
++        # mode still spawned image pool workers.
++        reason = "optimize_disabled"
++        should = False
+     elif not image_optimize_enabled:
+         reason = "image_optimize_disabled"
+         should = False
+@@ -45,6 +53,7 @@ def decide_image_compression(
+         should_compress=should,
+         passthrough_reason=reason,
+         bypass_header_set=bypass,
++        optimize_enabled=optimize_enabled,
+         image_optimize_enabled=image_optimize_enabled,
+         has_messages=has_messages,
+     )
+diff --git a/headroom/proxy/image_isolation.py b/headroom/proxy/image_isolation.py
+index 2e2addf5..3b59bc4b 100644
+--- a/headroom/proxy/image_isolation.py
++++ b/headroom/proxy/image_isolation.py
+@@ -4,6 +4,7 @@ import asyncio
+ import logging
+ import multiprocessing
+ import os
++import sys
+ import threading
+ import time
+ from collections.abc import Callable
+@@ -16,6 +17,27 @@ logger = logging.getLogger("headroom.proxy")
+ _IMAGE_POOL_LOCK = threading.Lock()
+ _IMAGE_POOL: ProcessPoolExecutor | None = None
+ 
++# Admission control: the pool has exactly one worker, so admitting more than
++# one in-flight job only builds a queue inside the executor. Queued jobs used
++# to start their `asyncio.wait_for` clock at submission, which meant they
++# could "time out" before their work had even begun executing — and each such
++# phantom timeout reset the pool and spawned another worker process. A single
++# slot keeps the timeout clock honest: it starts only once the job owns the
++# worker.
++_IMAGE_JOB_SLOT = threading.BoundedSemaphore(1)
++
++# How long a request may wait for the admission slot before failing open
++# (forwarding the original payload). Deliberately short: image compression is
++# best-effort, and a busy worker means the previous job is already slow.
++_ADMISSION_TIMEOUT_SECONDS = float(
++    os.environ.get("HEADROOM_IMAGE_ADMISSION_TIMEOUT_SECONDS", "1.0")
++)
++_ADMISSION_POLL_SECONDS = 0.02
++
++# Grace period between SIGTERM (terminate) and SIGKILL (kill) when hard-
++# stopping a retired pool's workers.
++_TERMINATE_GRACE_SECONDS = float(os.environ.get("HEADROOM_IMAGE_TERMINATE_GRACE_SECONDS", "5.0"))
++
+ # Per-worker-process cached compressor. The image pool is a persistent
+ # single-worker ProcessPoolExecutor, so building a fresh ImageCompressor (and,
+ # inside it, a fresh ONNX router loading native ort.InferenceSession models) on
+@@ -91,6 +113,19 @@ def _abort_worker(
+     os.abort()
+ 
+ 
++def _pidfile_sleep_worker(
++    messages: list[dict[str, Any]],
++    provider: str,
++) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
++    """Test worker: publish this process's PID, then sleep far past any test
++    timeout. Lets tests observe the worker process and assert it is actually
++    terminated after a timeout (not merely abandoned)."""
++    with open(messages[0]["content"], "w") as fh:
++        fh.write(str(os.getpid()))
++    time.sleep(120.0)
++    return messages, None
++
++
+ _IMAGE_WORKER: Callable[
+     [list[dict[str, Any]], str],
+     tuple[list[dict[str, Any]], dict[str, Any] | None],
+@@ -108,13 +143,168 @@ def _image_pool() -> ProcessPoolExecutor:
+         return _IMAGE_POOL
+ 
+ 
+-def _reset_image_pool() -> None:
++def _snapshot_worker_processes(pool: ProcessPoolExecutor) -> list[Any]:
++    """Best-effort snapshot of the pool's worker `multiprocessing.Process`es.
++
++    Reads the executor's private process table; every consumer below treats an
++    empty result as "cannot observe" and degrades safely.
++    """
++    try:
++        processes = getattr(pool, "_processes", None)
++        if not processes:
++            return []
++        return [proc for proc in list(processes.values()) if proc is not None]
++    except Exception:
++        return []
++
++
++def _wait_for_processes(procs: list[Any], grace: float) -> bool:
++    """Wait up to ``grace`` seconds for every process in ``procs`` to exit.
++
++    Returns True when all observed processes exited, False on timeout or when
++    nothing could be observed (``procs`` empty).
++    """
++    if not procs:
++        time.sleep(grace)
++        return False
++    deadline = time.monotonic() + grace
++    while time.monotonic() < deadline:
++        alive = False
++        for proc in procs:
++            try:
++                if proc.is_alive():
++                    alive = True
++                    break
++            except ValueError:
++                continue
++        if not alive:
++            return True
++        time.sleep(0.05)
++    return False
++
++
++def _force_stop_workers_compat(pool: ProcessPoolExecutor, grace: float) -> None:
++    """Terminate workers on Python < 3.14, which lacks the public
++    ``terminate_workers()`` / ``kill_workers()`` executor API.
++
++    Falls back to the executor's private process table. If the table cannot be
++    read there is nothing more we can do here — that is the pre-fix behavior
++    (worker left running), so log it loudly instead of failing.
++    """
++    procs = _snapshot_worker_processes(pool)
++    if not procs:
++        logger.warning(
++            "Image pool retirement could not observe worker processes on "
++            "Python %s; a timed-out image worker may keep running",
++            ".".join(map(str, sys.version_info[:3])),
++        )
++        return
++    for proc in procs:
++        try:
++            if proc.is_alive():
++                proc.terminate()
++        except (ValueError, ProcessLookupError, OSError):
++            continue
++    if _wait_for_processes(procs, grace):
++        return
++    for proc in procs:
++        try:
++            if proc.is_alive():
++                proc.kill()
++        except (ValueError, ProcessLookupError, OSError):
++            continue
++
++
++def _hard_stop_pool_workers(pool: ProcessPoolExecutor, grace: float | None = None) -> None:
++    """Actually stop a retired pool's worker processes, then shut the pool down.
++
++    ``ProcessPoolExecutor.shutdown(wait=False, cancel_futures=True)`` only
++    cancels *queued* futures — a worker that already started a job keeps
++    running (and, for RapidOCR/ONNX image jobs, keeps ~1 GiB RSS and dozens of
++    native threads alive). Timed-out workers therefore accumulated without
++    bound. Send SIGTERM via the public 3.14+ executor API (or the private-
++    table fallback below it), then escalate to SIGKILL after a bounded grace
++    period.
++
++    Signal order matters: ``shutdown()`` drops the executor's process table,
++    which turns a later ``terminate_workers()`` / ``kill_workers()`` into a
++    silent no-op. Signal first, ``shutdown()`` last.
++    """
++    if grace is None:
++        grace = _TERMINATE_GRACE_SECONDS
++    try:
++        terminate = getattr(pool, "terminate_workers", None)
++        kill = getattr(pool, "kill_workers", None)
++        if callable(terminate) and callable(kill):
++            procs = _snapshot_worker_processes(pool)
++            try:
++                terminate()
++            except Exception as exc:
++                logger.warning(
++                    "terminate_workers() failed (%s); escalating to kill", type(exc).__name__
++                )
++            if not _wait_for_processes(procs, grace):
++                try:
++                    kill()
++                except Exception as exc:
++                    logger.warning("kill_workers() failed (%s)", type(exc).__name__)
++        else:
++            _force_stop_workers_compat(pool, grace)
++    finally:
++        # Reject any straggler submissions, cancel queued (never-started)
++        # futures, and let the executor's manager thread clean up.
++        pool.shutdown(wait=False, cancel_futures=True)
++
++
++def _retire_image_pool(pool: ProcessPoolExecutor | None) -> None:
++    """Permanently retire ``pool``: stop handing it out, then hard-stop its
++    workers.
++
++    * **Compare-and-swap**: the global ``_IMAGE_POOL`` is cleared only when it
++      still refers to ``pool``. A stale timeout from a request that ran on an
++      old pool can therefore never tear down a newer replacement pool.
++    * **Idempotent**: multiple failed requests may hold references to the same
++      pool; only the first retirement acts.
++    * The worker hard-stop runs on a daemon thread so the (SIGTERM, grace,
++      SIGKILL) sequence never blocks the event loop.
++    """
++    if pool is None:
++        return
+     global _IMAGE_POOL
++    with _IMAGE_POOL_LOCK:
++        if _IMAGE_POOL is pool:
++            _IMAGE_POOL = None
++        if getattr(pool, "_headroom_retired", False):
++            return
++        pool._headroom_retired = True  # type: ignore[attr-defined]
++    # The reaper owns the whole stop sequence (terminate → grace → kill →
++    # shutdown). shutdown() must NOT run first: it drops the executor's
++    # process table and would turn the termination calls into silent no-ops.
++    threading.Thread(
++        target=_hard_stop_pool_workers,
++        args=(pool,),
++        name="headroom-image-pool-reaper",
++        daemon=True,
++    ).start()
++
++
++def _reset_image_pool() -> None:
++    """Retire whichever pool is currently installed (test/reset hook)."""
+     with _IMAGE_POOL_LOCK:
+         pool = _IMAGE_POOL
+-        _IMAGE_POOL = None
+-    if pool is not None:
+-        pool.shutdown(wait=False, cancel_futures=True)
++    _retire_image_pool(pool)
++
++
++async def _acquire_image_slot(timeout: float) -> bool:
++    """Try to win the single admission slot without blocking the event loop."""
++    if _IMAGE_JOB_SLOT.acquire(blocking=False):
++        return True
++    deadline = time.monotonic() + timeout
++    while time.monotonic() < deadline:
++        await asyncio.sleep(_ADMISSION_POLL_SECONDS)
++        if _IMAGE_JOB_SLOT.acquire(blocking=False):
++            return True
++    return False
+ 
+ 
+ async def run_image_compression_isolated(
+@@ -123,22 +313,41 @@ async def run_image_compression_isolated(
+     *,
+     timeout: float,
+ ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
++    admitted = await _acquire_image_slot(_ADMISSION_TIMEOUT_SECONDS)
++    if not admitted:
++        logger.warning("Image compression worker busy; forwarding original image payload")
++        return messages, None
+     loop = asyncio.get_running_loop()
++    pool: ProcessPoolExecutor | None = None
+     try:
+-        future = loop.run_in_executor(_image_pool(), _IMAGE_WORKER, messages, provider)
++        # Capture the exact pool this job runs on. Failure paths retire *this*
++        # pool — never whatever pool happens to be globally current by then.
++        pool = _image_pool()
++        future = loop.run_in_executor(pool, _IMAGE_WORKER, messages, provider)
+         return await asyncio.wait_for(future, timeout=timeout)
+     except BrokenProcessPool:
+         logger.warning("Image compression worker crashed; forwarding original image payload")
+-        _reset_image_pool()
++        _retire_image_pool(pool)
+         return messages, None
+-    except TimeoutError:
+-        logger.warning("Image compression worker timed out; forwarding original image payload")
+-        _reset_image_pool()
++    except (TimeoutError, asyncio.TimeoutError):
++        logger.warning(
++            "Image compression worker timed out; terminating worker and "
++            "forwarding original image payload"
++        )
++        _retire_image_pool(pool)
+         return messages, None
++    except asyncio.CancelledError:
++        # The caller abandoned the request; nothing will consume the result.
++        # Retire the pool so the admission slot released below can never be
++        # free while the single worker is still busy on an orphaned job.
++        _retire_image_pool(pool)
++        raise
+     except Exception as exc:
+         logger.warning(
+             "Image compression worker failed (%s); forwarding original image payload",
+             type(exc).__name__,
+         )
+-        _reset_image_pool()
++        _retire_image_pool(pool)
+         return messages, None
++    finally:
++        _IMAGE_JOB_SLOT.release()
+diff --git a/headroom/proxy/server.py b/headroom/proxy/server.py
+index 04ea3cb5..593f0b75 100644
+--- a/headroom/proxy/server.py
++++ b/headroom/proxy/server.py
+@@ -713,6 +713,23 @@ def _apply_compressor_selection(
+         setattr(router_config, flag, select_all or name in selected)
+ 
+ 
++def _image_compressor_selected(compressors: set[str] | None) -> bool:
++    """True when the compressor selection keeps image compression enabled.
++
++    ``None`` / empty (no ``--compressor`` / ``HEADROOM_COMPRESSORS`` given)
++    keeps every built-in enabled, so image stays on. A concrete selection
++    keeps image on only when it names ``image`` (or the ``*`` wildcard) —
++    mirroring exactly what :func:`_apply_compressor_selection` does to
++    ``enable_image_optimizer``.
++    """
++    if compressors is None:
++        return True
++    selected = {name.strip() for name in compressors if name.strip()}
++    if not selected:
++        return True
++    return "*" in selected or "image" in selected
++
++
+ def _external_compressor_selection(compressors: set[str] | None) -> list[str] | None:
+     """Return the selected EXTERNAL (non-built-in) compressor names, or ``None``.
+ 
+@@ -845,6 +862,14 @@ class HeadroomProxy(
+         # Runs BEFORE the disable_kompress override below so that flag stays
+         # authoritative for turning Kompress off.
+         _apply_compressor_selection(router_config, config.compressors)
++        # A selection that leaves out "image" must also close the proxy-level
++        # image gate: `enable_image_optimizer` only governs the in-router
++        # optimizer, while the isolated image *worker process* path is gated by
++        # `config.image_optimize` in the handlers. Without this, e.g.
++        # HEADROOM_COMPRESSORS=smart_crusher,kompress looked like it disabled
++        # image work but still spawned image worker processes.
++        if not _image_compressor_selected(config.compressors):
++            config.image_optimize = False
+         # External (non-built-in) `headroom.compressor` selections are ignored by
+         # `_apply_compressor_selection` (they have no enable_* flag). Thread them
+         # to the router here so it can route matching blocks through them; None
+@@ -5340,6 +5365,15 @@ if __name__ == "__main__":
+ 
+     # Optimization
+     parser.add_argument("--no-optimize", action="store_true", help="Disable optimization")
++    parser.add_argument(
++        "--no-image-optimize",
++        action="store_true",
++        help=(
++            "Disable image compression only (tile alignment, OCR, and the isolated "
++            "image worker process) while keeping text optimization on. Implied by "
++            "--no-optimize. Also settable via HEADROOM_NO_IMAGE_OPTIMIZE=1."
++        ),
++    )
+     parser.add_argument("--min-tokens", type=int, default=500, help="Min tokens to crush")
+     parser.add_argument("--max-items", type=int, default=50, help="Max items after crush")
+     parser.add_argument(
+@@ -5519,6 +5553,12 @@ if __name__ == "__main__":
+         else (args.code_aware or not args.no_code_aware)
+     )
+     optimize = env_optimize if not args.no_optimize else False
++    # Image gate: --no-optimize (full passthrough) implies it off; the
++    # narrower --no-image-optimize / HEADROOM_NO_IMAGE_OPTIMIZE turns off
++    # only image work while text optimization stays on.
++    image_optimize = optimize and not (
++        args.no_image_optimize or _get_env_bool("HEADROOM_NO_IMAGE_OPTIMIZE", False)
++    )
+     cache_enabled = env_cache if not args.no_cache else False
+     rate_limit_enabled = env_rate_limit if not args.no_rate_limit else False
+     disable_kompress = args.disable_kompress or _get_env_bool("HEADROOM_DISABLE_KOMPRESS", False)
+@@ -5573,6 +5613,7 @@ if __name__ == "__main__":
+         bedrock_api_url=_get_env_str("BEDROCK_TARGET_API_URL", args.bedrock_api_url),
+         anyllm_provider=_get_env_str("HEADROOM_ANYLLM_PROVIDER", args.anyllm_provider),
+         optimize=optimize,
++        image_optimize=image_optimize,
+         min_tokens_to_crush=_get_env_int("HEADROOM_MIN_TOKENS", args.min_tokens),
+         max_items_after_crush=_get_env_int("HEADROOM_MAX_ITEMS", args.max_items),
+         smart_crusher_with_compaction=(
+diff --git a/tests/test_cli_proxy_improvements.py b/tests/test_cli_proxy_improvements.py
+index e400ae35..7f726b71 100644
+--- a/tests/test_cli_proxy_improvements.py
++++ b/tests/test_cli_proxy_improvements.py
+@@ -547,3 +547,50 @@ class TestCompressionMaxWorkers:
+         result = runner.invoke(main, ["proxy"], catch_exceptions=False)
+         assert result.exit_code == 0, result.output
+         assert mock_run_server["config"].compression_max_workers is None
++
++
++class TestImageOptimizeFlags:
++    """--no-image-optimize and the --no-optimize implication.
++
++    The image gate spawns a dedicated worker process (RapidOCR + ONNX);
++    operators must be able to turn exactly that path off, and full
++    passthrough (--no-optimize) must never leave it on."""
++
++    def test_default_image_optimize_on(self, runner: CliRunner, mock_run_server: dict) -> None:
++        result = runner.invoke(main, ["proxy"], catch_exceptions=False)
++        assert result.exit_code == 0, result.output
++        cfg = mock_run_server["config"]
++        assert cfg.image_optimize is True
++        assert cfg.optimize is True
++
++    def test_no_image_optimize_flag_disables_only_images(
++        self, runner: CliRunner, mock_run_server: dict
++    ) -> None:
++        result = runner.invoke(main, ["proxy", "--no-image-optimize"], catch_exceptions=False)
++        assert result.exit_code == 0, result.output
++        cfg = mock_run_server["config"]
++        assert cfg.image_optimize is False
++        assert cfg.optimize is True
++
++    def test_no_optimize_implies_image_optimize_off(
++        self, runner: CliRunner, mock_run_server: dict
++    ) -> None:
++        result = runner.invoke(main, ["proxy", "--no-optimize"], catch_exceptions=False)
++        assert result.exit_code == 0, result.output
++        cfg = mock_run_server["config"]
++        assert cfg.optimize is False
++        assert cfg.image_optimize is False
++
++    def test_env_no_image_optimize_reaches_config(
++        self, runner: CliRunner, mock_run_server: dict
++    ) -> None:
++        result = runner.invoke(
++            main,
++            ["proxy"],
++            env={"HEADROOM_NO_IMAGE_OPTIMIZE": "1"},
++            catch_exceptions=False,
++        )
++        assert result.exit_code == 0, result.output
++        cfg = mock_run_server["config"]
++        assert cfg.image_optimize is False
++        assert cfg.optimize is True
+diff --git a/tests/test_compressor_selection.py b/tests/test_compressor_selection.py
+index 7f01d4ec..15fbe287 100644
+--- a/tests/test_compressor_selection.py
++++ b/tests/test_compressor_selection.py
+@@ -22,6 +22,7 @@ from headroom.proxy.models import ProxyConfig
+ from headroom.proxy.server import (
+     BUILTIN_COMPRESSOR_FLAGS,
+     _apply_compressor_selection,
++    _image_compressor_selected,
+ )
+ from headroom.transforms import compressor_registry as cr_module
+ from headroom.transforms.compressor_registry import (
+@@ -307,3 +308,64 @@ def test_router_construction_is_unchanged_by_default_registry(
+     router = ContentRouter(ContentRouterConfig())
+     # discover() itself is fail-open, so built-ins are still registered.
+     assert set(router.compressor_registry.names()) >= _BUILTIN_NAMES
++
++
++# ---------------------------------------------------------------------------
++# Proxy-level image gate unification: a selection that leaves out "image"
++# must ALSO close `ProxyConfig.image_optimize`. `enable_image_optimizer`
++# only governs the in-router optimizer; the isolated image *worker process*
++# path in the handlers is gated by `config.image_optimize`, so without the
++# unification HEADROOM_COMPRESSORS=smart_crusher looked like it disabled
++# image work but still spawned image worker processes.
++# ---------------------------------------------------------------------------
++
++
++def test_image_selected_none_and_empty_keep_image_on() -> None:
++    assert _image_compressor_selected(None) is True
++    assert _image_compressor_selected(set()) is True
++    assert _image_compressor_selected({"  "}) is True
++
++
++def test_image_selected_when_named_or_wildcard() -> None:
++    assert _image_compressor_selected({"image"}) is True
++    assert _image_compressor_selected({"smart_crusher", "image"}) is True
++    assert _image_compressor_selected({"*"}) is True
++    assert _image_compressor_selected({" image "}) is True
++
++
++def test_image_not_selected_when_selection_omits_it() -> None:
++    assert _image_compressor_selected({"smart_crusher"}) is False
++    assert _image_compressor_selected({"smart_crusher", "kompress"}) is False
++    assert _image_compressor_selected({"registry_only_name"}) is False
++
++
++def test_image_selection_mirrors_router_flag() -> None:
++    """`_image_compressor_selected` must agree with what
++    `_apply_compressor_selection` does to `enable_image_optimizer` for every
++    selection shape — one gate, two enforcement points."""
++    for selection in (
++        None,
++        set(),
++        {"image"},
++        {"*"},
++        {"smart_crusher"},
++        {"smart_crusher", "image"},
++        {"registry_only_name"},
++    ):
++        router_config = ContentRouterConfig()
++        _apply_compressor_selection(router_config, selection)
++        assert router_config.enable_image_optimizer == _image_compressor_selected(selection), (
++            selection
++        )
++
++
++def test_image_gate_unification_is_wired_into_proxy_setup() -> None:
++    """Drift-lock: the proxy setup must actually consult
++    `_image_compressor_selected` and close `config.image_optimize`."""
++    import inspect
++
++    from headroom.proxy import server as server_module
++
++    src = inspect.getsource(server_module.HeadroomProxy.__init__)
++    assert "_image_compressor_selected(config.compressors)" in src
++    assert "config.image_optimize = False" in src
+diff --git a/tests/test_image_compression_decision.py b/tests/test_image_compression_decision.py
+index 04378169..dab2c4f1 100644
+--- a/tests/test_image_compression_decision.py
++++ b/tests/test_image_compression_decision.py
+@@ -239,3 +239,60 @@ def test_apply_to_tags_for_every_skip_reason() -> None:
+         tags: dict[str, str] = {}
+         d.apply_to_tags(tags)
+         assert tags.get("image_skip_reason") == expected_reason, expected_reason
++
++
++def test_global_passthrough_disables_image_compression() -> None:
++    """--no-optimize / config.optimize=False is FULL passthrough: the image
++    path (isolated worker process included) must be off even though the
++    image-specific gate is still enabled."""
++    d = ImageCompressionDecision.decide(
++        headers={},
++        config=SimpleNamespace(optimize=False, image_optimize=True),
++        messages=_msgs(),
++    )
++
++    assert d.should_compress is False
++    assert d.passthrough_reason == "optimize_disabled"
++    assert d.optimize_enabled is False
++    assert d.image_optimize_enabled is True
++
++
++def test_missing_optimize_attr_counts_as_enabled() -> None:
++    """Configs that predate the global-passthrough gate (no ``optimize``
++    attr) keep compressing — only an explicit ``optimize=False`` skips."""
++    d = ImageCompressionDecision.decide(headers={}, config=_config(), messages=_msgs())
++
++    assert d.should_compress is True
++    assert d.optimize_enabled is True
++
++
++def test_optimize_disabled_beats_image_optimize_disabled() -> None:
++    d = ImageCompressionDecision.decide(
++        headers={},
++        config=SimpleNamespace(optimize=False, image_optimize=False),
++        messages=_msgs(),
++    )
++
++    assert d.passthrough_reason == "optimize_disabled"
++
++
++def test_bypass_beats_optimize_disabled() -> None:
++    d = ImageCompressionDecision.decide(
++        headers={"x-headroom-bypass": "true"},
++        config=SimpleNamespace(optimize=False, image_optimize=True),
++        messages=_msgs(),
++    )
++
++    assert d.passthrough_reason == "bypass_header"
++
++
++def test_apply_to_tags_stamps_optimize_disabled() -> None:
++    d = ImageCompressionDecision.decide(
++        headers={},
++        config=SimpleNamespace(optimize=False, image_optimize=True),
++        messages=_msgs(),
++    )
++    tags: dict[str, str] = {}
++    d.apply_to_tags(tags)
++
++    assert tags["image_skip_reason"] == "optimize_disabled"
+diff --git a/tests/test_image_compression_isolation.py b/tests/test_image_compression_isolation.py
+index 8509f13b..3e2d381e 100644
+--- a/tests/test_image_compression_isolation.py
++++ b/tests/test_image_compression_isolation.py
+@@ -1,6 +1,10 @@
+ from __future__ import annotations
+ 
++import asyncio
+ import inspect
++import os
++import time
++from pathlib import Path
+ 
+ import pytest
+ 
+@@ -115,3 +119,430 @@ def test_success_marks_mutation_and_logs() -> None:
+ 
+     assert "run_image_compression_isolated(" in openai_src
+     assert "Image:" in openai_src
++
++
++# ---------------------------------------------------------------------------
++# Worker termination / pool ownership (timed-out image workers used to
++# survive their timeout forever and accumulate ~1 GiB each)
++# ---------------------------------------------------------------------------
++
++
++def _pidfile_messages(path: Path) -> list[dict[str, object]]:
++    return [{"role": "user", "content": str(path)}]
++
++
++def _live_spawn_worker_pids() -> set[int]:
++    """PIDs of this process's live multiprocessing *spawn* children.
++
++    Filters out the multiprocessing resource tracker (also a child) by
++    cmdline, so the result is exactly the pool worker processes.
++    """
++    child_pids: set[int] = set()
++    for task in os.listdir("/proc/self/task"):
++        try:
++            with open(f"/proc/self/task/{task}/children") as fh:
++                child_pids.update(int(pid) for pid in fh.read().split())
++        except OSError:
++            continue
++    live: set[int] = set()
++    for pid in child_pids:
++        try:
++            with open(f"/proc/{pid}/cmdline", "rb") as fh:
++                cmdline = fh.read().decode(errors="replace")
++        except OSError:
++            continue
++        if "spawn_main" in cmdline and _pid_running(pid):
++            live.add(pid)
++    return live
++
++
++def _pid_running(pid: int) -> bool:
++    """True while `pid` is a live (non-zombie) process."""
++    try:
++        with open(f"/proc/{pid}/stat") as fh:
++            state = fh.read().rsplit(") ", 1)[1].split(" ", 1)[0]
++        return state not in {"Z", "X", "x"}
++    except FileNotFoundError:
++        return False
++    except Exception:
++        try:
++            os.kill(pid, 0)
++        except (ProcessLookupError, PermissionError):
++            return False
++        return True
++
++
++async def _read_pidfile(path: Path, deadline_s: float = 60.0) -> int:
++    deadline = time.monotonic() + deadline_s
++    while time.monotonic() < deadline:
++        try:
++            text = path.read_text().strip()
++            if text:
++                return int(text)
++        except (FileNotFoundError, ValueError):
++            pass
++        await asyncio.sleep(0.05)
++    raise AssertionError("image worker never published its PID")
++
++
++async def _wait_pid_exit(pid: int, deadline_s: float = 15.0) -> bool:
++    deadline = time.monotonic() + deadline_s
++    while time.monotonic() < deadline:
++        if not _pid_running(pid):
++            return True
++        await asyncio.sleep(0.05)
++    return not _pid_running(pid)
++
++
++async def _prewarm_pool(provider: str = "openai") -> None:
++    """Pay the spawn cost up front so short timeouts later are deterministic."""
++    returned, result = await image_isolation.run_image_compression_isolated(
++        _messages(),
++        provider=provider,
++        timeout=60.0,
++    )
++    assert result is not None, "prewarm run unexpectedly failed"
++
++
++async def test_timed_out_worker_process_is_terminated(monkeypatch, tmp_path) -> None:
++    """A timed-out image job's worker process must die within a bounded
++    interval — not keep running (and holding memory) after the request
++    already failed open."""
++    monkeypatch.setattr(image_isolation, "_IMAGE_WORKER", image_isolation._success_worker)
++    await _prewarm_pool()
++
++    monkeypatch.setattr(image_isolation, "_IMAGE_WORKER", image_isolation._pidfile_sleep_worker)
++    pidfile = tmp_path / "worker.pid"
++    messages = _pidfile_messages(pidfile)
++
++    task = asyncio.ensure_future(
++        image_isolation.run_image_compression_isolated(
++            messages,
++            provider="openai",
++            timeout=2.0,
++        )
++    )
++    pid = await _read_pidfile(pidfile)
++    assert _pid_running(pid)
++
++    returned, result = await task
++    assert returned is messages
++    assert result is None
++
++    assert await _wait_pid_exit(pid), f"timed-out image worker {pid} still running"
++
++    monkeypatch.setattr(image_isolation, "_IMAGE_WORKER", image_isolation._success_worker)
++    recovered, recovered_result = await image_isolation.run_image_compression_isolated(
++        _messages(),
++        provider="openai",
++        timeout=60.0,
++    )
++    assert recovered[-1]["content"] == "compressed:openai"
++    assert recovered_result is not None
++
++
++async def test_second_concurrent_job_fails_open_without_queueing(monkeypatch, tmp_path) -> None:
++    """The pool has one worker: a second concurrent job must fail open at
++    admission instead of queueing behind the running job — queued jobs used
++    to start their timeout clock at submission and could 'time out' before
++    ever executing."""
++    monkeypatch.setattr(image_isolation, "_ADMISSION_TIMEOUT_SECONDS", 0.1)
++    monkeypatch.setattr(image_isolation, "_IMAGE_WORKER", image_isolation._pidfile_sleep_worker)
++    pidfile = tmp_path / "worker.pid"
++
++    blocker = asyncio.ensure_future(
++        image_isolation.run_image_compression_isolated(
++            _pidfile_messages(pidfile),
++            provider="openai",
++            timeout=90.0,
++        )
++    )
++    pid = await _read_pidfile(pidfile)
++
++    second = _messages()
++    started = time.monotonic()
++    returned, result = await image_isolation.run_image_compression_isolated(
++        second,
++        provider="openai",
++        timeout=90.0,
++    )
++    elapsed = time.monotonic() - started
++
++    # Failed open at admission: original payload back, and nowhere near the
++    # 90s execution timeout (which must not have started).
++    assert returned is second
++    assert result is None
++    assert elapsed < 5.0
++
++    # The blocker still owns the worker; cancelling it retires the pool so
++    # the admission slot can never be free while the worker is busy.
++    blocker.cancel()
++    with pytest.raises(asyncio.CancelledError):
++        await blocker
++    assert await _wait_pid_exit(pid), f"orphaned image worker {pid} still running"
++
++
++async def test_stale_timeout_cannot_reset_newer_pool(monkeypatch, tmp_path) -> None:
++    """A request that times out on an OLD pool must retire that exact pool —
++    never the replacement pool that became current while it was running."""
++    monkeypatch.setattr(image_isolation, "_IMAGE_WORKER", image_isolation._pidfile_sleep_worker)
++    pidfile = tmp_path / "worker.pid"
++    messages = _pidfile_messages(pidfile)
++
++    stale = asyncio.ensure_future(
++        image_isolation.run_image_compression_isolated(
++            messages,
++            provider="openai",
++            timeout=10.0,
++        )
++    )
++    old_pid = await _read_pidfile(pidfile)
++    with image_isolation._IMAGE_POOL_LOCK:
++        old_pool = image_isolation._IMAGE_POOL
++    assert old_pool is not None
++
++    # Simulate the concurrent-replacement race: a new pool becomes globally
++    # current while the stale request is still in flight.
++    with image_isolation._IMAGE_POOL_LOCK:
++        image_isolation._IMAGE_POOL = None
++    new_pool = image_isolation._image_pool()
++    assert new_pool is not old_pool
++    new_result = new_pool.submit(image_isolation._success_worker, _messages(), "openai").result(
++        timeout=60.0
++    )
++    assert new_result[0][-1]["content"] == "compressed:openai"
++    new_procs = image_isolation._snapshot_worker_processes(new_pool)
++    assert new_procs, "replacement pool has no observable worker"
++    new_pid = new_procs[0].pid
++
++    # Stale request times out (~10s mark) and retires ONLY its own pool.
++    returned, result = await stale
++    assert returned is messages
++    assert result is None
++
++    with image_isolation._IMAGE_POOL_LOCK:
++        assert image_isolation._IMAGE_POOL is new_pool
++    assert not getattr(new_pool, "_headroom_retired", False)
++    assert getattr(old_pool, "_headroom_retired", False)
++
++    assert await _wait_pid_exit(old_pid), f"stale pool worker {old_pid} still running"
++    # Give the reaper thread a moment to (wrongly) act, then prove the
++    # replacement worker survived and still serves jobs.
++    await asyncio.sleep(1.0)
++    assert _pid_running(new_pid), "replacement pool worker was wrongly terminated"
++    again = new_pool.submit(image_isolation._success_worker, _messages(), "anthropic").result(
++        timeout=60.0
++    )
++    assert again[0][-1]["content"] == "compressed:anthropic"
++
++
++async def test_pool_retirement_is_idempotent(monkeypatch) -> None:
++    """Several failed requests can hold references to one pool; retiring it
++    repeatedly must be safe and must never touch a replacement pool."""
++    monkeypatch.setattr(image_isolation, "_IMAGE_WORKER", image_isolation._success_worker)
++    await _prewarm_pool()
++    with image_isolation._IMAGE_POOL_LOCK:
++        first_pool = image_isolation._IMAGE_POOL
++    assert first_pool is not None
++
++    image_isolation._retire_image_pool(first_pool)
++    image_isolation._retire_image_pool(first_pool)
++
++    with image_isolation._IMAGE_POOL_LOCK:
++        assert image_isolation._IMAGE_POOL is None
++
++    replacement = image_isolation._image_pool()
++    assert replacement is not first_pool
++
++    # A late retire of the ALREADY-retired old pool must not clear the new one.
++    image_isolation._retire_image_pool(first_pool)
++    with image_isolation._IMAGE_POOL_LOCK:
++        assert image_isolation._IMAGE_POOL is replacement
++
++    recovered, recovered_result = await image_isolation.run_image_compression_isolated(
++        _messages(),
++        provider="openai",
++        timeout=60.0,
++    )
++    assert recovered[-1]["content"] == "compressed:openai"
++    assert recovered_result is not None
++
++
++@pytest.mark.skipif(not os.path.exists("/proc/self/task"), reason="requires /proc")
++async def test_repeated_timeouts_do_not_accumulate_workers(monkeypatch) -> None:
++    """The live failure mode: every image timeout replaced the pool but left
++    the old worker running, so workers accumulated (~1 GiB each) until the
++    host ran out of CPU and RAM. After a burst of timed-out jobs, NO worker
++    processes may remain."""
++    monkeypatch.setattr(image_isolation, "_IMAGE_WORKER", image_isolation._sleep_worker)
++
++    for _ in range(6):
++        messages = _messages()
++        returned, result = await image_isolation.run_image_compression_isolated(
++            messages,
++            provider="openai",
++            timeout=0.05,
++        )
++        assert returned is messages
++        assert result is None
++
++    deadline = time.monotonic() + 30.0
++    while time.monotonic() < deadline and _live_spawn_worker_pids():
++        await asyncio.sleep(0.1)
++    leftovers = _live_spawn_worker_pids()
++    assert not leftovers, f"image workers accumulated after timeouts: {sorted(leftovers)}"
++
++
++class _RecordingPool:
++    """Executor stand-in exposing only the private process table (the shape
++    `_force_stop_workers_compat` relies on for Python < 3.14)."""
++
++    def __init__(self, procs) -> None:
++        self._processes = dict(enumerate(procs))
++        self.shutdown_calls: list[tuple[bool, bool]] = []
++
++    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
++        self.shutdown_calls.append((wait, cancel_futures))
++
++
++class _StubbornProc:
++    """Fake worker that survives SIGTERM and dies only on SIGKILL."""
++
++    pid = 999_999
++
++    def __init__(self) -> None:
++        self.terminated = False
++        self.killed = False
++
++    def is_alive(self) -> bool:
++        return not self.killed
++
++    def terminate(self) -> None:
++        self.terminated = True
++
++    def kill(self) -> None:
++        self.killed = True
++
++
++def test_compat_hard_stop_terminates_real_worker_without_public_api() -> None:
++    """Python 3.10–3.13 path: no terminate_workers()/kill_workers() on the
++    executor — the private-table fallback must still kill a live worker."""
++    import multiprocessing
++
++    ctx = multiprocessing.get_context("spawn")
++    proc = ctx.Process(target=time.sleep, args=(120.0,), daemon=True)
++    proc.start()
++    try:
++        pool = _RecordingPool([proc])
++        image_isolation._hard_stop_pool_workers(pool, grace=5.0)
++
++        deadline = time.monotonic() + 15.0
++        while time.monotonic() < deadline and proc.is_alive():
++            time.sleep(0.05)
++        assert not proc.is_alive(), "compat fallback left the worker running"
++        assert pool.shutdown_calls == [(False, True)]
++    finally:
++        if proc.is_alive():
++            proc.kill()
++        proc.join(timeout=5.0)
++
++
++def test_compat_hard_stop_escalates_to_kill() -> None:
++    stubborn = _StubbornProc()
++    pool = _RecordingPool([stubborn])
++
++    image_isolation._hard_stop_pool_workers(pool, grace=0.2)
++
++    assert stubborn.terminated
++    assert stubborn.killed
++    assert pool.shutdown_calls == [(False, True)]
++
++
++def test_public_api_hard_stop_signals_before_shutdown_and_escalates() -> None:
++    """3.14+ path: terminate first, kill after the grace period, and only
++    then shutdown() — shutdown() drops the process table, so signalling
++    afterwards would be a silent no-op."""
++
++    class _FakePool(_RecordingPool):
++        def __init__(self, procs) -> None:
++            super().__init__(procs)
++            self.calls: list[str] = []
++
++        def terminate_workers(self) -> None:
++            assert self.shutdown_calls == [], "signalled after shutdown()"
++            self.calls.append("terminate")
++
++        def kill_workers(self) -> None:
++            assert self.shutdown_calls == [], "signalled after shutdown()"
++            self.calls.append("kill")
++
++    stubborn = _StubbornProc()
++    pool = _FakePool([stubborn])
++    image_isolation._hard_stop_pool_workers(pool, grace=0.2)
++    assert pool.calls == ["terminate", "kill"]
++    assert pool.shutdown_calls == [(False, True)]
++
++
++def test_public_api_hard_stop_skips_kill_when_workers_exit_in_grace() -> None:
++    class _DocileProc:
++        pid = 999_998
++
++        def __init__(self) -> None:
++            self.stopped = False
++
++        def is_alive(self) -> bool:
++            return not self.stopped
++
++    class _FakePool(_RecordingPool):
++        def __init__(self, procs) -> None:
++            super().__init__(procs)
++            self.calls: list[str] = []
++
++        def terminate_workers(self) -> None:
++            self.calls.append("terminate")
++            for proc in self._processes.values():
++                proc.stopped = True
++
++        def kill_workers(self) -> None:
++            self.calls.append("kill")
++
++    pool = _FakePool([_DocileProc()])
++    image_isolation._hard_stop_pool_workers(pool, grace=5.0)
++    assert pool.calls == ["terminate"]
++    assert pool.shutdown_calls == [(False, True)]
++
++
++def test_handlers_gate_isolation_on_image_decision() -> None:
++    """Drift-lock: both handler call sites must reach
++    run_image_compression_isolated only behind ImageCompressionDecision, so a
++    disabled image gate (--no-image-optimize / --no-optimize / bypass) can
++    never instantiate an image worker."""
++    for src in (
++        inspect.getsource(AnthropicHandlerMixin.handle_anthropic_messages),
++        inspect.getsource(OpenAIHandlerMixin.handle_openai_chat),
++    ):
++        gate = src.index("_image_decision.should_compress")
++        call = src.index("run_image_compression_isolated(")
++        assert gate < call
++
++
++def test_skipping_decision_never_instantiates_pool() -> None:
++    """Deciding NOT to compress must not create the image pool (and with the
++    gate drift-lock above, the handlers then never instantiate a worker)."""
++    from types import SimpleNamespace
++
++    from headroom.proxy.image_compression_decision import ImageCompressionDecision
++
++    for config in (
++        SimpleNamespace(optimize=True, image_optimize=False),
++        SimpleNamespace(optimize=False, image_optimize=True),
++    ):
++        decision = ImageCompressionDecision.decide(
++            headers={},
++            config=config,
++            messages=[{"role": "user", "content": "img"}],
++        )
++        assert decision.should_compress is False
++
++    with image_isolation._IMAGE_POOL_LOCK:
++        assert image_isolation._IMAGE_POOL is None
+diff --git a/tests/test_image_compression_policy.py b/tests/test_image_compression_policy.py
+index 870a9201..fa709859 100644
+--- a/tests/test_image_compression_policy.py
++++ b/tests/test_image_compression_policy.py
+@@ -56,3 +56,52 @@ def test_apply_image_skip_reason_stamps_only_when_skipping() -> None:
+ 
+     apply_image_skip_reason(tags, "no_messages")
+     assert tags == {"image_skip_reason": "no_messages"}
++
++
++def test_decide_image_compression_global_passthrough_gate() -> None:
++    """--no-optimize / optimize=False is full passthrough: image compression
++    must be off even when the image-specific gate is still enabled."""
++    decision = decide_image_compression(
++        headers={},
++        optimize_enabled=False,
++        image_optimize_enabled=True,
++        has_messages=True,
++    )
++
++    assert decision.should_compress is False
++    assert decision.passthrough_reason == "optimize_disabled"
++    assert decision.optimize_enabled is False
++    assert decision.image_optimize_enabled is True
++
++
++def test_decide_image_compression_optimize_defaults_enabled() -> None:
++    decision = decide_image_compression(
++        headers={},
++        image_optimize_enabled=True,
++        has_messages=True,
++    )
++
++    assert decision.should_compress is True
++    assert decision.optimize_enabled is True
++
++
++def test_optimize_disabled_beats_image_optimize_disabled_and_no_messages() -> None:
++    decision = decide_image_compression(
++        headers={},
++        optimize_enabled=False,
++        image_optimize_enabled=False,
++        has_messages=False,
++    )
++
++    assert decision.passthrough_reason == "optimize_disabled"
++
++
++def test_bypass_header_beats_optimize_disabled() -> None:
++    decision = decide_image_compression(
++        headers={"x-headroom-bypass": "true"},
++        optimize_enabled=False,
++        image_optimize_enabled=True,
++        has_messages=True,
++    )
++
++    assert decision.passthrough_reason == "bypass_header"
+diff --git a/tests/test_image_ocr_api_compat.py b/tests/test_image_ocr_api_compat.py
+index 7459021a..3a074788 100644
+--- a/tests/test_image_ocr_api_compat.py
++++ b/tests/test_image_ocr_api_compat.py
+@@ -233,3 +233,107 @@ def test_ocr_extract_returns_none_when_no_backend_installed(
+ 
+     c = _make_compressor()
+     assert c._ocr_extract(b"\x89PNG fake") is None
++
++
++# ---------------------------------------------------------------------------
++# ONNX Runtime thread bounds — RapidOCR defaults intra/inter-op threads to -1
++# (automatic) per det/cls/rec session, which matured each image worker to
++# ~65 native threads on an 8-CPU host. The engine builder must pin them.
++# ---------------------------------------------------------------------------
++
++
++def test_thread_bounds_reach_v3_engine_through_ocr_extract(
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    captured: dict[str, Any] = {}
++
++    class _V3RapidOCR:
++        def __init__(self, params: dict[str, Any] | None = None) -> None:
++            captured["params"] = params
++
++        def __call__(self, _image_data: bytes) -> Any:
++            return SimpleNamespace(txts=["bounded"], scores=[0.99], boxes=[None])
++
++    _hide_module(monkeypatch, "rapidocr_onnxruntime")
++    _install_fake_module(monkeypatch, "rapidocr", {"RapidOCR": _V3RapidOCR})
++
++    c = _make_compressor()
++    assert c._ocr_extract(b"\x89PNG fake") == "bounded"
++    assert captured["params"] == {
++        "EngineConfig.onnxruntime.intra_op_num_threads": 1,
++        "EngineConfig.onnxruntime.inter_op_num_threads": 1,
++    }
++
++
++def test_thread_bounds_reach_v1_engine_through_ocr_extract(
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    captured: dict[str, Any] = {}
++
++    class _V1RapidOCR:
++        def __init__(self, **kwargs: Any) -> None:
++            captured.update(kwargs)
++
++        def __call__(self, _image_data: bytes) -> tuple[list[Any], float]:
++            return ([(None, "bounded", 0.99)], 0.0)
++
++    _install_fake_module(monkeypatch, "rapidocr_onnxruntime", {"RapidOCR": _V1RapidOCR})
++
++    c = _make_compressor()
++    assert c._ocr_extract(b"\x89PNG fake") == "bounded"
++    assert captured == {
++        "Global.intra_op_num_threads": 1,
++        "Global.inter_op_num_threads": 1,
++    }
++
++
++def test_thread_bounds_respect_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
++    monkeypatch.setenv("HEADROOM_OCR_INTRA_THREADS", "2")
++    monkeypatch.setenv("HEADROOM_OCR_INTER_THREADS", "3")
++    captured: dict[str, Any] = {}
++
++    class _V3RapidOCR:
++        def __init__(self, params: dict[str, Any] | None = None) -> None:
++            captured["params"] = params
++
++    engine = compressor_module._build_ocr_engine(_V3RapidOCR, "v3")
++    assert isinstance(engine, _V3RapidOCR)
++    assert captured["params"] == {
++        "EngineConfig.onnxruntime.intra_op_num_threads": 2,
++        "EngineConfig.onnxruntime.inter_op_num_threads": 3,
++    }
++
++
++def test_thread_bounds_invalid_env_falls_back_to_one(monkeypatch: pytest.MonkeyPatch) -> None:
++    monkeypatch.setenv("HEADROOM_OCR_INTRA_THREADS", "not-a-number")
++    monkeypatch.setenv("HEADROOM_OCR_INTER_THREADS", "-4")
++
++    assert compressor_module._ocr_thread_limit("HEADROOM_OCR_INTRA_THREADS") == 1
++    assert compressor_module._ocr_thread_limit("HEADROOM_OCR_INTER_THREADS") == 1
++
++
++def test_engine_rejecting_thread_bounds_falls_back_unbounded(
++    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
++) -> None:
++    """An installed backend that predates (or renames) the settings keys must
++    still yield a working engine — unbounded beats no OCR."""
++    inits: list[dict[str, Any] | None] = []
++
++    class _PickyV3RapidOCR:
++        def __init__(self, params: dict[str, Any] | None = None) -> None:
++            inits.append(params)
++            if params is not None:
++                raise TypeError("unknown parameter: EngineConfig.onnxruntime")
++
++    with caplog.at_level("WARNING", logger="headroom.image.compressor"):
++        engine = compressor_module._build_ocr_engine(_PickyV3RapidOCR, "v3")
++
++    assert isinstance(engine, _PickyV3RapidOCR)
++    assert inits == [
++        {
++            "EngineConfig.onnxruntime.intra_op_num_threads": 1,
++            "EngineConfig.onnxruntime.inter_op_num_threads": 1,
++        },
++        None,
++    ]
++    assert any("ocr_thread_bounds_rejected" in r.getMessage() for r in caplog.records)
+-- 
+2.47.3
+
