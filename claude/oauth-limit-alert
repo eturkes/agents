@@ -1,9 +1,8 @@
 #!/bin/sh
-# Claude Code PostToolUse hook: alert once per limit-window when 5h or 7d usage hits 100%.
-# Reads the oauth-usage cache (utilization = 0-100 %) and drives ./oauth-refresh itself, so long
-# tool-only runs stay current on this hook alone, independent of statusline renders. Silent below
-# 100%; on a cross it injects a self-contained stop-now instruction: work resumes on renewed
-# credits, so stopping beats a handoff.
+# PostToolUse hook: one alert per limit-window at 100% — 5h, 7d all-models, or model-scoped weekly
+# (Fable etc.; `.limits[]` only). Reads + refreshes the oauth-usage cache itself (utilization/percent
+# = 0-100), so tool-only runs stay covered independent of statusline renders. <100% => silent;
+# a cross injects a self-contained stop-now instruction: work resumes on renewed credits.
 uc="${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}"
 mk="${OAUTH_ALERT_MARK:-$HOME/.claude/.oauth_limit_alerted}"
 
@@ -12,17 +11,27 @@ date +%s >"$HOME/.claude/.oauth_limit_alert.stamp" 2>/dev/null   # liveness mark
 "${OAUTH_REFRESH_CMD:-$HOME/.claude/oauth-refresh}" "$uc"        # same cache + poll as the statusline
 
 [ -s "$uc" ] || exit 0
+# Precedence at >=100%: 5h (soonest reset) > 7d > hottest scoped weekly (window = lowercased model
+# name, "fable"). One "WIN EPOCH" line; epoch = resets_at rounded to the nearest hour = stable
+# dedupe key across polls (API wobbles the boundary by ~1s, e.g. 09:00:00 ↔ 08:59:59); empty = silent.
 sel=$(jq -r '
+  def hkey: try (.[0:19] | strptime("%Y-%m-%dT%H:%M:%S") | mktime
+                 | (. + 1800) - ((. + 1800) % 3600)) catch 0;
   (.five_hour.utilization // 0) as $f | (.seven_day.utilization // 0) as $w |
-  if   $f >= 100 and $f >= $w then "5h \(.five_hour.resets_at // "")"
-  elif $w >= 100              then "7d \(.seven_day.resets_at // "")"
+  ([.limits[]? | select(.kind == "weekly_scoped" and (.percent // 0) >= 100)]
+   | max_by(.percent // 0)) as $s |
+  if   $f >= 100 and $f >= $w then "5h \(.five_hour.resets_at // "" | hkey)"
+  elif $w >= 100              then "7d \(.seven_day.resets_at // "" | hkey)"
+  elif $s != null             then
+    "\(($s.scope.model.display_name // $s.scope.surface // "scoped")
+       | ascii_downcase | gsub(" "; "-")) \($s.resets_at // "" | hkey)"
   else "" end' "$uc" 2>/dev/null)
-[ -n "$sel" ] || exit 0                                          # under 100% => silent
+[ -n "$sel" ] || exit 0
 
-win=${sel%% *}; rid=${sel#* }
+win=${sel%% *}
 prev=""; [ -f "$mk" ] && IFS= read -r prev <"$mk" 2>/dev/null
-[ "$prev" = "$rid" ] && exit 0                                   # already alerted for this window
-printf '%s' "$rid" >"$mk" 2>/dev/null
+[ "$prev" = "$sel" ] && exit 0                                   # this window already alerted
+printf '%s' "$sel" >"$mk" 2>/dev/null
 
 msg="⚠ USAGE LIMIT at 100% (${win} window; usage credits now billing) → STOP NOW and \`TaskStop\` any running subagents. Leave work where it stands, even if incomplete."
 jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'

@@ -27,7 +27,8 @@ acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
 w=$((w - 33000))
 now=$(date +%s)  # one clock read, reused for reset-delta + idle
 # Rate-limit suffix; present once rate_limits arrives (manual mode + pre-first-response render bare).
-# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S] => "LABEL N% MM/DD HH:MM".
+# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA] => "LABEL N%EXTRA MM/DD HH:MM";
+#   EXTRA = pre-formatted, leading space, slots between used% and reset (" fable 100%").
 #   LABEL+used% (one unit): green >=50, yellow >=75, red >=90.
 #   reset time alone (the label keeps its used% color): red <=RED_S away, yellow <=YELLOW_S, green <=GREEN_S.
 #   Defaults red<=1h, yellow<=2h, green=today; 5h => red<=1h, yellow<=2h, green<=3h; 7d => red<=5h, yellow<=10h, green<=15h.
@@ -44,7 +45,7 @@ seg() {
   elif [ -n "$6" ]; then [ "$delta" -le "$6" ] && dt=$(printf '\033[32m%s\033[0m' "$dt")
   elif [ "$(date -d "@$2" +%Y%m%d)" = "$(date +%Y%m%d)" ]; then dt=$(printf '\033[32m%s\033[0m' "$dt")
   fi
-  printf '%s %s' "$pct" "$dt"
+  printf '%s%s %s' "$pct" "$7" "$dt"
 }
 # Native rate_limits (the jq above) arrive empty behind the proxy: CC reads 5h/7d usage from GET
 # /api/oauth/usage, and with ANTHROPIC_BASE_URL on the Headroom->CLIProxyAPI chain, CLIProxyAPI 404s
@@ -54,16 +55,24 @@ if [ -z "$sp$wp" ]; then
   uc="$HOME/.claude/.oauth_usage.json"
   "$HOME/.claude/oauth-refresh" "$uc"
   if [ -s "$uc" ]; then  # render the last good poll; utilization is a %, ISO resets_at -> epoch
-    { read -r sp; read -r sri; read -r wp; read -r wri; } <<EOF2
-$(jq -r '.five_hour.utilization // "", .five_hour.resets_at // "", .seven_day.utilization // "", .seven_day.resets_at // ""' "$uc" 2>/dev/null)
+    { read -r sp; read -r sri; read -r wp; read -r wri; read -r fn; read -r fp; } <<EOF2
+$(jq -r '.five_hour.utilization // "", .five_hour.resets_at // "", .seven_day.utilization // "", .seven_day.resets_at // "", (([.limits[]? | select(.kind == "weekly_scoped")] | max_by(.percent // 0)) as $s | if $s == null then "", "" else (($s.scope.model.display_name // $s.scope.surface // "scoped") | ascii_downcase | gsub(" "; "-")), ($s.percent // 0) end)' "$uc" 2>/dev/null)
 EOF2
     [ -n "$sri" ] && sr=$(date -d "$sri" +%s 2>/dev/null)
     [ -n "$wri" ] && wr=$(date -d "$wri" +%s 2>/dev/null)
   fi
 fi
 rl=""
+# Model-scoped weekly limit (.limits[] weekly_scoped, cache path only) => 7d-segment insert,
+# same color thresholds: "7d 92% fable 100% 08/03 18:00".
+fx=""
+[ -n "$fn" ] && [ -n "$fp" ] && fx=$(awk -v p="$fp" -v n="$fn" 'BEGIN{q=int(p+0.5)
+  if(q>=90)printf " \033[31m%s %d%%\033[0m",n,q
+  else if(q>=75)printf " \033[33m%s %d%%\033[0m",n,q
+  else if(q>=50)printf " \033[32m%s %d%%\033[0m",n,q
+  else printf " %s %d%%",n,q}')
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800)"
-[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000)"
+[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000 "$fx")"
 # "last" = turn-end via transcript mtime: tracks ~now while a turn streams, freezes once idle.
 # Idle >=30m green, >=45m yellow, >=60m red: staleness as cache TTL burns toward an uncached next turn.
 te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
