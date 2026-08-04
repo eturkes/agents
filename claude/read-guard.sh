@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+# shellcheck shell=bash
 # Route file contents to Claude Code's Read tool, which Headroom excludes from
 # lossy compression and reclaims once stale/superseded; Bash output is a
 # designated compression target that is never reclaimed.
@@ -35,6 +35,8 @@ cc_read_guard() {
       -*) ;;
       *)
         if [ -e "$_a" ]; then
+          # Backticks and %s belong to the printf format, not the shell.
+          # shellcheck disable=SC2016
           printf '%s: refusing to read %s — use the Read tool (offset/limit cover `%s -n N`). Piped input is fine; `command %s` bypasses.\n' \
             "$_name" "$_a" "$_name" "$_name" >&2
           return 1
