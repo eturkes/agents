@@ -20,8 +20,6 @@
     "allow": [],
     "deny": [
       "Bash(cat:*)",
-      "Bash(head:*)",
-      "Bash(tail:*)",
       "Bash(bat:*)",
       "Bash(batcat:*)",
       "Bash(ccat:*)",
