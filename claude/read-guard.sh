@@ -11,8 +11,13 @@
 #
 # Only the file-reading form is refused. `cmd | head -N` and `cmd | tail -N`
 # read stdin, carry no file bytes into context, and pass straight through.
+#
+# The helper name must start with a letter: Claude Code's snapshot drops an
+# underscore-prefixed helper while capturing the wrappers, which would then call
+# a missing function. The wrappers also fall back to `command <name>` whenever
+# the helper is absent, so pipelines keep working under any snapshot miss.
 
-_cc_read_guard() {
+cc_read_guard() {
   local _name=$1
   shift
 
@@ -41,5 +46,5 @@ _cc_read_guard() {
   command "$_name" ${1+"$@"}
 }
 
-head() { _cc_read_guard head ${1+"$@"}; }
-tail() { _cc_read_guard tail ${1+"$@"}; }
+head() { if command -v cc_read_guard >/dev/null 2>&1; then cc_read_guard head ${1+"$@"}; else command head ${1+"$@"}; fi; }
+tail() { if command -v cc_read_guard >/dev/null 2>&1; then cc_read_guard tail ${1+"$@"}; else command tail ${1+"$@"}; fi; }
