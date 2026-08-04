@@ -42,7 +42,6 @@
       "Bash(hd:*)",
       "Bash(hexyl:*)",
       "Bash(strings:*)",
-      "Bash(rtk read:*)",
       "Bash(vi:*)",
       "Bash(vim:*)",
       "Bash(nvim:*)",
@@ -74,17 +73,6 @@
     "artifact-capabilities": "off"
   },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/rtk-hook-shim"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "*",

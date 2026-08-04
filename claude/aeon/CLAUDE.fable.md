@@ -8,7 +8,9 @@
 - Authenticated web: for research/retrieval, drive `$(chromiumfish path)` with my BrowserOS profile (`--user-data-dir=/run/host/home/eturkes/.config/browser-os`) — it can access anything available in my signed-in day-to-day browser, including university access to most peer-reviewed journals; without the profile flag, `chromiumfish` = isolated visual QA. Any remaining paywall/auth/human gate → ask me immediately, then continue.
 - Post-work: thoroughly clean task-touched paths, especially `$HOME`; remove temporary/stale artifacts + dangling symlinks.
 - Headless capture (`$(chromiumfish path)` + `--headless=new --no-sandbox --disable-gpu`): full-page = `--print-to-pdf` (+`--no-pdf-header-footer`) → Read the PDF; `url#fragment` scroll-screenshots = unreliable (often blank); `--virtual-time-budget`+`--run-all-compositor-stages-before-draw` can hang new-headless; `--force-dark-mode` ≠ `prefers-color-scheme` emulation → sed the media query to `all` in a scratch copy. An rc=124 capture hang with `SwANGLE`/Vulkan `EGL` init-fail (+ GCM-retry spam) in stderr = this container's software-GL path stalling, which reaches `--print-to-pdf` too even under `--disable-gpu` → prefer textual evidence (served DOM via `curl` + response headers).
-- `grep` = CC shell-fn shadow → `rg-fff` (**RE2**, relevance-ranked, fuzzy-fallback; see `# fff`), distinct from raw `ugrep -G`; `find` = CC shell-fn shadow, rewritten by the RTK hook → `rtk find`. `rg`=`/usr/bin/rg` (unshadowed). System `grep` binary = GNU grep (BRE). Byte-exact/clean → `command grep` | `/usr/bin/rg` | `rtk proxy grep`.
+- `grep` = CC shell-fn shadow → `rg-fff` (**RE2**, relevance-ranked, fuzzy-fallback; see `# fff`), distinct from raw `ugrep -G`. `rg`=`/usr/bin/rg` (unshadowed). System `grep` binary = GNU grep (BRE). Byte-exact/clean → `command grep` | `/usr/bin/rg`.
+- Byte-equality → prove with `cmp`/`sha256sum`; real diffs → `git diff --no-index`.
+- Shell exit codes → capture immediately (`cmd; rc=$?`) before any `printf`, substitution, or next command + label it; every command overwrites `$?`.
 - `pgrep -f`/`pkill -f` can self-match their `bash -c 'eval …'` wrapper → use one bracketed pattern (`index[.]js`) + `|| echo none` per command; separate kill/relaunch calls. CC's `pkill` guard blocks CLI-matching patterns.
 - `bgcmd` (`~/.local/bin/`) = filesystem REPL, objects persist across separate Bash calls: `export BGCMDDIR=<dir> BGCMDPROMPT='>>> '` (re-export each call) → `bgcmd START <interp> -i -q` → `bgcmd '<oneliner>'` → `bgcmd 'exit()'; rm -rf "$BGCMDDIR"`.
 - Session-scratchpad writes via Bash heredoc (`V=<scratchpad> && mkdir -p "$V" && cat > "$V/f" <<'EOF'`) can be permission-DENIED despite the scratchpad's no-prompt design → prefer fileless construction (inline data as program args) or the Write tool.
@@ -33,29 +35,11 @@
 - `API Error: <ConnectionTerminated error_code:0 …>` = transient HTTP/2 GOAWAY mid-stream through Headroom; context survives → `git status`, resume.
 - Context occupancy = latest assistant `usage` sum (input + cache create/read + output) = window cost on ordinary turns; it exceeds transcript size (system/tools/CLAUDE overhead + redacted reasoning stay billed — high readings are real; CLAUDE markers can double at boundaries). Server-tool turns (e.g. ToolSearch) bill every internal iteration — cache_read stacks ~1 window per iteration → read occupancy from an ordinary turn. Inspect `jq .message.usage ~/.claude/projects/<proj>/<sid>.jsonl`; effort shifts the usage/stored ratio → remeasure. Auto-compaction fires in every context (main + subagents) when last usage sum + pending payload crosses 240K (warning at 220K) → a big payload overshoots the threshold, and an iteration-inflated sum fires it while real occupancy sits far lower → hold the 200K aim + 40K reserve and run tool discovery early.
 
-## RTK
-
-CLI proxy auto-applied by the Claude Code hook (`git status` → `rtk git status`, 0-token); `~/.claude/rtk-hook-shim` exempts commands bearing a `grep`-leading segment (incl. `command`/`if`/env-prefixed) → whole command skips rtk, `grep` = fff (`# fff`). Hook rewrites `rg`, `jq` (even `/usr/bin/jq`), `diff`, `stat`, `wc`, `du`, `ps`, `df`, `ls`, `curl`, `find`, `make`, `pytest`, `ruff`, `gh`, `docker`, `pip`/`uv pip`, `cargo build/test`, `git status/log/diff/show/stash`, `head`/`tail`→`rtk read` (perm-denied → use `Read`). It passes `/usr/bin/grep`, `/usr/bin/rg`, `sed`/`awk`/`env`/`sudo`/`tee`/`sort`/`xargs`, `git blame`/`rev-list`, `cargo run`, and interpreters (`python3`/`node`) untouched. Compresses when it has a filter, else passes through. `rtk proxy <cmd>` = raw passthrough → for exact bytes.
-
-### Filters
-- **`find`**: `rtk find <dir> -name …` = noise-filtered list; bare path → useless `0 for '<dir>'`; compound (`-not`/`-exec`/…) → hard error + hint → `rtk proxy find`.
-- **`rtk format`**: WRITE mode by default (rewrites) → `--check` for read-only, or run the formatter directly (`black`/`ruff`/`prettier --check`; in project venvs → `uv run ruff`).
-- **`git diff`/`show`**: condense hunks (leading context lines dropped) → full text via `rtk proxy git …` or redirect; counts via `git rev-list --count`.
-- **`json`/`log`** = lossy previews (`json` truncates+reorders, `log` drops INFO detail); auto-`ls` drops dir mtimes → `rtk proxy <cmd>` (or `Read`) for exact.
-- **`cargo test`** (any form, incl. bare/`--workspace`) → one-line summary `cargo test: N passed[, M filtered out] (K suites, Ts)` (per-test lines + `test result:` dropped) → grep/capture of such a run for test NAMES finds nothing (counts ACCURATE — trust them, or `rtk proxy cargo test` for per-test detail).
-- **`rtk: Failed to read file`/`execute command`** = missing file/binary → fix directly.
-
-### Rules
-- One `rtk:` error → `rtk proxy` that call. Two failures on one command → cause is elsewhere.
-- Filters can degrade silently: `diff`/`show` condensing; build wrappers misreport (`prettier` says "all formatted" on dirty files; `next`/`dotnet` log a failed build as "0 errors"/garbled) → trust exit codes; `rtk proxy` when exact output matters.
-- Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index` or `rtk proxy diff`.
-- Shell result integrity: capture each exit code immediately (`cmd; rc=$?`) before any `printf`, command substitution, or next command, and label the result; every command overwrites `$?`.
-
 ## fff search (`rg-fff` — shadows `grep`)
 
-CC maps `grep`→`rg-fff`: default fff RE2, relevance-ranked + marked. Serving requires repo cwd; other contexts defer to ugrep. `rg`=`/usr/bin/rg`. Per-repo daemon auto-spawns. Fresh writes can lag its index → use `command grep` or re-query. RTK shim exempts `grep`; RTK rewrites `find`→`rtk find`.
+CC maps `grep`→`rg-fff`: default fff RE2, relevance-ranked + marked. Serving requires repo cwd; other contexts defer to ugrep. `rg`=`/usr/bin/rg`. Per-repo daemon auto-spawns. Fresh writes can lag its index → use `command grep` or re-query.
 
-- **Output ≠ real grep** → RANKED by relevance over file-order, strips leading `./`, inline markers, lines capped 512B. Clean/order-stable/byte-exact/full-line → `command grep` (=GNU grep BRE, `./`, file-order, untruncated) | `/usr/bin/rg` | `rtk proxy grep`.
+- **Output ≠ real grep** → RANKED by relevance over file-order, strips leading `./`, inline markers, lines capped 512B. Clean/order-stable/byte-exact/full-line → `command grep` (=GNU grep BRE, `./`, file-order, untruncated) | `/usr/bin/rg`.
 - **Zero-match grep ≠ empty (BIG)**: auto fuzzy-fallback → `# rg-fff: 0 EXACT…` hdr + N ` [~approx]` lines on **STDOUT** (survive `2>/dev/null`, flow into pipes/`$()`), shaped like real `path:line:text`. Truth = **exit 1** + `[~approx]`/leading-`#` (lines appear regardless) → piping/capturing a maybe-zero grep MUST filter `[~approx]`/`#` or use `command grep`. Off: `RG_FFF_NO_FUZZY_FALLBACK=1`.
 - **`[def]`** trailing tag = likely definition; rank treats it like any other line — junk/long lines can outrank it → trust the tag over position; "read top hit first" misleads here.
 - **>512B line** → served truncated + ` [...rg-fff: line truncated at ~512B; Read the file for the full line]` (`-c` counts it once); non-UTF-8 (U+FFFD) long line defers instead → Read file for full line.

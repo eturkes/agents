@@ -7,7 +7,7 @@ set -euo pipefail
 # The two machines need very different scripts. Aeon is a Debian container where
 # every toolchain was installed by its own installer, so its script drives a long
 # list of self-updaters (rustup, uv, corepack, elan, moon, ...). Here almost
-# everything is a pacman/AUR package -- rust, uv, pnpm, node, npm, rtk, ripgrep,
+# everything is a pacman/AUR package -- rust, uv, pnpm, node, npm, ripgrep,
 # headroom, cli-proxy-api and codex are all repo-owned -- so `paru -Syu` IS the
 # toolchain upgrade, and running those installers' self-updaters on top would
 # fight the package manager over the same files. What remains is the handful of

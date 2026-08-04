@@ -25,11 +25,6 @@ rustup self update
 rustup update
 cargo install-update -a
 
-# rtk was installed via `cargo binstall --git`, which registers it only in
-# ~/.cargo/.crates.toml and not .crates2.json, so cargo-install-update cannot
-# see it. Re-run binstall to keep it current from the prebuilt release binary.
-cargo binstall -y --git https://github.com/rtk-ai/rtk rtk
-
 # --- Python: uv and uv-managed tools ---
 # Update uv itself, then upgrade uv tool/uvx-managed command-line tools.
 #
