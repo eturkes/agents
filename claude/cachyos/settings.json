@@ -99,6 +99,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/turn-email",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   },
   "enableArtifact": false,

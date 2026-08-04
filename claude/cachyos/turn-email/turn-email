@@ -1,0 +1,102 @@
+#!/bin/sh
+# Stop hook → one email per completed MAIN-thread turn. Subagents fire SubagentStop and never Stop,
+# so main-only is structural, not filtered. The SMTP send is detached and this always exits 0: a
+# slow relay or a dead mailbox can neither stall a turn nor fail one. Credentials live in
+# ~/.msmtprc (0600); missing client or config => silent no-op, so the hook is safe to leave wired.
+#
+# Body is base64 text/plain: assistant turns carry >998-char lines (SMTP's cap) and non-ASCII, both
+# of which 8bit would mangle or get rejected on. Subject is RFC 2047 for the same reason.
+TO=${CLAUDE_TURN_EMAIL_TO:-emir.turkes@eturkes.com}
+FROM=${CLAUDE_TURN_EMAIL_FROM:-$TO}
+cache=$HOME/.claude/cache/turn-email
+log=$cache.log
+
+IN=$(cat)
+command -v msmtp >/dev/null 2>&1 || exit 0
+[ -r "$HOME/.msmtprc" ] || exit 0
+
+sid=$(printf '%s' "$IN" | jq -r '.session_id // "unknown"' 2>/dev/null)
+cwd=$(printf '%s' "$IN" | jq -r '.cwd // ""' 2>/dev/null)
+tp=$(printf '%s' "$IN" | jq -r '.transcript_path // ""' 2>/dev/null)
+mode=$(printf '%s' "$IN" | jq -r '.permission_mode // "?"' 2>/dev/null)
+effort=$(printf '%s' "$IN" | jq -r '.effort.level // "?"' 2>/dev/null)
+# Cap the response: a turn can emit a huge diff, and mail is a notification, not an archive.
+resp=$(printf '%s' "$IN" | jq -r '(.last_assistant_message // "")[0:100000]' 2>/dev/null)
+
+# Prompt, model and context in ONE streaming reduce — transcripts reach tens of MB, so `[inputs]`
+# would load the whole session into memory every turn. Sidechain (subagent) entries are skipped;
+# tool_result user entries carry no text block and fall out via the emptiness test.
+meta=$(jq -cn '
+  def txt: if type == "string" then .
+           else [.[]? | select(.type == "text") | .text] | join("\n") end;
+  reduce inputs as $e ({};
+    if ($e.isSidechain // false) then .
+    elif $e.type == "user" and (($e.isMeta // false) | not) then
+      (($e.message.content | txt) // "" | gsub("<system-reminder>.*?</system-reminder>"; ""; "s")
+        | gsub("^\\s+|\\s+$"; "")) as $t
+      | if $t == "" then . else .prompt = ($t[0:4000]) end
+    elif $e.type == "assistant" and $e.message.model != "<synthetic>" then
+      .model = ($e.message.model // .model)
+      | if ($e.message.usage | type) == "object" then
+          .ctx = ($e.message.usage
+                  | .input_tokens + .cache_creation_input_tokens
+                    + .cache_read_input_tokens + .output_tokens)
+        else . end
+    else . end)' "$tp" 2>/dev/null)
+
+prompt=$(printf '%s' "$meta" | jq -r '.prompt // ""' 2>/dev/null)
+model=$(printf '%s' "$meta" | jq -r '.model // "?"' 2>/dev/null)
+ctx=$(printf '%s' "$meta" | jq -r 'if .ctx then "\(.ctx / 1000 | floor)K" else "?" end' 2>/dev/null)
+[ -n "$prompt$resp" ] || exit 0
+
+# Per-session turn counter; stale sessions reaped after 7d.
+mkdir -p "$cache" 2>/dev/null || exit 0
+find "$cache" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null
+n=0; [ -f "$cache/$sid" ] && IFS= read -r n <"$cache/$sid" 2>/dev/null
+n=$((n + 1)); printf '%s' "$n" >"$cache/$sid" 2>/dev/null
+
+proj=$(basename "${cwd:-$HOME}")
+line1=$(printf '%s' "$prompt" | jq -Rrs 'split("\n")[0] | .[0:72]' 2>/dev/null)
+subj="[cc] $proj #$n — ${line1:-(no prompt)}"
+
+hdr=$(mktemp "${TMPDIR:-/tmp}/cc-mail.XXXXXX") || exit 0
+body=$(mktemp "${TMPDIR:-/tmp}/cc-body.XXXXXX") || { rm -f "$hdr"; exit 0; }
+
+{
+  printf 'Session   : %s (turn %s)\n' "$sid" "$n"
+  printf 'Directory : %s\n' "${cwd:-?}"
+  printf 'Model     : %s · effort %s · %s\n' "$model" "$effort" "$mode"
+  printf 'Context   : %s\n' "$ctx"
+  printf 'Time      : %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+  printf 'Transcript: %s\n' "${tp:-?}"
+  printf '\n───────────────────────────── prompt ─────────────────────────────\n\n'
+  printf '%s\n' "${prompt:-(none)}"
+  printf '\n──────────────────────────── response ────────────────────────────\n\n'
+  printf '%s\n' "${resp:-(none)}"
+} >"$body"
+
+# References ties every turn of a session into one mail thread; Auto-Submitted stops vacation
+# responders from answering a robot.
+{
+  printf 'From: %s\n' "$FROM"
+  printf 'To: %s\n' "$TO"
+  printf 'Subject: =?UTF-8?B?%s?=\n' "$(printf '%s' "$subj" | base64 -w0)"
+  printf 'Date: %s\n' "$(date -R)"
+  printf 'Message-ID: <cc.%s.%s@eturkes.com>\n' "$sid" "$n"
+  printf 'References: <cc.%s@eturkes.com>\n' "$sid"
+  printf 'In-Reply-To: <cc.%s@eturkes.com>\n' "$sid"
+  printf 'Auto-Submitted: auto-generated\n'
+  printf 'X-Claude-Session: %s\n' "$sid"
+  printf 'MIME-Version: 1.0\n'
+  printf 'Content-Type: text/plain; charset=utf-8\n'
+  printf 'Content-Transfer-Encoding: base64\n\n'
+  base64 -w 76 "$body"
+} >"$hdr"
+
+(
+  msmtp --read-recipients <"$hdr" 2>>"$log" ||
+    printf '%s turn-email: send failed (session %s turn %s)\n' "$(date -Is)" "$sid" "$n" >>"$log"
+  rm -f "$hdr" "$body"
+) </dev/null >/dev/null 2>&1 &
+
+exit 0

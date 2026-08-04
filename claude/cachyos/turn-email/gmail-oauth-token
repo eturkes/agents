@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""msmtp passwordeval helper: print a live Gmail access token on stdout.
+
+Tokens are cached in the credential file until 60s before expiry, so a burst of turns costs one
+refresh rather than one per message. Failure prints nothing and exits non-zero, which makes msmtp
+abort that single send -- the Stop hook logs it and the turn is unaffected.
+"""
+import json
+import os
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+CRED = os.path.expanduser(os.environ.get("CLAUDE_MAIL_CRED", "~/.config/claude-mail/oauth.json"))
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+
+def load():
+    with open(CRED) as fh:
+        return json.load(fh)
+
+
+def save(cred):
+    # Atomic replace: msmtp may run concurrently when turns overlap, and a torn credential file
+    # would break every later send, not just this one.
+    tmp = CRED + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump(cred, fh, indent=2)
+    os.replace(tmp, CRED)
+
+
+def refresh(cred):
+    data = urllib.parse.urlencode({
+        "client_id": cred["client_id"],
+        "client_secret": cred["client_secret"],
+        "refresh_token": cred["refresh_token"],
+        "grant_type": "refresh_token",
+    }).encode()
+    req = urllib.request.Request(TOKEN_URL, data=data)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        tok = json.load(resp)
+    cred["access_token"] = tok["access_token"]
+    cred["expires_at"] = time.time() + int(tok.get("expires_in", 3600))
+    save(cred)
+    return cred
+
+
+def main():
+    try:
+        cred = load()
+    except Exception as exc:
+        print(f"gmail-oauth-token: cannot read {CRED}: {exc}", file=sys.stderr)
+        return 1
+    try:
+        if not cred.get("access_token") or cred.get("expires_at", 0) - 60 <= time.time():
+            cred = refresh(cred)
+    except Exception as exc:
+        print(f"gmail-oauth-token: refresh failed: {exc}", file=sys.stderr)
+        return 1
+    print(cred["access_token"])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
