@@ -1,6 +1,6 @@
 # Headroom — CachyOS deployment
 
-`settings.json` → `~/.headroom/settings.json`: `anthropic_base_url` = the proxy's upstream, CLIProxyAPI at `127.0.0.1:8317`. The proxy listens on `127.0.0.1:8787`; sessions run through `headroom wrap claude`.
+`settings.json` → `~/.headroom/settings.json`: `anthropic_base_url` = the proxy's upstream, CLIProxyAPI at `127.0.0.1:8317`. The proxy listens on `127.0.0.1:8787`; sessions run through `ANTHROPIC_MODEL=<model> headroom wrap claude --1m`. `--1m` always sets `ANTHROPIC_MODEL` on the launched process, falling back to `claude-opus-4-8`, so name the model explicitly — `claude-opus-5` or `claude-fable-5`. It also overrides Claude Code's `model` setting, so `settings.json` omits that key and the launch line is the single source.
 
 ## Image-worker fix (upstream-pending)
 
@@ -21,7 +21,7 @@ Headroom here = repo package (`paru`); shadow it, leave pacman alone:
 
 The shadow is a version bump as well as a patch, and 0.33.0 changes two things a session touches:
 
-- **CLI context tools are gone.** `--context-tool` / `--no-context-tool` and `HEADROOM_CONTEXT_TOOL` now hard-error → launch line = `headroom wrap claude --1m`; the feature they disabled no longer exists, so behavior is unchanged. On first run `wrap` purges leftovers of Headroom's own rtk/lean-ctx installs: generated `~/.claude/hooks/` scripts + `~/.local/bin/{rtk,lean-ctx}` symlinks into its managed dir.
+- **CLI context tools are gone.** `--context-tool` / `--no-context-tool` and `HEADROOM_CONTEXT_TOOL` now hard-error → launch line = `ANTHROPIC_MODEL=<model> headroom wrap claude --1m`; the feature they disabled no longer exists, so behavior is unchanged. On first run `wrap` purges leftovers of Headroom's own rtk/lean-ctx installs: generated `~/.claude/hooks/` scripts + `~/.local/bin/{rtk,lean-ctx}` symlinks into its managed dir.
 - **The MCP retrieve tool re-registers.** `wrap` warns that the stored command (`/usr/bin/headroom`) differs from the resolved one; retrieve keeps working across the mismatch (both builds read `~/.headroom/ccr_store.db`), but fix it with `headroom mcp install --agent claude --proxy-url http://127.0.0.1:8787 --force`, which rewrites only the `headroom` entry in `~/.claude.json` and takes effect in the next session. Re-run it after the revert above, or the entry dangles at a path the uninstall just removed.
 
 Container counterpart: `../../../container/aeon/headroom/README.md`.

@@ -1,6 +1,6 @@
 # Headroom — container deployment
 
-`settings.json` → `~/.headroom/settings.json`: `anthropic_base_url` = the proxy's upstream, CLIProxyAPI at `127.0.0.1:8317`. The proxy listens on `127.0.0.1:8787`; sessions run through `headroom wrap claude`.
+`settings.json` → `~/.headroom/settings.json`: `anthropic_base_url` = the proxy's upstream, CLIProxyAPI at `127.0.0.1:8317`. The proxy listens on `127.0.0.1:8787`; sessions run through `ANTHROPIC_MODEL=<model> headroom wrap claude --1m`. `--1m` always sets `ANTHROPIC_MODEL` on the launched process, falling back to `claude-opus-4-8`, so name the model explicitly — `claude-opus-5` or `claude-fable-5`. It also overrides Claude Code's `model` setting, so `settings.json` omits that key and the launch line is the single source.
 
 ## Patched build (until upstream ships the fix)
 

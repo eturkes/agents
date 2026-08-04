@@ -52,7 +52,6 @@
     ],
     "defaultMode": "bypassPermissions"
   },
-  "model": "claude-fable-5[1m]",
   "skillOverrides": {
     "claude-api": "off",
     "update-config": "off",
