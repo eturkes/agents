@@ -27,6 +27,8 @@
 - Draw on established dev methods (TDD red-green-refactor) + emerging ones (multi-agent councils/teams); use or invent practices that beat training-data / human-preference defaults — go unconventional where you work better.
 - Open tooling decisions (language/library/package…) → web-search + select for SOTA task/agent fit; my preselection is authoritative. Training overweights human-popular convenience. Library availability alone = insufficient; code is cheap and reimplementation viable. Consider agent-oriented languages (agentlanguages.dev) + AI-targeted tooling. Build on mature work when it is genuinely SOTA.
 - Tests/verification: derive scope from requested outcome + regression risk + repo posture. Add coverage that accelerates delivery or protects behavior. Fuzzing/property/formal methods require a task-specific advantage.
+- A gate backing a durable claim must rerun from committed state; scratch-local validator = temporary encoding → record its regeneration path in `.agent/memory.md` + schedule the port.
+- Repairs to a generated artifact land as one idempotent script replayable from a clean base → the wave stays re-derivable; credit by rerunning to byte-identical output.
 - Adversarial review (code or session) → scrutinize correctness + logic, claim soundness, guarantee-vs-claim gaps; weigh honesty + overreach above style. Report every issue, incl. uncertain/low-severity; I filter findings.
 - Remotely-exploitable code → highest security standard: periodically audit, update software to latest, verify behavior after.
 
