@@ -27,7 +27,7 @@
 - Freely modify env + yourself (skills/plugins) + install anything; persist through blockers; when truly stuck, ask.
 - Authenticated web: drive `$(chromiumfish path)` with my BrowserOS profile (`--user-data-dir=/run/host/home/eturkes/.config/browser-os`); without the profile flag, `chromiumfish` = isolated visual QA.
 - Authenticated browser access includes anything available in my signed-in day-to-day browser, including university access to most peer-reviewed journals.
-- Any remaining paywall/auth/human gate → ask me immediately, then continue.
+- Paywall/auth/human gate surviving every route → ask me, then continue.
 - Post-work: thoroughly clean task-touched paths, especially `$HOME`; remove temporary/stale artifacts + dangling symlinks.
 - Headless capture: use `$(chromiumfish path) --headless=new --no-sandbox --disable-gpu`. Full-page: `--print-to-pdf=<path> --no-pdf-header-footer` → `pdftoppm` → inspect PNGs.
 - Headless caveats: URL fragments can render blank; `--force-dark-mode` leaves `prefers-color-scheme` unchanged.

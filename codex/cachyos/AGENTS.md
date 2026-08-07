@@ -28,7 +28,7 @@
 - Freely modify env + yourself (skills/plugins) + install anything; persist through blockers; when truly stuck, ask.
 - Authenticated web: BrowserOS at `http://127.0.0.1:9000/mcp` is the sole configured MCP; `chromiumfish` = isolated visual QA.
 - Authenticated browser access includes anything available in my signed-in day-to-day browser, including university access to most peer-reviewed journals.
-- Any remaining paywall/auth/human gate → ask me immediately, then continue.
+- Paywall/auth/human gate surviving every route → ask me, then continue.
 - Post-work: thoroughly clean task-touched paths, especially `$HOME`; remove temporary/stale artifacts + dangling symlinks.
 - Headless capture: use `$(chromiumfish path) --headless`. Screenshots: `--screenshot=<path>`; full-page: `--print-to-pdf=<path> --no-pdf-header-footer`.
 - Headless caveats: URL fragments can render blank; `--force-dark-mode` leaves `prefers-color-scheme` unchanged.
