@@ -2,14 +2,12 @@
 
 - Codex + GPT models = sole development stack. Canonical runtime = plain `codex --yolo` from repo root; canonical instructions = `~/.codex/AGENTS.md` + `~/.codex/config.toml` + the repo's applicable `AGENTS.md`.
 - Runtime defaults: `gpt-5.6-sol`, `max` reasoning, low visible verbosity, no personality or reasoning summary/raw-reasoning display. Apps are disabled. Use GPT models only; keep these model/effort defaults unless the user or task requires another GPT model/effort.
-- Tool availability: the session-provided list = ground truth. Use Codex tool search to discover deferred capabilities + exact schemas; verify an external service's connection before acting through it.
-- `--yolo` exposes the machine's full filesystem, network, and passwordless `sudo` without approval prompts. Use those capabilities fully within the user's request + the launch-dir scope; distinguish technical access from authorization to widen the task.
+- External services: verify the connection before acting through one.
+- Filesystem scope = launch directory + targets the user places in scope.
 
-## Autonomy
+## Confirmation
 
-- Answer / explain / review / diagnose / plan → inspect relevant materials + report results; implementation requires an explicit request.
-- Change / build / fix → make requested in-scope local changes + run relevant non-destructive validation autonomously. Safe local actions include reading files, inspecting logs, editing in-scope code + running tests.
-- Get confirmation before external writes, destructive actions, purchases, or material scope expansion.
+- Confirm immediately before external writes, destructive actions, purchases, or material scope expansion.
 
 ## Response
 
@@ -20,15 +18,14 @@
 ## Environment
 
 - CachyOS (Arch) workstation; `$HOME` = `/home/eturkes`.
-- All Codex sessions run as the sole user `eturkes`, with passwordless sudo, full r/w, and network.
+- Codex sessions run as the sole user `eturkes`, with passwordless sudo.
 - Resolve user-supplied paths before the first absolute-path call: expand `~` from the active `$HOME`, use `readlink -f` when the path exists, and derive home paths from that resolved result.
 - Desktop/computer use: a full X11 session is live, with a wide range of already-authenticated GUI apps available.
 - Discover + preserve each repo's live stack from tracked manifests, lockfiles, scripts, CI, and working commands. Task requirements gate new language/package/tool surfaces. Defaults: Python → `uv`; Node.js → `pnpm`; visual QA/web scraping → `chromiumfish`.
 - Compute: prefer the discrete GPU where applicable; display/video use the iGPU, leaving discrete VRAM dedicated to compute.
-- Freely modify env + yourself (skills/plugins) + install anything; persist through blockers; when truly stuck, ask.
+- Task-serving environment + Codex changes (skills/plugins, software installation) are in scope.
 - Authenticated web: BrowserOS at `http://127.0.0.1:9000/mcp` is the sole configured MCP; `chromiumfish` = isolated visual QA.
 - Authenticated browser access includes anything available in my signed-in day-to-day browser, including university access to most peer-reviewed journals.
-- Paywall/auth/human gate surviving every route → ask me, then continue.
 - Post-work: thoroughly clean task-touched paths, especially `$HOME`; remove temporary/stale artifacts + dangling symlinks.
 - Headless capture: use `$(chromiumfish path) --headless`. Screenshots: `--screenshot=<path>`; full-page: `--print-to-pdf=<path> --no-pdf-header-footer`.
 - Headless caveats: URL fragments can render blank; `--force-dark-mode` leaves `prefers-color-scheme` unchanged.
