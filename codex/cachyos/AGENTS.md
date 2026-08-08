@@ -1,7 +1,7 @@
 # Codex
 
-- Codex + GPT models = sole development stack. Canonical runtime = plain `codex --yolo` from repo root; canonical instructions = `~/.codex/AGENTS.md` + `~/.codex/config.toml` + the repo's applicable `AGENTS.md`.
-- Runtime defaults: `gpt-5.6-sol`, `max` reasoning, low visible verbosity, no personality or reasoning summary/raw-reasoning display. Apps are disabled. Use GPT models only; keep these model/effort defaults unless the user or task requires another GPT model/effort.
+- Codex + GPT models = sole development stack — canonical runtime = plain `codex --yolo` from repo root; canonical instructions = `~/.codex/AGENTS.md` + `~/.codex/config.toml` + the repo's applicable `AGENTS.md`.
+- Runtime defaults: `gpt-5.6-sol`, `max` reasoning, low visible verbosity, no personality or reasoning summary/raw-reasoning display. Apps are disabled. Use GPT models ONLY; keep these model/effort defaults unless the user or task requires another GPT model/effort.
 - External services: verify the connection before acting through one.
 - Filesystem scope = launch directory + targets the user places in scope.
 
@@ -11,9 +11,9 @@
 
 ## Response
 
-- Lead with the conclusion, then necessary evidence, material caveats + the next action; prioritize these over secondary detail + repetition.
+- Lead with the conclusion — then necessary evidence, material caveats + the next action; prioritize these over secondary detail + repetition.
 - Preserve required facts, decisions, caveats + next steps; trim introductions, repetition, generic reassurance + optional background first.
-- State the answer directly. User-reported problem → acknowledge the specific issue before the next step. Reassurance, praise + sign-offs → include only when specifically relevant.
+- State the answer directly. User-reported problem → acknowledge the specific issue before the next step. Reassurance, praise + sign-offs → include ONLY when specifically relevant.
 
 ## Environment
 
@@ -31,11 +31,11 @@
 - Headless caveats: URL fragments can render blank; `--force-dark-mode` leaves `prefers-color-scheme` unchanged.
 - SwANGLE/Vulkan `EGL` initialization errors + `Exiting GPU process` are benign when the command succeeds and produces real output.
 - Shell/tool calls = native, uncompressed, unrewritten. `rg` = ripgrep; `grep` = GNU grep (BRE); `find` = GNU find. Byte-exact/clean → `command grep` | `/usr/bin/rg` | `/usr/bin/find`.
-- `rg` direct calls: rg recurses by default → pass `<pat> <path>` alone. `-r` is `--replace`, so `grep -r` muscle memory eats the pattern as replacement text + promotes the path to pattern → readable stdin blocks the call, `.` matches every line + rewrites output to the replacement (rc=0, fabricated bytes shaped like real matches), a named dir matches nothing (rc=1). Reach dot-dirs (`.agent/`, `.scratch/`) by naming the path — explicit paths search regardless of hidden/ignore state; tree-wide sweeps take `--hidden`, or `-uu` (= `--hidden --no-ignore`) when the target is gitignored too, since `--hidden` alone misses gitignored dot-dirs.
+- `rg` direct calls: rg recurses by default → pass `<pat> <path>` ALONE. `-r` is `--replace`, so `grep -r` muscle memory eats the pattern as replacement text + promotes the path to pattern → readable stdin blocks the call, `.` matches every line + rewrites output to the replacement (rc=0, fabricated bytes shaped like real matches), a named dir matches nothing (rc=1). Reach dot-dirs (`.agent/`, `.scratch/`) by NAMING the path — explicit paths search regardless of hidden/ignore state; tree-wide sweeps take `--hidden`, or `-uu` (= `--hidden --no-ignore`) when the target is gitignored too, since `--hidden` alone MISSES gitignored dot-dirs.
 - `pgrep -f`/`pkill -f` can self-match their Codex `bash -c` wrapper → use one bracketed pattern (`index[.]js`) + `|| echo none` per command; separate kill/relaunch calls.
 - `bgcmd` (`~/.local/bin/`) = filesystem REPL, objects persist across separate shell calls: `export BGCMDDIR=<dir> BGCMDPROMPT='>>> '` (re-export each call) → `bgcmd START <interp> -i -q` → `bgcmd '<oneliner>'` → `bgcmd 'exit()'; rm -rf "$BGCMDDIR"`.
 - Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index`.
-- Shell result integrity: capture each exit code immediately (`cmd; rc=$?`) before any `printf`, command substitution, or next command, and label the result; every command overwrites `$?`. Where EMPTY output is the finding (no matches, nothing running, nothing modified), report rc beside it and pair the query with a positive control that must print: a missing command (127), a mistyped path, and a glob matching nothing all emit byte-for-byte what a true negative emits.
+- Shell result integrity: capture each exit code immediately (`cmd; rc=$?`) before any `printf`, command substitution, or next command, and label the result; every command overwrites `$?`. Where EMPTY output IS the finding (no matches, nothing running, nothing modified), report rc beside it and pair the query with a positive control that must print: a missing command (127), a mistyped path, and a glob matching nothing all emit byte-for-byte what a true negative emits.
 - Docs mirror `~/Projects/agents/docs/<site>/llms.txt` (scopedcommits.com, agentlanguages.dev) > web fetch.
 
 ## Reading
