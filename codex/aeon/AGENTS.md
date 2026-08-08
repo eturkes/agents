@@ -33,7 +33,7 @@
 - `pgrep -f`/`pkill -f` can self-match their Codex `bash -c` wrapper → use one bracketed pattern (`index[.]js`) + `|| echo none` per command; separate kill/relaunch calls.
 - `bgcmd` (`~/.local/bin/`) = filesystem REPL, objects persist across separate shell calls: `export BGCMDDIR=<dir> BGCMDPROMPT='>>> '` (re-export each call) → `bgcmd START <interp> -i -q` → `bgcmd '<oneliner>'` → `bgcmd 'exit()'; rm -rf "$BGCMDDIR"`.
 - Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index`.
-- Shell result integrity: capture each exit code immediately (`cmd; rc=$?`) before any `printf`, command substitution, or next command, and label the result; every command overwrites `$?`.
+- Shell result integrity: capture each exit code immediately (`cmd; rc=$?`) before any `printf`, command substitution, or next command, and label the result; every command overwrites `$?`. Where EMPTY output is the finding (no matches, nothing running, nothing modified), report rc beside it and pair the query with a positive control that must print: a missing command (127), a mistyped path, and a glob matching nothing all emit byte-for-byte what a true negative emits.
 - Docs mirror `~/agents/docs/<site>/llms.txt` (scopedcommits.com, agentlanguages.dev) > web fetch.
 
 ## Reading
