@@ -31,6 +31,7 @@
 - Headless caveats: URL fragments can render blank; `--force-dark-mode` leaves `prefers-color-scheme` unchanged.
 - SwANGLE/Vulkan `EGL` initialization errors + `Exiting GPU process` are benign when the command succeeds and produces real output.
 - Shell/tool calls = native, uncompressed, unrewritten. `rg` = ripgrep; `grep` = GNU grep (BRE); `find` = GNU find. Byte-exact/clean → `command grep` | `/usr/bin/rg` | `/usr/bin/find`.
+- `rg` skips dot-dirs (`.agent/`, `.scratch/`) unless `--hidden`, which `--no-ignore` does not imply; `-r` is `--replace` (consumes the next arg + rewrites matched output), never recursion as in `grep -r`. Both fail as a plausible zero-match over a project whose state lives in `.agent/`.
 - `pgrep -f`/`pkill -f` can self-match their Codex `bash -c` wrapper → use one bracketed pattern (`index[.]js`) + `|| echo none` per command; separate kill/relaunch calls.
 - `bgcmd` (`~/.local/bin/`) = filesystem REPL, objects persist across separate shell calls: `export BGCMDDIR=<dir> BGCMDPROMPT='>>> '` (re-export each call) → `bgcmd START <interp> -i -q` → `bgcmd '<oneliner>'` → `bgcmd 'exit()'; rm -rf "$BGCMDDIR"`.
 - Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index`.

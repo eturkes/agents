@@ -25,6 +25,7 @@
 - Task-serving file + Codex configuration changes are in scope.
 - Post-work: thoroughly clean task-touched paths, especially `$HOME`; remove temporary/stale artifacts + dangling symlinks.
 - Shell/tool calls = native, uncompressed, unrewritten. `rg` = ripgrep at `/usr/local/bin/rg`; `grep` = FreeBSD grep (BRE); `find` = FreeBSD find. Byte-exact/clean → `command grep` | `/usr/local/bin/rg` | `/usr/bin/find`.
+- `rg` skips dot-dirs (`.agent/`, `.scratch/`) unless `--hidden`, which `--no-ignore` does not imply; `-r` is `--replace` (consumes the next arg + rewrites matched output), never recursion as in `grep -r`. Both fail as a plausible zero-match over a project whose state lives in `.agent/`.
 - `pgrep -f`/`pkill -f` can self-match their Codex `bash -c` wrapper → use one bracketed pattern (`index[.]js`) + `|| echo none` per command; separate kill/relaunch calls.
 - Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index`.
 - Shell result integrity: capture each exit code immediately (`cmd; rc=$?`) before any `printf`, command substitution, or next command, and label the result; every command overwrites `$?`. Where EMPTY output is the finding (no matches, nothing running, nothing modified), report rc beside it and pair the query with a positive control that must print: a missing command (127), a mistyped path, and a glob matching nothing all emit byte-for-byte what a true negative emits.
