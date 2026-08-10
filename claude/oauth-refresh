@@ -1,7 +1,7 @@
 #!/bin/sh
 # Poll GET /api/oauth/usage into the 5h/7d cache ($1, default ~/.claude/.oauth_usage.json) once it is
 # >=180s old, under a lock in a detached job => callers return at once and render from the cache alone.
-# Shared by statusline (per render) + oauth-limit-alert (per PostToolUse); token via ./oauth-token.
+# Shared by statusline (per render) + oauth-limit-alert (if wired); token via ./oauth-token.
 uc="${1:-${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}}"
 lk="$uc.lock"
 now=$(date +%s)

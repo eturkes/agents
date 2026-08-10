@@ -4,7 +4,7 @@
 # account bills — Claude models, and for a scoped window the model it names. Refreshes the shared
 # usage cache itself (utilization/percent = 0-100), covering tool-only runs between statusline
 # renders. <100% = silent; a cross injects a self-contained stop-now instruction, work resuming on
-# renewed credits. Fixtures: oauth-limit-alert.test.
+# renewed credits.
 uc="${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}"
 
 # Payload names session + agent + transcript; the model comes from the transcript itself, below.
