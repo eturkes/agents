@@ -1,0 +1,117 @@
+#!/bin/sh
+# Fixtures for `oauth-limit-alert` — run bare, exit 0 = green. Invariant: an alert reaches exactly the
+# calls its window bills. Anthropic OAuth windows bill Claude models → a `gpt-5.6-sol` teammate works
+# on through 5h, 7d + scoped alike; a scoped weekly binds the model it names; an undetermined model
+# keeps the account-wide windows; each session + teammate gets its own copy. A teammate's payload
+# carries MAIN's transcript_path plus its agent_id, its turns at <session>/subagents/agent-<agent_id>.
+HOOK=${1:-$(dirname "$0")/oauth-limit-alert}
+td=$(mktemp -d) || exit 1
+trap 'rm -rf "$td"' EXIT INT TERM
+export HOME=$td/home OAUTH_REFRESH_CMD=true         # stub the poll; stamp lands in the throwaway HOME
+unset ANTHROPIC_MODEL CLAUDE_CODE_SUBAGENT_MODEL    # fixtures own the model, free of the launch env
+mkdir -p "$td/home/.claude" "$td/t/subagents"
+pass=0; fail=0
+
+cache() {                                           # $1=5h util $2=7d util $3=`.limits[]` JSON
+  printf '{"five_hour":{"utilization":%s,"resets_at":"2026-08-10T09:00:00.649385+00:00"},' "$1" >"$td/uc.json"
+  printf '"seven_day":{"utilization":%s,"resets_at":"2026-08-10T09:00:00.649415+00:00"},' "$2" >>"$td/uc.json"
+  printf '"limits":%s}' "$3" >>"$td/uc.json"
+}
+scoped() {                                          # $1=model display_name $2=percent
+  printf '{"kind":"weekly_scoped","group":"weekly","percent":%s,"resets_at":"2026-08-10T08:59:59.649804+00:00","scope":{"model":{"id":null,"display_name":"%s"},"surface":null},"is_active":true}' "$2" "$1"
+}
+turns() {                                           # $1=model $2=file → transcript ending in that model
+  printf '{"type":"user","message":{"role":"user"}}\n' >"$2"
+  printf '{"type":"assistant","message":{"role":"assistant","model":"%s","usage":{}}}\n' "$1" >>"$2"
+  printf '{"type":"assistant","message":{"role":"assistant","model":"<synthetic>"}}\n' >>"$2"
+}
+main_turns() { turns "$1" "$td/t.jsonl"; }
+sub_turns() { turns "$1" "$td/t/subagents/agent-$2.jsonl"; }
+run() {                                             # $1=transcript ("" = none) $2=agent_id $3=session_id
+  rm -rf "$td/state"; run_keep "$@"
+}
+run_keep() {                                        # same, on the standing marker state (dedupe cases)
+  printf '{"session_id":"%s","transcript_path":"%s","agent_id":%s,"cwd":"/tmp","hook_event_name":"PostToolUse"}' \
+    "${3:-sess-1}" "$1" "$([ -n "$2" ] && printf '"%s"' "$2" || printf null)" |
+    OAUTH_USAGE_FILE=$td/uc.json OAUTH_ALERT_STATE=$td/state "$HOOK" 2>>"$td/err"
+}
+check() {                                           # $1=name $2=expected substring ("" = silence) $3=actual
+  if [ -z "$2" ]; then
+    [ -z "$3" ] && { pass=$((pass+1)); echo "ok   $1 — silent"; return; }
+    fail=$((fail+1)); echo "FAIL $1 — expected silence, got: $3"; return
+  fi
+  case "$3" in
+    *"$2"*) pass=$((pass+1)); echo "ok   $1 — alerted ($2)" ;;
+    *) fail=$((fail+1)); echo "FAIL $1 — expected '$2', got: ${3:-<silent>}" ;;
+  esac
+}
+
+# A scoped weekly binds the model it names: Fable exhausted stays silent under Opus, loud under Fable.
+cache 48 85 "[$(scoped Fable 100)]"; main_turns claude-opus-5
+check A-fable-window-opus-session "" "$(run "$td/t.jsonl")"
+main_turns claude-fable-5
+check B-fable-window-fable-session "fable window" "$(run "$td/t.jsonl")"
+
+# A gpt-5.6-sol teammate bills its own provider → it works on through every Anthropic window. Its model
+# reads from its own subagent transcript, the payload's MAIN path describing MAIN alone.
+main_turns claude-opus-5; sub_turns gpt-5.6-sol a07c0eddfa0a59e66
+check C-scoped-gpt-teammate "" "$(run "$td/t.jsonl" a07c0eddfa0a59e66)"
+cache 100 85 "[$(scoped Fable 100)]"
+check D-5h-gpt-teammate "" "$(run "$td/t.jsonl" a07c0eddfa0a59e66)"
+cache 48 100 "[$(scoped Fable 100)]"
+check E-7d-gpt-teammate "" "$(run "$td/t.jsonl" a07c0eddfa0a59e66)"
+
+# The launch env names a teammate's model while its transcript is younger than its first turn.
+rm -f "$td/t/subagents/agent-a07c0eddfa0a59e66.jsonl"
+check F-gpt-teammate-env-fallback "" \
+  "$(CLAUDE_CODE_SUBAGENT_MODEL=gpt-5.6-sol run "$td/t.jsonl" a07c0eddfa0a59e66)"
+
+# A Claude teammate spends the account → it alerts, on its own marker.
+sub_turns claude-opus-5 aclaudemate
+check G-claude-teammate-billed "7d window" "$(run "$td/t.jsonl" aclaudemate)"
+
+# All-model windows bind every Claude session.
+cache 100 85 "[$(scoped Fable 100)]"; main_turns claude-opus-5
+check H-5h-all-models "5h window" "$(run "$td/t.jsonl")"
+cache 48 100 "[$(scoped Fable 100)]"
+check I-7d-all-models "7d window" "$(run "$td/t.jsonl")"
+
+# A hotter window of another model leaves the session's own exhausted window alertable.
+cache 48 85 "[$(scoped Fable 140),$(scoped Opus 100)]"
+check J-matching-not-masked "opus window" "$(run "$td/t.jsonl")"
+
+# A surface-scoped window names no model → it binds whatever runs here.
+cache 48 85 '[{"kind":"weekly_scoped","group":"weekly","percent":100,"resets_at":"2026-08-10T08:59:59Z","scope":{"model":null,"surface":"claude_code"},"is_active":true}]'
+check K-surface-scoped "claude_code window" "$(run "$td/t.jsonl")"
+
+# An undetermined model keeps the account-wide windows; scoped windows hold out for a named match.
+cache 100 85 "[$(scoped Fable 100)]"
+check L-unknown-model-5h "5h window" "$(run "")"
+cache 48 85 "[$(scoped Fable 100)]"
+check M-unknown-model-scoped "" "$(run "")"
+
+# The bounded tail spans a severed JSON line and still resolves the model.
+main_turns claude-fable-5
+printf '{"type":"assistant","message":{"role":"assis' >>"$td/t.jsonl"
+check N-partial-json-line "fable window" "$(run "$td/t.jsonl")"
+
+# Every window below 100% stays silent.
+cache 48 85 "[$(scoped Fable 99)]"
+check O-below-threshold "" "$(run "$td/t.jsonl")"
+
+# Dedupe per acting context: repeat polls stay silent, a second session keeping its own alert.
+cache 48 85 "[$(scoped Fable 100)]"
+check P-dedupe-first "fable window" "$(run "$td/t.jsonl" "" sess-1)"
+check Q-dedupe-repeat "" "$(run_keep "$td/t.jsonl" "" sess-1)"
+check R-second-session-alerts "fable window" "$(run_keep "$td/t.jsonl" "" sess-2)"
+
+# Markers older than 7d reap themselves, holding the state dir flat.
+touch -d '8 days ago' "$td/state/ancient" 2>/dev/null || touch -t 202001010000 "$td/state/ancient"
+run_keep "$td/t.jsonl" "" sess-4 >/dev/null
+left=$(ls "$td/state" | grep -c ancient)
+[ "$left" -eq 0 ] && { pass=$((pass+1)); echo "ok   S-markers-reap-after-7d — reaped"; } ||
+  { fail=$((fail+1)); echo "FAIL S-markers-reap-after-7d — stale marker survived"; }
+
+echo "---"; echo "pass=$pass fail=$fail"
+[ -s "$td/err" ] && { echo "stderr:"; command cat "$td/err"; }
+exit $((fail > 0))

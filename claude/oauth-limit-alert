@@ -1,37 +1,75 @@
 #!/bin/sh
-# PostToolUse hook: one alert per limit-window at 100% — 5h, 7d all-models, or model-scoped weekly
-# (Fable etc.; `.limits[]` only). Reads + refreshes the oauth-usage cache itself (utilization/percent
-# = 0-100), so tool-only runs stay covered independent of statusline renders. <100% => silent;
-# a cross injects a self-contained stop-now instruction: work resumes on renewed credits.
+# PostToolUse hook → one alert per limit-window at 100%: 5h, 7d all-models, or a model-scoped weekly
+# (`.limits[]`). Every window meters the Anthropic OAuth account, so an alert reaches the calls that
+# account bills — Claude models, and for a scoped window the model it names. Refreshes the shared
+# usage cache itself (utilization/percent = 0-100), covering tool-only runs between statusline
+# renders. <100% = silent; a cross injects a self-contained stop-now instruction, work resuming on
+# renewed credits. Fixtures: oauth-limit-alert.test.
 uc="${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}"
-mk="${OAUTH_ALERT_MARK:-$HOME/.claude/.oauth_limit_alerted}"
 
-[ -t 0 ] || cat >/dev/null 2>&1                                  # drain hook stdin (fields unused)
+# Payload names session + agent + transcript; the model comes from the transcript itself, below.
+IN=$(cat)
+{ read -r sid; read -r aid; read -r tp; } <<EOF
+$(printf '%s' "$IN" | jq -r '.session_id // "", .agent_id // "", .transcript_path // ""' 2>/dev/null)
+EOF
 date +%s >"$HOME/.claude/.oauth_limit_alert.stamp" 2>/dev/null   # liveness marker (last run epoch)
-"${OAUTH_REFRESH_CMD:-$HOME/.claude/oauth-refresh}" "$uc"        # same cache + poll as the statusline
-
+"${OAUTH_REFRESH_CMD:-$HOME/.claude/oauth-refresh}" "$uc"        # cache + poll shared with the statusline
 [ -s "$uc" ] || exit 0
-# Precedence at >=100%: 5h (soonest reset) > 7d > hottest scoped weekly (window = lowercased model
-# name, "fable"). One "WIN EPOCH" line; epoch = resets_at rounded to the nearest hour = stable
-# dedupe key across polls (API wobbles the boundary by ~1s, e.g. 09:00:00 ↔ 08:59:59); empty = silent.
-sel=$(jq -r '
-  def hkey: try (.[0:19] | strptime("%Y-%m-%dT%H:%M:%S") | mktime
-                 | (. + 1800) - ((. + 1800) % 3600)) catch 0;
+
+# epoch = resets_at rounded to the nearest hour = a dedupe key stable across polls (the API wobbles the
+# boundary by ~1s, e.g. 09:00:00 ↔ 08:59:59).
+hkey='def hkey: try (.[0:19] | strptime("%Y-%m-%dT%H:%M:%S") | mktime
+                     | (. + 1800) - ((. + 1800) % 3600)) catch 0;'
+
+# Precedence at >=100%: 5h (soonest reset) > 7d > scoped weekly. Stage 1 reads the cache alone → the
+# common path costs one jq, the model resolving once a window runs hot. "WIN EPOCH" = the dedupe key.
+sel=$(jq -r "$hkey"'
   (.five_hour.utilization // 0) as $f | (.seven_day.utilization // 0) as $w |
-  ([.limits[]? | select(.kind == "weekly_scoped" and (.percent // 0) >= 100)]
-   | max_by(.percent // 0)) as $s |
   if   $f >= 100 and $f >= $w then "5h \(.five_hour.resets_at // "" | hkey)"
   elif $w >= 100              then "7d \(.seven_day.resets_at // "" | hkey)"
-  elif $s != null             then
-    "\(($s.scope.model.display_name // $s.scope.surface // "scoped")
-       | ascii_downcase | gsub(" "; "-")) \($s.resets_at // "" | hkey)"
+  elif any(.limits[]?; .kind == "weekly_scoped" and (.percent // 0) >= 100) then "SCOPED"
   else "" end' "$uc" 2>/dev/null)
 [ -n "$sel" ] || exit 0
 
-win=${sel%% *}
-prev=""; [ -f "$mk" ] && IFS= read -r prev <"$mk" 2>/dev/null
-[ "$prev" = "$sel" ] && exit 0                                   # this window already alerted
-printf '%s' "$sel" >"$mk" 2>/dev/null
+# Acting model ← the transcript of the call's own context: a teammate's turns sit at
+# <session>/subagents/agent-<agent_id>.jsonl, beside the MAIN path every payload carries. Bounded tail
+# holds the per-call cost flat, `fromjson?` spanning the severed head line; the launch env answers for
+# a transcript younger than its first turn.
+f=$tp
+[ -n "$aid" ] && f="${tp%.jsonl}/subagents/agent-$aid.jsonl"
+mdl=""
+[ -s "$f" ] && mdl=$(tail -c 262144 "$f" 2>/dev/null |
+  jq -rR 'fromjson? | select(.type == "assistant") | .message.model // empty' 2>/dev/null |
+  awk '$0 != "<synthetic>" { m = $0 } END { print m }')
+[ -n "$mdl" ] || { [ -n "$aid" ] && mdl=$CLAUDE_CODE_SUBAGENT_MODEL || mdl=$ANTHROPIC_MODEL; }
 
+# Claude models spend this account → they alert. A `gpt-*` teammate bills its own provider and keeps
+# working, leaving MAIN's alert for MAIN. An undetermined model keeps the account-wide windows, while
+# scoped windows below hold out for a named match.
+case "$mdl" in ""|*claude*) ;; *) exit 0 ;; esac
+
+# Stage 2 = hottest scoped weekly the acting model runs under (window = lowercased model name, "fable");
+# a surface-scoped window names no model, binding whatever runs here. Selecting on the match inside the
+# scan keeps a matching window alertable while another model's sits hotter.
+[ "$sel" = "SCOPED" ] && sel=$(jq -r --arg m "$mdl" "$hkey"'
+  [ .limits[]?
+    | select(.kind == "weekly_scoped" and (.percent // 0) >= 100)
+    | ((.scope.model.display_name // .scope.model.id // .scope.surface // "scoped")
+       | ascii_downcase | gsub(" "; "-")) as $k
+    | select(.scope.model == null or ($m | ascii_downcase | contains($k)))
+    | {k: $k, p: (.percent // 0), r: (.resets_at // "")} ]
+  | max_by(.p) | if . == null then "" else "\(.k) \(.r | hkey)" end' "$uc" 2>/dev/null)
+[ -n "$sel" ] || exit 0
+
+# One alert per acting context per window: each session + teammate keeps its own marker, so every one
+# of them sees the window that bills it. Stale files reaped after 7d.
+state_dir=${OAUTH_ALERT_STATE:-$HOME/.claude/cache/oauth-limit-alert}
+mkdir -p "$state_dir" 2>/dev/null || exit 0
+find "$state_dir" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null
+marker=$state_dir/${sid:-unknown}${aid:+.$aid}.$(printf '%s' "$sel" | tr ' ' '.')
+[ -e "$marker" ] && exit 0
+: > "$marker"
+
+win=${sel%% *}
 msg="⚠ USAGE LIMIT at 100% (${win} window; usage credits now billing) → STOP NOW and \`TaskStop\` any running subagents. Leave work where it stands, even if incomplete."
 jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
