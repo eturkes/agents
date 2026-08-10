@@ -7,7 +7,8 @@
 # Prefix + override clause wrap every tier once: a mode may license working through compaction
 # (PLANNING/MILESTONE-REVIEW/user-requested tasks do), and the notice yields to that license.
 # ACW=273000 → 240K trigger; subagents compact on the same path.
-IN=$(cat)
+IN=""
+[ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 { read -r tp; read -r at; read -r sid; } <<EOF
 $(printf '%s' "$IN" | jq -r '.transcript_path // "", .agent_type // "", .session_id // ""' 2>/dev/null)
 EOF

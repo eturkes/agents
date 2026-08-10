@@ -8,7 +8,9 @@
 uc="${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}"
 
 # Payload names session + agent + transcript; the model comes from the transcript itself, below.
-IN=$(cat)
+# Hooks always pipe it; a bare terminal run skips the read and serves as a manual limit check.
+IN=""
+[ -t 0 ] || IN=$(cat)
 { read -r sid; read -r aid; read -r tp; } <<EOF
 $(printf '%s' "$IN" | jq -r '.session_id // "", .agent_id // "", .transcript_path // ""' 2>/dev/null)
 EOF
