@@ -4,7 +4,7 @@
 # bill from cached input the .jsonl omits; server-tool turns (ToolSearch) bill per internal iteration.
 # 240K = auto-compaction point (ACW 273K − 33K; raw 1M = informational); warn 220K. Teammates share it.
 # POSIX sh + utility options throughout (jq aside): globs pin transcript depth, `ls -t` ranks by mtime.
-# Usage: context-gauge.sh [-p] [<teammate>]
+# Usage: context-gauge [-p] [<teammate>]
 #   (no arg)   → MAIN, last turn = live occupancy: this session id, else this project's newest transcript
 #   <teammate> → spawned role name (`name` in agent-*.meta.json) or raw agent id, under this project's
 #                sessions (plain + workflow nestings) — newest match wins, so a live teammate always
