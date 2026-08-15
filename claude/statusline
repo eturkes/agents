@@ -75,18 +75,18 @@ fx=""
   else printf " %s %d%%",n,q}')
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800)"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000 "$fx")"
-# "cache" = prompt-cache warmth left = TTL - (now - last API turn); TTL 1h.
+# "last" = clock time of the last real API turn, which is also the prompt-cache anchor; TTL 1h.
 # Anchor = last real API turn that moved cache tokens, found by backward scan exiting on the first hit.
 # Assistant records alone are authoritative: mode / permission-mode / last-prompt / queue-operation
 # entries advance transcript mtime with no API call, leaving mtime warm past expiry. Streaming turns
 # append assistant records, so the anchor stays live mid-turn.
-# Left >30m plain, <=30m green, <=15m yellow; expired = red ❄ + the last-turn stamp.
+# Color = warmth left: >30m plain, <=30m green, <=15m yellow, expired red.
 ttl=3600
 ce=$(tac "${tp:-$f}" 2>/dev/null | jq -rn "first(inputs|select($api and ((.message.usage.cache_read_input_tokens//0)+(.message.usage.cache_creation_input_tokens//0))>0)|.timestamp)//empty" 2>/dev/null)
 [ -n "$ce" ] && te=$(date -d "$ce" +%s 2>/dev/null) && [ -n "$te" ] && {
+  ts="last $(date -d "@$te" +'%m/%d %H:%M')"
   left=$(( ttl - (now - te) ))
-  ts="cache $(( (left + 59) / 60 ))m"
-  if [ "$left" -le 0 ]; then ts=$(printf '\033[31mcache ❄ %s\033[0m' "$(date -d "@$te" +'%m/%d %H:%M')")
+  if [ "$left" -le 0 ]; then ts=$(printf '\033[31m%s\033[0m' "$ts")
   elif [ "$left" -le 900 ]; then ts=$(printf '\033[33m%s\033[0m' "$ts")
   elif [ "$left" -le 1800 ]; then ts=$(printf '\033[32m%s\033[0m' "$ts")
   fi
