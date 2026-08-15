@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude Code context gauge + rate limits.
+# Claude Code context gauge + rate limits + prompt-cache warmth.
 # Branch on stdin, NOT env: statusline pipes JSON + sets CLAUDE_CODE_SESSION_ID → env can't tell modes apart. JSON stdin = statusline; TTY/empty = manual (read transcript).
 # Live total_input_tokens includes cache reads/writes but excludes output; sum total_output_tokens to match the transcript fallback.
 # Gauge colors compare TOKENS → meaning holds at any denominator: green >=120K, yellow >=180K, red >=220K (= the CLI's own context-low warning).
@@ -9,12 +9,14 @@ j=""
 { read -r u; read -r w; read -r sp; read -r sr; read -r wp; read -r wr; read -r tp; read -r pd; } <<EOF
 $(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .transcript_path // "", .workspace.project_dir // ""' 2>/dev/null)
 EOF
+# Real API turn = non-sidechain assistant record carrying usage; shared by the gauge fallback + cache anchor.
+api='.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object"'
 if [ -n "$u" ]; then c=1
 else
   transcript_root="$HOME/.claude/projects"
   f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name "$CLAUDE_CODE_SESSION_ID.jsonl" -print -quit 2>/dev/null)
   [ -n "$f" ] || f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d ' ' -f 2- | head -1)
-  u=$(jq -n 'last(inputs|select(.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object")|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty' "$f" 2>/dev/null)
+  u=$(jq -n "last(inputs|select($api)|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty" "$f" 2>/dev/null)
   w=273000
   c=0
 fi
@@ -25,7 +27,7 @@ fi
 acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
 [ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
 w=$((w - 33000))
-now=$(date +%s)  # one clock read, reused for reset-delta + idle
+now=$(date +%s)  # one clock read, reused for reset-delta + cache warmth
 # Rate-limit suffix; present once rate_limits arrives (manual mode + pre-first-response render bare).
 # seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA] => "LABEL N%EXTRA MM/DD HH:MM";
 #   EXTRA = pre-formatted, leading space, slots between used% and reset (" fable 100%").
@@ -73,14 +75,20 @@ fx=""
   else printf " %s %d%%",n,q}')
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800)"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000 "$fx")"
-# "last" = turn-end via transcript mtime: tracks ~now while a turn streams, freezes once idle.
-# Idle >=30m green, >=45m yellow, >=60m red: staleness as cache TTL burns toward an uncached next turn.
-te=$(stat -c %Y "$tp" 2>/dev/null) && [ -n "$te" ] && {
-  ts="last $(date -d "@$te" +'%m/%d %H:%M')"
-  idle=$(( now - te ))
-  if [ "$idle" -ge 3600 ]; then ts=$(printf '\033[31m%s\033[0m' "$ts")
-  elif [ "$idle" -ge 2700 ]; then ts=$(printf '\033[33m%s\033[0m' "$ts")
-  elif [ "$idle" -ge 1800 ]; then ts=$(printf '\033[32m%s\033[0m' "$ts")
+# "cache" = prompt-cache warmth left = TTL - (now - last API turn); TTL 1h.
+# Anchor = last real API turn that moved cache tokens, found by backward scan exiting on the first hit.
+# Assistant records alone are authoritative: mode / permission-mode / last-prompt / queue-operation
+# entries advance transcript mtime with no API call, leaving mtime warm past expiry. Streaming turns
+# append assistant records, so the anchor stays live mid-turn.
+# Left >30m plain, <=30m green, <=15m yellow; expired = red ❄ + the last-turn stamp.
+ttl=3600
+ce=$(tac "${tp:-$f}" 2>/dev/null | jq -rn "first(inputs|select($api and ((.message.usage.cache_read_input_tokens//0)+(.message.usage.cache_creation_input_tokens//0))>0)|.timestamp)//empty" 2>/dev/null)
+[ -n "$ce" ] && te=$(date -d "$ce" +%s 2>/dev/null) && [ -n "$te" ] && {
+  left=$(( ttl - (now - te) ))
+  ts="cache $(( (left + 59) / 60 ))m"
+  if [ "$left" -le 0 ]; then ts=$(printf '\033[31mcache ❄ %s\033[0m' "$(date -d "@$te" +'%m/%d %H:%M')")
+  elif [ "$left" -le 900 ]; then ts=$(printf '\033[33m%s\033[0m' "$ts")
+  elif [ "$left" -le 1800 ]; then ts=$(printf '\033[32m%s\033[0m' "$ts")
   fi
   rl="$rl | $ts"
 }
