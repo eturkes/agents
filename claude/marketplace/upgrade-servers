@@ -58,13 +58,13 @@ else
   if [[ -z "$latest" ]]; then
     skip "could not read <release>; keeping current jar"
   else
-    # The jar reports no usable version -> record the installed one alongside it.
+    # The jar reports no usable version → record the installed one alongside it.
     stamp="${lemminx_jar%.jar}.version"
     current=$(cat "$stamp" 2>/dev/null || echo "none")
     if [[ "$current" == "$latest" && -f "$lemminx_jar" ]]; then
       ok "already at $latest"
     else
-      info "upgrading ${current} -> ${latest}"
+      info "upgrading ${current} → ${latest}"
       mkdir -p "$(dirname "$lemminx_jar")"
       tmp=$(mktemp)
       url="https://repo.eclipse.org/content/repositories/lemminx-releases/org/eclipse/lemminx/org.eclipse.lemminx/$latest/org.eclipse.lemminx-$latest-uber.jar"
@@ -119,7 +119,7 @@ else
   if [[ "$current" == "$head_sha" && -d "$pack_dir" ]]; then
     ok "already at ${head_sha:0:8}"
   else
-    info "upgrading ${current:0:8} -> ${head_sha:0:8}"
+    info "upgrading ${current:0:8} → ${head_sha:0:8}"
     src=$(mktemp -d)
     if ! git clone -q --depth 1 https://github.com/jamesnvc/lsp_server.git "$src" 2>/dev/null; then
       rm -rf "$src"

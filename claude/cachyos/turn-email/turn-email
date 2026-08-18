@@ -2,7 +2,7 @@
 # Stop hook → one email per completed MAIN-thread turn. Subagents fire SubagentStop and never Stop,
 # so main-only is structural, not filtered. The SMTP send is detached and this always exits 0: a
 # slow relay or a dead mailbox can neither stall a turn nor fail one. Credentials live in
-# ~/.msmtprc (0600); missing client or config => silent no-op, so the hook is safe to leave wired.
+# ~/.msmtprc (0600); missing client or config ⇒ silent no-op, so the hook is safe to leave wired.
 #
 # Body is base64 text/plain: assistant turns carry >998-char lines (SMTP's cap) and non-ASCII, both
 # of which 8bit would mangle or get rejected on. Subject is RFC 2047 for the same reason.

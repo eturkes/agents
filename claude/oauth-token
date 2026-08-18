@@ -1,6 +1,6 @@
 #!/bin/sh
-# Live Claude OAuth access token -> stdout for GET /api/oauth/usage; a blank print keeps the cached poll.
-# Order: ~/.claude/.credentials.json while it holds an unexpired token -> CLIProxyAPI store, newest refresh.
+# Live Claude OAuth access token → stdout for GET /api/oauth/usage; a blank print keeps the cached poll.
+# Order: ~/.claude/.credentials.json while it holds an unexpired token → CLIProxyAPI store, newest refresh.
 # The store is the copy that survives: CC + CLIProxyAPI drive one account, so a sibling refresh rotates the
 # refresh token, CC's own refresh then meets invalid_grant, and CC writes accessToken/refreshToken="" +
 # expiresAt=0 while scopes/subscriptionType stay (CC ships CAS + sibling-adoption for exactly this race).
