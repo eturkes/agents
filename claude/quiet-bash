@@ -31,14 +31,25 @@ rule() {
   cmd=$(printf '%s' "$cmd" | sed -E "$2")
 }
 
+# Python / uv
 rule "$Q" 's@(\bpytest)([[:space:]]|$)@\1 -q\2@g'
-rule "$Q" 's@(\bcargo[[:space:]]+(build|check|test|clippy|run|fmt|doc))([[:space:]]|$)@\1 -q\3@g'
 rule "$Q" 's@(\bpip[[:space:]]+install)([[:space:]]|$)@\1 -q\2@g'
-rule "$Q" 's@(\bgit[[:space:]]+clone)([[:space:]]|$)@\1 --quiet\2@g'
-rule '--reporter' 's@(\bvitest[[:space:]]+run)([[:space:]]|$)@\1 --reporter=dot\2@g'
+rule "$Q" 's@(\buv[[:space:]]+(run|sync|add|remove|lock|build|export|tree|venv|init))([[:space:]]|$)@\1 -q\3@g'
+rule "$Q" 's@(\bruff[[:space:]]+(check|format))([[:space:]]|$)@\1 -q\3@g'
+# Rust
+rule "$Q" 's@(\bcargo[[:space:]]+(build|check|test|clippy|run|fmt|doc|add|update|bench))([[:space:]]|$)@\1 -q\3@g'
+# JS/TS — node/bun/vite/pnpm/npm + the two dot-reporter suites
+rule '--test-reporter' 's@(\bnode[[:space:]][^|;&]*--test)([[:space:]]|$)@\1 --test-reporter=dot\2@g'
+rule '--silent|--quiet' 's@(\bbun[[:space:]]+(install|add|remove|update))([[:space:]]|$)@\1 --silent\3@g'
+rule '--logLevel|(^|[[:space:]])-l([[:space:]]|$)' 's@(\bvite[[:space:]]+build)([[:space:]]|$)@\1 -l warn\2@g'
 rule '--reporter|--silent' 's@(\bpnpm[[:space:]]+(install|add|update|remove))([[:space:]]|$)@\1 --reporter=silent\3@g'
 rule '--silent|--loglevel' 's@(\bnpm[[:space:]]+(install|ci|update))([[:space:]]|$)@\1 --silent\3@g'
+rule '--reporter' 's@(\bvitest[[:space:]]+run)([[:space:]]|$)@\1 --reporter=dot\2@g'
+rule '--reporter' 's@(\bplaywright[[:space:]]+test)([[:space:]]|$)@\1 --reporter=dot\2@g'
+# Build + fetch. git takes the subcommands whose `--quiet` is progress-only: `diff`/`log`/`show` own
+# `-q` as an exit-code or content mode, so they stay off this list.
 rule '(^|[[:space:]])--?s(ilent)?([[:space:]]|$)|--no-silent' 's@(\bmake)([[:space:]]|$)@\1 -s\2@g'
+rule "$Q" 's@(\bgit[[:space:]]+(clone|fetch|pull|push|checkout|submodule))([[:space:]]|$)@\1 --quiet\3@g'
 rule '(^|[[:space:]])-[[:alnum:]]*s|--silent' 's@(\bcurl)([[:space:]]|$)@\1 -sS\2@g'
 rule "$Q"'|(^|[[:space:]])-nv([[:space:]]|$)|--no-verbose' 's@(\bwget)([[:space:]]|$)@\1 -nv\2@g'
 

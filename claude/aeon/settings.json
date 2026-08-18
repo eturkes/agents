@@ -90,6 +90,20 @@
       }
     ]
   },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/quiet-bash",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
   "enableArtifact": false,
   "enableWorkflows": false,
   "workflowKeywordTriggerEnabled": false,
