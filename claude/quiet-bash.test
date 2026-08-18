@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Gate for the sibling `quiet-bash` PreToolUse hook. Each case feeds the hook a payload the way
+# Claude Code does -- tool_input JSON on stdin -- and asserts the command it hands back.
+# Usage: ./quiet-bash.test [path-to-hook]
+# Case = <label> <command in> <command out, or SAME when the hook answers `{}`>.
+set -u
+HOOK="${1:-$(dirname "$(readlink -f "$0")")/quiet-bash}"
+pass=0; fail=0
+
+check() {
+  local label=$1 input=$2 expect=$3 out got
+  out=$(jq -Rn --arg c "$input" \
+    '{tool_name:"Bash",tool_input:{command:$c,description:"d",timeout:5000,run_in_background:false}}' \
+    | "$HOOK")
+  got=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.updatedInput.command // "SAME"')
+  if [[ $got == "$expect" ]]; then
+    pass=$((pass+1))
+  else
+    fail=$((fail+1))
+    printf 'FAIL %s\n  in:  %s\n  got: %s\n  want:%s\n' "$label" "$input" "$got" "$expect"
+  fi
+}
+
+# --- rules ----------------------------------------------------------------
+check pytest        'pytest tests/'                         'pytest -q tests/'
+check pytest-bare   'pytest'                                'pytest -q'
+check pip           'pip install requests'                  'pip install -q requests'
+check uv-run        'uv run main.py'                        'uv run -q main.py'
+check uv-sync       'uv sync'                               'uv sync -q'
+check uv-tool       'uv tool install ruff'                  'uv tool -q install ruff'
+check uvx           'uvx cowsay hi'                         'uvx -q cowsay hi'
+check uvx-plus-ruff 'uvx ruff check .'                      'uvx -q ruff check -q .'
+check ruff          'ruff check .'                          'ruff check -q .'
+check ruff-format   'ruff format src'                       'ruff format -q src'
+check cargo-build   'cargo build --release'                 'cargo build -q --release'
+check cargo-test    'cargo test'                            'cargo test -q'
+check lake          'lake build'                            'lake -q build'
+check lake-bare     'lake'                                  'lake -q'
+check moon-check    'moon check'                            'moon check -q'
+check moon-build    'moon build --target wasm'              'moon build -q --target wasm'
+check node-test     'node --test'                           'node --test --test-reporter=dot'
+check node-test-dir 'node --test test/'                     'node --test --test-reporter=dot test/'
+check bun-install   'bun install'                           'bun install --silent'
+check vite-build    'vite build'                            'vite build -l warn'
+check vitest        'vitest run'                            'vitest run --reporter=dot'
+check playwright    'playwright test'                       'playwright test --reporter=dot'
+check make          'make'                                  'make -s'
+check make-target   'make build'                            'make -s build'
+check git-clone     'git clone https://x/y'                 'git clone --quiet https://x/y'
+check git-push      'git push origin main'                  'git push --quiet origin main'
+check curl          'curl https://example.com'              'curl -sS https://example.com'
+check wget          'wget https://example.com/f'            'wget -nv https://example.com/f'
+
+# --- runners left alone: silencing them costs the failure diagnostic ------
+check npm-ci        'npm ci'                                SAME
+check npm-install   'npm install express'                   SAME
+check pnpm-install  'pnpm install'                           SAME
+check pnpm-add      'pnpm add vite'                          SAME
+
+# --- stand-downs ----------------------------------------------------------
+check heredoc       'tee f <<EOF'                            SAME
+check verbose       'pytest -v tests/'                       SAME
+check verbose-long  'cargo build --verbose'                  SAME
+check debug         'make --debug'                           SAME
+check already-q     'pytest -q tests/'                       SAME
+check already-quiet 'git push --quiet'                       SAME
+check curl-has-s    'curl -s https://x'                      SAME
+check curl-has-fsSL 'curl -fsSL https://x'                   SAME
+check make-silent   'make --silent'                          SAME
+check wget-nv       'wget -nv https://x'                     SAME
+check vitest-rep    'vitest run --reporter=json'             SAME
+check no-runner     'ls -l /tmp'                             SAME
+check cmake-safe    'cmake -B build'                         SAME
+check pytest-ini    'ls pytest.ini'                          SAME
+check makefile-word 'ls Makefile'                            SAME
+check git-status    'git status'                             SAME
+check git-diff      'git diff --stat'                        SAME
+check moon-test     'moon test'                              SAME
+check uv-pip        'uv pip list'                            SAME
+check remake-word   'ls remake'                              SAME
+
+# --- word starts: `-` and `=` open no runner ------------------------------
+check pkg-hyphen    'paru -S python-pytest python-pip'       SAME
+check pkg-hyphen2   'paru -S python-pytest'                  SAME
+check bin-hyphen    'ls run-pytest'                          SAME
+check env-assign    'RUNNER=make ./go.sh'                    SAME
+check flag-assign   './go.sh --tool=make'                    SAME
+check data-lake     'ls data-lake'                           SAME
+check hyphen-curl   'ls my-curl'                             SAME
+check hyphen-uvx    'ls fake-uvx'                            SAME
+check trailing-word 'ls x-make'                              SAME
+check abs-path      '/usr/bin/pytest tests/'                 '/usr/bin/pytest -q tests/'
+check dot-path      './pytest'                               './pytest -q'
+check subshell      '(cd x && make)'                         SAME
+check subshell-run  '(cd x && make all)'                     '(cd x && make -s all)'
+
+# --- interactions ---------------------------------------------------------
+check chained       'pytest && cargo test'                   'pytest -q && cargo test -q'
+check piped         'pytest tests/ | head -5'                'pytest -q tests/ | head -5'
+check quoted-arg    'pytest -k "not slow"'                   'pytest -q -k "not slow"'
+check two-same      'make a && make b'                       'make -s a && make -s b'
+# a trailing `;` is not the space-or-EOL the rules close on, so the second `make` carries the flag
+check two-adjacent  'make; make'                             'make; make -s'
+check hand-flag-win 'pytest -q a && pytest b'                SAME
+
+printf '\npass=%d fail=%d\n' "$pass" "$fail"
+[[ $fail -eq 0 ]]
