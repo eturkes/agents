@@ -69,7 +69,13 @@
     "deep-research": "off",
     "dataviz": "off",
     "artifact-design": "off",
-    "artifact-capabilities": "off"
+    "artifact-capabilities": "off",
+    "design": "off",
+    "prototype": "off",
+    "workshop": "off",
+    "artifact-components": "off",
+    "commit": "off",
+    "pr": "off"
   },
   "hooks": {
     "PostToolUse": [
