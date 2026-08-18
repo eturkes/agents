@@ -32,9 +32,39 @@ paru -Syu
 #   $repo_root/host/cachyos/headroom/README.md
 
 echo
+echo "=== MoonBit ==="
+# The toolchain lives user-global under ~/.moon and carries its own updater: `moon upgrade` rolls the
+# binaries to the latest release, `moon update` refreshes the registry index it keeps as a standing
+# local git repo under ~/.moon/registry/index -- cargo/uv/pnpm resolve against the live registry per
+# command and need no such step. Per-project dependencies stay with `moon` inside each project.
+moon_home="${MOON_HOME:-$HOME/.moon}"
+case ":$PATH:" in
+  *":$moon_home/bin:"*) ;;
+  *) export PATH="$moon_home/bin:$PATH" ;;
+esac
+
+# `moon upgrade` reads its confirmation from the terminal, so hand it a pty when one is absent.
+if [[ -t 0 ]]; then
+  moon upgrade
+else
+  printf 'y\n' | script -qefc 'moon upgrade' /dev/null
+fi
+moon update
+
+echo
 echo "=== Local app repositories ==="
 git -C "$HOME/.local/app/bgcmd" pull --ff-only
 git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only
+
+echo
+echo "=== pnpm globals ==="
+# vite and vitest are pnpm globals, so `update -g --latest` is their upgrade path. Export the global
+# bin directory to keep this working outside a login shell.
+case ":$PATH:" in
+  *":$HOME/.local/share/pnpm/bin:"*) ;;
+  *) export PATH="$HOME/.local/share/pnpm/bin:$PATH" ;;
+esac
+pnpm update -g --latest
 
 echo
 echo "=== chromiumfish ==="
