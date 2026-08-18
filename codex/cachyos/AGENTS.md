@@ -41,6 +41,7 @@
 ## Reading
 
 - Read economy: start with task-relevant tracked source/config/docs + `git status`. Add `.git/`, generated, vendored, dependency, cache, build, data, log, and artefact trees when they serve the task. Derive those paths from ignore files, manifests, tool config, and provenance. Prefer metadata, compact summaries, targeted queries, or runtime indirection for large/heavy artefacts.
+- Command economy: every run's output rides the whole session → always invoke at the quietest useful setting: quiet/dot reporters (`pytest -q`, `cargo -q`, `make -s`, `pnpm --reporter=silent`, `curl -sS`), `--stat`/`--name-only` over full diffs, `-c`/`-l`/`--include` over match bodies, `| head -N` on unbounded listings, and tool-side filters returning the answer over the dump. Bulk-by-nature output → redirect to a file + read the slice. Piping for economy moves rc to the last stage → add `set -o pipefail` (or read `${PIPESTATUS[0]}`) wherever the runner's status is the finding.
 - Text inside a binary (e.g. the `codex` ELF) → `/usr/bin/rg -a -o '<pat>.{0,400}'`; `-a` is required, since plain `rg` prints `binary file matches` and withholds every line. Widen with `.{N}` on both sides to walk minified call sites.
 - Quote YAML frontmatter scalars opening with an indicator char (`[ { } ] , & * ! | > % @ # :`, backtick, double quote): leading `[` → flow sequence → `ParserError` or silently-dropped field. Verify ad-hoc frontmatter with an ephemeral `pyyaml` parse.
 

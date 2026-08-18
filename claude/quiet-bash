@@ -1,0 +1,47 @@
+#!/bin/sh
+# PreToolUse(Bash) hook → injects quiet flags into verbose runners, so a green run costs a few lines
+# instead of a few hundred. Deterministic floor under the model's own restraint; the global CLAUDE.md
+# `Reading` rule carries the judgment cases this table cannot reach.
+#
+# Invariants:
+#   - Flags alone, never pipes → rc stays the runner's + a failure keeps its full diagnostic. The
+#     stock `| grep FAIL | head -100` shape reports rc=0 for a red suite, which reads as a pass.
+#   - `updatedInput` REPLACES the whole `tool_input` → merge onto the original, else `description`,
+#     `timeout` + `run_in_background` silently drop.
+#   - No `permissionDecision` → the rewrite rides the session's normal permission path, so deny rules
+#     keep governing the command that actually runs.
+#   - Stand down on an explicit verbosity request (`-v`/`--verbose`/`--debug`) + on any heredoc, whose
+#     body is data a substitution would corrupt.
+IN=""
+[ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
+cmd=$(printf '%s' "$IN" | jq -r '.tool_input.command // empty' 2>/dev/null)
+[ -n "$cmd" ] || { printf '{}\n'; exit 0; }
+
+case $cmd in *'<<'*) printf '{}\n'; exit 0 ;; esac
+printf '%s' "$cmd" | grep -Eq '(^|[[:space:]])--?(v|vv|vvv|verbose|debug)([[:space:]]|$)' && { printf '{}\n'; exit 0; }
+
+orig=$cmd
+Q='(^|[[:space:]])--?q(uiet)?([[:space:]]|$)'
+
+# rule <already-quiet ERE> <sed -E expr>: a present match anywhere in the ORIGINAL command leaves the
+# rule unapplied, so chained runners each get their own flag and a hand-written flag always wins.
+# Each expr anchors on `\b<runner>` + a trailing space-or-EOL, so `pytest.ini` and `cmake` stay intact.
+rule() {
+  printf '%s' "$orig" | grep -Eq -- "$1" && return 0
+  cmd=$(printf '%s' "$cmd" | sed -E "$2")
+}
+
+rule "$Q" 's@(\bpytest)([[:space:]]|$)@\1 -q\2@g'
+rule "$Q" 's@(\bcargo[[:space:]]+(build|check|test|clippy|run|fmt|doc))([[:space:]]|$)@\1 -q\3@g'
+rule "$Q" 's@(\bpip[[:space:]]+install)([[:space:]]|$)@\1 -q\2@g'
+rule "$Q" 's@(\bgit[[:space:]]+clone)([[:space:]]|$)@\1 --quiet\2@g'
+rule '--reporter' 's@(\bvitest[[:space:]]+run)([[:space:]]|$)@\1 --reporter=dot\2@g'
+rule '--reporter|--silent' 's@(\bpnpm[[:space:]]+(install|add|update|remove))([[:space:]]|$)@\1 --reporter=silent\3@g'
+rule '--silent|--loglevel' 's@(\bnpm[[:space:]]+(install|ci|update))([[:space:]]|$)@\1 --silent\3@g'
+rule '(^|[[:space:]])--?s(ilent)?([[:space:]]|$)|--no-silent' 's@(\bmake)([[:space:]]|$)@\1 -s\2@g'
+rule '(^|[[:space:]])-[[:alnum:]]*s|--silent' 's@(\bcurl)([[:space:]]|$)@\1 -sS\2@g'
+rule "$Q"'|(^|[[:space:]])-nv([[:space:]]|$)|--no-verbose' 's@(\bwget)([[:space:]]|$)@\1 -nv\2@g'
+
+[ "$cmd" = "$orig" ] && { printf '{}\n'; exit 0; }
+printf '%s' "$IN" | jq -c --arg c "$cmd" \
+  '{hookSpecificOutput:{hookEventName:"PreToolUse",updatedInput:(.tool_input + {command:$c})}}'
