@@ -12,6 +12,11 @@
 #     keep governing the command that actually runs.
 #   - Stand down on an explicit verbosity request (`-v`/`--verbose`/`--debug`) + on any heredoc, whose
 #     body is data a substitution would corrupt.
+#   - Membership = flag suppresses progress alone → results, warnings + failure diagnostics survive
+#     verbatim. Below that bar: `just -q` = suppress ALL output (recipe stdout + failed-recipe
+#     diagnostic); `moon test -q` = drops green pass/fail totals → 0 discovered reads as pass;
+#     `git diff|log|show -q` = exit-code/content mode; R = work-skipping flags alone
+#     (`--no-manual`/`--no-vignettes`/`--no-test-load`), `Rscript` already implying `--no-echo`.
 IN=""
 [ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 cmd=$(printf '%s' "$IN" | jq -r '.tool_input.command // empty' 2>/dev/null)
@@ -34,10 +39,15 @@ rule() {
 # Python / uv
 rule "$Q" 's@(\bpytest)([[:space:]]|$)@\1 -q\2@g'
 rule "$Q" 's@(\bpip[[:space:]]+install)([[:space:]]|$)@\1 -q\2@g'
-rule "$Q" 's@(\buv[[:space:]]+(run|sync|add|remove|lock|build|export|tree|venv|init))([[:space:]]|$)@\1 -q\3@g'
+rule "$Q" 's@(\buv[[:space:]]+(run|sync|add|remove|lock|build|export|tree|venv|init|tool))([[:space:]]|$)@\1 -q\3@g'
+rule "$Q" 's@(\buvx)([[:space:]]|$)@\1 -q\2@g'
 rule "$Q" 's@(\bruff[[:space:]]+(check|format))([[:space:]]|$)@\1 -q\3@g'
 # Rust
 rule "$Q" 's@(\bcargo[[:space:]]+(build|check|test|clippy|run|fmt|doc|add|update|bench))([[:space:]]|$)@\1 -q\3@g'
+# Lean / MoonBit — `lake -q` = global flag hiding lake's own logs alone (child stdout + compile
+# errors survive); `moon -q` keeps warnings + errors verbatim.
+rule "$Q" 's@(\blake)([[:space:]]|$)@\1 -q\2@g'
+rule "$Q" 's@(\bmoon[[:space:]]+(check|build|fmt))([[:space:]]|$)@\1 -q\3@g'
 # JS/TS — node/bun/vite/pnpm/npm + the two dot-reporter suites
 rule '--test-reporter' 's@(\bnode[[:space:]][^|;&]*--test)([[:space:]]|$)@\1 --test-reporter=dot\2@g'
 rule '--silent|--quiet' 's@(\bbun[[:space:]]+(install|add|remove|update))([[:space:]]|$)@\1 --silent\3@g'
@@ -46,8 +56,7 @@ rule '--reporter|--silent' 's@(\bpnpm[[:space:]]+(install|add|update|remove))([[
 rule '--silent|--loglevel' 's@(\bnpm[[:space:]]+(install|ci|update))([[:space:]]|$)@\1 --silent\3@g'
 rule '--reporter' 's@(\bvitest[[:space:]]+run)([[:space:]]|$)@\1 --reporter=dot\2@g'
 rule '--reporter' 's@(\bplaywright[[:space:]]+test)([[:space:]]|$)@\1 --reporter=dot\2@g'
-# Build + fetch. git takes the subcommands whose `--quiet` is progress-only: `diff`/`log`/`show` own
-# `-q` as an exit-code or content mode, so they stay off this list.
+# Build + fetch — git list = the subcommands whose `--quiet` is progress-only.
 rule '(^|[[:space:]])--?s(ilent)?([[:space:]]|$)|--no-silent' 's@(\bmake)([[:space:]]|$)@\1 -s\2@g'
 rule "$Q" 's@(\bgit[[:space:]]+(clone|fetch|pull|push|checkout|submodule))([[:space:]]|$)@\1 --quiet\3@g'
 rule '(^|[[:space:]])-[[:alnum:]]*s|--silent' 's@(\bcurl)([[:space:]]|$)@\1 -sS\2@g'
