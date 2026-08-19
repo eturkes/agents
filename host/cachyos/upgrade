@@ -12,10 +12,16 @@ echo "=== System packages (pacman/AUR) ==="
 # paru owns repo + AUR toolchain; run first so later steps use current binaries.
 paru -Syu
 
-# Headroom = patched uv-tool shadow with image-worker termination guard. Repo
-# package upgrades remain underneath it. After repo package includes the guard,
-# remove shadow: `uv tool uninstall headroom-ai`. State + recipe:
-# $repo_root/host/cachyos/headroom/README.md
+echo
+echo "=== Python (uv tools) ==="
+# uv itself is pacman-managed → `paru -Syu` above moves it; this step owns the
+# uv-installed tools. headroom-ai path-pins the locally built wheel in
+# ~/src/headroom/dist (image-worker termination guard): `upgrade --all`
+# re-resolves that same path → the pin holds + the wheel must stay on disk.
+# Once an upstream release ships the guard, return headroom to PyPI:
+#   uv tool install --force --python 3.14 "headroom-ai[all]"
+# State + recipe: $repo_root/host/cachyos/headroom/README.md
+PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 
 echo
 echo "=== MoonBit ==="
