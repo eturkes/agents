@@ -22,7 +22,7 @@ The build provides these controls:
 - Limit OCR ONNX intra-operation and inter-operation threads to one.
 - Honor `--no-image-optimize`, `HEADROOM_NO_IMAGE_OPTIMIZE=1`, `--no-optimize`, and the per-request bypass header.
 
-The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom` on upstream base `01df2452`.
+The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` carries the guard as a single commit on upstream tag `v0.35.0`, so the build reports the version of the release it patches.
 
 ### Build and install
 
@@ -39,9 +39,11 @@ The repository `rust-toolchain.toml` pins the Rust version for the build.
 
 ### Pin behavior
 
-The uv receipt at `~/.local/share/uv/tools/headroom-ai/uv-receipt.toml` path-pins the installed wheel. Therefore, `uv tool upgrade --all` re-resolves the same path and holds the pin. Keep the wheel on disk.
+The uv receipt at `~/.local/share/uv/tools/headroom-ai/uv-receipt.toml` path-pins the installed wheel. Therefore, the routine upgrade routes hold the pin instead of moving it. `container/aeon/upgrade` runs `uv tool upgrade --all`, and `headroom update` detects the uv-tool install and runs `uv tool upgrade headroom-ai`. Both re-resolve the same path. Keep the wheel on disk.
 
-Both builds report the same `headroom --version` value. To identify the installed build, read the receipt path, or run `rg _retire_image_pool` under the tool's `site-packages`.
+Neither route moves this build. To move it, rebase the branch onto the newest upstream tag, rebuild, reinstall, and delete the superseded wheel.
+
+Because the guard sits on a release tag, the local build reports the same `headroom --version` value as the published package. To identify the installed build, read the receipt path, or run `rg _retire_image_pool` under the tool's `site-packages`.
 
 After an upstream release includes the guard, restore the published package:
 
