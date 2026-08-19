@@ -146,10 +146,13 @@ function cloneProfile(dir) {
   return copy;
 }
 
-// Chrome encrypts a profile's cookie jar against the login keyring and deletes
-// every cookie it fails to decrypt. Store auto-detection lands on `basic` inside
-// this container, so name the keyring store and the copied jar opens with the
-// signed-in session intact.
+// Chrome deletes every cookie it fails to decrypt, and playwright-core pins
+// `--password-store=basic` into every launch on every platform, next to
+// `--use-mock-keychain`, so a jar encrypted against the login keyring empties on
+// open. Naming the store after those switches wins on Chrome's last-duplicate
+// rule, and the cloned jar opens with the signed-in session intact. The pin is an
+// explicit switch rather than a detector, so no desktop-environment variable
+// substitutes for naming the store here.
 const PERSISTENT_ARGS = [...BASE_ARGS, "--password-store=gnome-libsecret"];
 
 if (opts["user-data-dir"]) {
