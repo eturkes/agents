@@ -1,0 +1,155 @@
+#!/usr/bin/env node
+// Headless capture → PDF / PNG / DOM, driven over CDP.
+//
+// Chrome's capture switches (`--print-to-pdf`, `--dump-dom`, `--screenshot`) hang
+// forever in the ChromiumFish build: the page loads, the browser stays live, the
+// headless command handler never completes → rc=124, no artifact. CDP drives the
+// same binary correctly, so always capture through here.
+//
+// Rendering is sound: `--use-gl=angle --use-angle=swiftshader` (chromiumfish
+// BASE_ARGS) rasterizes text + backgrounds. Emulation beats flags → `--dark`
+// sets prefers-color-scheme, no stylesheet rewriting.
+//
+// Usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]
+//   --full-page        whole scroll height in PNG (PDF spans the document always)
+//   --dark             emulate prefers-color-scheme: dark
+//   --width N          viewport width, default 1280
+//   --height N         viewport height, default 800
+//   --selector CSS     wait for this element before capture
+//   --wait MS          settle delay after load, default 0
+//   --timeout MS       navigation timeout, default 45000
+//   --user-data-dir D  persistent profile, e.g. the signed-in BrowserOS profile
+//                      (close that browser first; Chrome locks the directory)
+// Writes every requested artifact, prints one path per line.
+
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const FLAGS = new Set(["--full-page", "--dark"]);
+const VALUED = new Set([
+  "--pdf", "--png", "--dom", "--width", "--height",
+  "--selector", "--wait", "--timeout", "--user-data-dir",
+]);
+
+function die(msg) {
+  process.stderr.write(`webcap: ${msg}\n`);
+  process.exit(1);
+}
+
+function parseArgs(argv) {
+  const opts = { width: 1280, height: 800, wait: 0, timeout: 45000 };
+  for (let i = 0; i < argv.length; i++) {
+    let a = argv[i];
+    let inline;
+    if (a.startsWith("--") && a.includes("=")) {
+      const eq = a.indexOf("=");
+      inline = a.slice(eq + 1);
+      a = a.slice(0, eq);
+    }
+    if (FLAGS.has(a)) {
+      if (inline !== undefined) die(`${a} takes no value`);
+      opts[a.slice(2)] = true;
+    } else if (VALUED.has(a)) {
+      const v = inline ?? argv[++i];
+      if (v === undefined) die(`${a} needs a value`);
+      opts[a.slice(2)] = v;
+    } else if (a.startsWith("-")) die(`unknown option ${a}`);
+    else if (opts.url) die("pass one url");
+    else opts.url = a;
+  }
+  return opts;
+}
+
+// pnpm globals move between store versions; scan newest first so package
+// upgrades keep resolving.
+function resolveGlobal(pkg) {
+  const globals = join(process.env.PNPM_HOME || join(homedir(), ".local/share/pnpm"), "global");
+  if (!existsSync(globals)) die(`pnpm global store missing at ${globals}`);
+  for (const dir of readdirSync(globals).sort((a, b) => Number(b) - Number(a))) {
+    const entry = join(globals, dir, "node_modules", pkg);
+    if (existsSync(entry)) return pathToFileURL(entry).href;
+  }
+  die(`${pkg} missing from ${globals}; run upgrade`);
+}
+
+const opts = parseArgs(process.argv.slice(2));
+if (!opts.url) die("usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]");
+if (!opts.pdf && !opts.png && !opts.dom) die("choose at least one of --pdf, --png, --dom");
+
+const { ChromiumFish, BASE_ARGS, binaryPath } = await import(`${resolveGlobal("chromiumfish")}/dist/index.js`);
+const context = { viewport: { width: Number(opts.width), height: Number(opts.height) } };
+
+// The build pins prefers-color-scheme to light and ignores CDP media emulation,
+// so promote every dark media block to `all` instead. Dark blocks follow their
+// light counterparts, so the cascade already resolves in their favour.
+// Cross-origin stylesheets deny cssRules access → they stay light.
+function promoteDarkRules() {
+  const walk = (rules) => {
+    for (const rule of rules) {
+      if (rule.media && /prefers-color-scheme\s*:\s*dark/i.test(rule.media.mediaText)) rule.media.mediaText = "all";
+      if (rule.cssRules) walk(rule.cssRules);
+    }
+  };
+  let reached = 0;
+  for (const sheet of document.styleSheets) {
+    try {
+      walk(sheet.cssRules);
+      reached++;
+    } catch {
+      // cross-origin
+    }
+  }
+  return { sheets: document.styleSheets.length, reached };
+}
+
+let closable;
+let page;
+if (opts["user-data-dir"]) {
+  const pw = await import(`${resolveGlobal("playwright-core")}/index.mjs`);
+  const chromium = pw.chromium ?? pw.default.chromium;
+  closable = await chromium.launchPersistentContext(opts["user-data-dir"], {
+    executablePath: await binaryPath(),
+    args: BASE_ARGS,
+    headless: true,
+    ...context,
+  });
+  page = closable.pages()[0] ?? (await closable.newPage());
+} else {
+  closable = await ChromiumFish({ headless: true });
+  page = await closable.newPage(context);
+}
+
+let failure;
+try {
+  await page.goto(opts.url, { waitUntil: "load", timeout: Number(opts.timeout) });
+  if (opts.selector) await page.waitForSelector(opts.selector, { timeout: Number(opts.timeout) });
+  if (Number(opts.wait)) await page.waitForTimeout(Number(opts.wait));
+  if (opts.dark) {
+    const { sheets, reached } = await page.evaluate(promoteDarkRules);
+    if (reached < sheets) process.stderr.write(`webcap: ${sheets - reached}/${sheets} stylesheets are cross-origin and stay light\n`);
+  }
+
+  if (opts.dom) {
+    const html = await page.content();
+    if (opts.dom === "-") process.stdout.write(html);
+    else {
+      writeFileSync(opts.dom, html);
+      process.stdout.write(`${opts.dom}\n`);
+    }
+  }
+  if (opts.png) {
+    await page.screenshot({ path: opts.png, fullPage: Boolean(opts["full-page"]) });
+    process.stdout.write(`${opts.png}\n`);
+  }
+  if (opts.pdf) {
+    await page.pdf({ path: opts.pdf, printBackground: true });
+    process.stdout.write(`${opts.pdf}\n`);
+  }
+} catch (e) {
+  failure = e?.message || String(e);
+} finally {
+  await closable.close();
+}
+if (failure) die(failure);
