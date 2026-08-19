@@ -69,10 +69,46 @@ pnpm update -g --latest
 echo
 echo "=== chromiumfish ==="
 # Upgrade the pnpm workspace, then fetch the browser build the freshly upgraded
-# chromiumfish package points at -- paru moves the package, `fetch` follows it.
+# chromiumfish package points at -- `update --latest` moves the package, `fetch`
+# follows it.
+#
+# Upstream Linux archives omit chrome_crashpad_handler and the fetcher accepts
+# them -- it checks for the main chrome binary alone. That handler must be
+# present: the browser posix_spawns it at startup, so a cache lacking it aborts
+# every headless run at launch. Repair the cache in place from Chrome for
+# Testing; same MAJOR.MINOR.BUILD = the crashpad revision this browser expects.
+# The cache persists → one download per browser-version bump.
 if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
   pnpm -C "$HOME/.local/share/chromiumfish" update --latest
   chromiumfish fetch
+
+  chromiumfish_dir="$(dirname "$(chromiumfish path)")"
+  if [[ ! -x "$chromiumfish_dir/chrome_crashpad_handler" ]]; then
+    browser_version="$(chromiumfish --version | sed -n 's/.*browser \([^)]*\)).*/\1/p')"
+    cft_json="$(curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/latest-patch-versions-per-build-with-downloads.json)"
+    cft_version="$(jq -r --arg build "${browser_version%.*}" '.builds[$build].version // empty' <<<"$cft_json")"
+    cft_url="$(jq -r --arg build "${browser_version%.*}" '.builds[$build].downloads.chrome[]? | select(.platform == "linux64") | .url' <<<"$cft_json")"
+    if [[ -z "$cft_url" ]]; then
+      echo "chromiumfish cache $chromiumfish_dir needs chrome_crashpad_handler; no Chrome for Testing linux64 build matches ${browser_version:-unknown} -- install one by hand before headless use" >&2
+      exit 1
+    fi
+    cft_tmp="$(mktemp -d)"
+    curl -fsSL -o "$cft_tmp/chrome-linux64.zip" "$cft_url"
+    unzip -q -o -j "$cft_tmp/chrome-linux64.zip" chrome-linux64/chrome_crashpad_handler -d "$cft_tmp"
+    install -m 0755 "$cft_tmp/chrome_crashpad_handler" "$chromiumfish_dir/chrome_crashpad_handler"
+    rm -rf "$cft_tmp"
+    echo "chromiumfish $browser_version: installed chrome_crashpad_handler from Chrome for Testing $cft_version"
+  fi
+
+  # Always verify size + a real run: an existence check passes a corrupt copy
+  # that still kills the browser at launch. Truncated and non-ELF handlers fail
+  # the run (SIGSEGV, rc=1); a zero-byte one needs the size test, since bash
+  # falls back to running it as an empty script and reports success.
+  if [[ ! -s "$chromiumfish_dir/chrome_crashpad_handler" ]] ||
+     ! "$chromiumfish_dir/chrome_crashpad_handler" --help >/dev/null 2>&1; then
+    echo "chromiumfish cache $chromiumfish_dir has an unrunnable chrome_crashpad_handler; replace it before headless use" >&2
+    exit 1
+  fi
 else
   echo "chromiumfish workspace not present; skipping"
 fi

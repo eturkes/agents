@@ -1,0 +1,164 @@
+#!/usr/bin/env node
+// Headless capture → PDF / PNG / DOM, driven over CDP.
+//
+// Default capture path on this workstation: it adds full-page PNG, working
+// prefers-color-scheme dark, and settle waits over Chrome's own capture
+// switches. Those switches stay the fallback -- they take arbitrary Chrome
+// flags (`--window-size`, `--user-agent`, `--force-device-scale-factor`, proxy
+// flags) and need the browser binary alone, so reach for them when a capture
+// wants flag-level control or when this script's node stack is unavailable.
+//
+// Usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]
+//   --full-page        whole scroll height in PNG (PDF spans the document always)
+//   --dark             render the page's prefers-color-scheme: dark styles
+//   --width N          viewport width, default 1280
+//   --height N         viewport height, default 800
+//   --selector CSS     wait for this element before capture
+//   --wait MS          settle delay after load, default 0
+//   --timeout MS       navigation timeout, default 45000
+//   --user-data-dir D  persistent profile, e.g. ~/.config/browser-os
+//                      (close that browser first; Chrome locks the directory).
+//                      Authenticated pages otherwise go through BrowserOS MCP,
+//                      which reads them with the browser still running.
+// Writes every requested artifact, prints one path per line.
+
+import { existsSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const FLAGS = new Set(["--full-page", "--dark"]);
+const VALUED = new Set([
+  "--pdf", "--png", "--dom", "--width", "--height",
+  "--selector", "--wait", "--timeout", "--user-data-dir",
+]);
+
+function die(msg) {
+  process.stderr.write(`webcap: ${msg}\n`);
+  process.exit(1);
+}
+
+function parseArgs(argv) {
+  const opts = { width: 1280, height: 800, wait: 0, timeout: 45000 };
+  for (let i = 0; i < argv.length; i++) {
+    let a = argv[i];
+    let inline;
+    if (a.startsWith("--") && a.includes("=")) {
+      const eq = a.indexOf("=");
+      inline = a.slice(eq + 1);
+      a = a.slice(0, eq);
+    }
+    if (FLAGS.has(a)) {
+      if (inline !== undefined) die(`${a} takes no value`);
+      opts[a.slice(2)] = true;
+    } else if (VALUED.has(a)) {
+      const v = inline ?? argv[++i];
+      if (v === undefined) die(`${a} needs a value`);
+      opts[a.slice(2)] = v;
+    } else if (a.startsWith("-")) die(`unknown option ${a}`);
+    else if (opts.url) die("pass one url");
+    else opts.url = a;
+  }
+  return opts;
+}
+
+// chromiumfish and playwright-core are pnpm workspace deps here, not globals.
+const WORKSPACE = join(homedir(), ".local/share/chromiumfish/node_modules");
+
+function resolveModule(pkg) {
+  const entry = join(WORKSPACE, pkg);
+  if (!existsSync(entry)) die(`${pkg} missing from ${WORKSPACE}; run upgrade`);
+  return pathToFileURL(entry).href;
+}
+
+const opts = parseArgs(process.argv.slice(2));
+if (!opts.url) die("usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]");
+if (!opts.pdf && !opts.png && !opts.dom) die("choose at least one of --pdf, --png, --dom");
+
+const { ChromiumFish, BASE_ARGS, binaryPath } = await import(`${resolveModule("chromiumfish")}/dist/index.js`);
+const context = { viewport: { width: Number(opts.width), height: Number(opts.height) } };
+
+// CDP media emulation leaves prefers-color-scheme at light in this build --
+// newPage colorScheme and emulateMedia both report dark=false -- so promote
+// every dark media block to `all` instead. Dark blocks follow their light
+// counterparts, so the cascade already resolves in their favour. Cross-origin
+// stylesheets deny cssRules access → they stay light. matchMedia keeps
+// reporting light; pages that gate theming on it rather than on the media query
+// need their own theme switch.
+function promoteDarkRules() {
+  const walk = (rules) => {
+    for (const rule of rules) {
+      if (rule.media && /prefers-color-scheme\s*:\s*dark/i.test(rule.media.mediaText)) rule.media.mediaText = "all";
+      if (rule.cssRules) walk(rule.cssRules);
+    }
+  };
+  let reached = 0;
+  for (const sheet of document.styleSheets) {
+    try {
+      walk(sheet.cssRules);
+      reached++;
+    } catch {
+      // cross-origin
+    }
+  }
+  return { sheets: document.styleSheets.length, reached };
+}
+
+// Capture needs a composited frame on screen. A page that loads instantly --
+// file:// and localhost above all -- reaches `load` before the compositor
+// produces one, and CDP then answers "Unable to capture screenshot". Two
+// animation frames put a real frame in place first.
+function nextFrames() {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+let closable;
+let page;
+if (opts["user-data-dir"]) {
+  const pw = await import(`${resolveModule("playwright-core")}/index.mjs`);
+  const chromium = pw.chromium ?? pw.default.chromium;
+  closable = await chromium.launchPersistentContext(opts["user-data-dir"], {
+    executablePath: await binaryPath(),
+    args: BASE_ARGS,
+    headless: true,
+    ...context,
+  });
+  page = closable.pages()[0] ?? (await closable.newPage());
+} else {
+  closable = await ChromiumFish({ headless: true });
+  page = await closable.newPage(context);
+}
+
+let failure;
+try {
+  await page.goto(opts.url, { waitUntil: "load", timeout: Number(opts.timeout) });
+  if (opts.selector) await page.waitForSelector(opts.selector, { timeout: Number(opts.timeout) });
+  if (Number(opts.wait)) await page.waitForTimeout(Number(opts.wait));
+  if (opts.dark) {
+    const { sheets, reached } = await page.evaluate(promoteDarkRules);
+    if (reached < sheets) process.stderr.write(`webcap: ${sheets - reached}/${sheets} stylesheets are cross-origin and stay light\n`);
+  }
+  await page.evaluate(nextFrames);
+
+  if (opts.dom) {
+    const html = await page.content();
+    if (opts.dom === "-") process.stdout.write(html);
+    else {
+      writeFileSync(opts.dom, html);
+      process.stdout.write(`${opts.dom}\n`);
+    }
+  }
+  if (opts.png) {
+    await page.screenshot({ path: opts.png, fullPage: Boolean(opts["full-page"]) });
+    process.stdout.write(`${opts.png}\n`);
+  }
+  if (opts.pdf) {
+    await page.pdf({ path: opts.pdf, printBackground: true });
+    process.stdout.write(`${opts.pdf}\n`);
+  }
+} catch (e) {
+  failure = e?.message || String(e);
+} finally {
+  await closable.close();
+}
+if (failure) die(failure);
