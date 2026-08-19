@@ -19,13 +19,13 @@
 //   --selector CSS     wait for this element before capture
 //   --wait MS          settle delay after load, default 0
 //   --timeout MS       navigation timeout, default 45000
-//   --user-data-dir D  persistent profile, e.g. the signed-in BrowserOS profile
-//                      (close that browser first; Chrome locks the directory)
+//   --user-data-dir D  capture as this profile's user; D is copied, never written
 // Writes every requested artifact, prints one path per line.
 
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const FLAGS = new Set(["--full-page", "--dark"]);
@@ -119,16 +119,44 @@ function nextFrames() {
 
 let closable;
 let page;
+let scratch;
+
+// A profile named here stays read-only, because capture runs against a copy of
+// it. Any build that opens the original garbage-collects the component
+// extensions it does not itself provide, and the owning browser can no longer
+// load them. Copying also frees capture from ProcessSingleton, so that browser
+// can keep running.
+//
+// `cp --reflink` shares extents: a 5GB profile copies in ~1.5s for no disk. It
+// reflinks within a single filesystem, so the copy lands beside the original.
+// Singleton files name the live instance's socket, and a copy that keeps them
+// forwards the capture into that browser instead of rendering the page.
+function cloneProfile(dir) {
+  if (!existsSync(dir)) die(`no profile at ${dir}`);
+  const source = realpathSync(dir);
+  const copy = mkdtempSync(join(dirname(source), ".webcap-"));
+  const cp = spawnSync("cp", ["-a", "--reflink=auto", `${source}/.`, copy], { encoding: "utf8" });
+  if (cp.status !== 0) {
+    rmSync(copy, { recursive: true, force: true });
+    die(`cannot copy ${source}: ${cp.stderr?.trim() || cp.error?.message || `cp exited ${cp.status}`}`);
+  }
+  for (const entry of readdirSync(copy)) {
+    if (entry.startsWith("Singleton")) unlinkSync(join(copy, entry));
+  }
+  return copy;
+}
+
 // Chrome encrypts a profile's cookie jar against the login keyring and deletes
 // every cookie it fails to decrypt. Store auto-detection lands on `basic` inside
-// this container, which empties a keyring-encrypted jar on the first launch, so
-// name the keyring store and the profile's signed-in session survives.
+// this container, so name the keyring store and the copied jar opens with the
+// signed-in session intact.
 const PERSISTENT_ARGS = [...BASE_ARGS, "--password-store=gnome-libsecret"];
 
 if (opts["user-data-dir"]) {
+  scratch = cloneProfile(opts["user-data-dir"]);
   const pw = await import(`${resolveGlobal("playwright-core")}/index.mjs`);
   const chromium = pw.chromium ?? pw.default.chromium;
-  closable = await chromium.launchPersistentContext(opts["user-data-dir"], {
+  closable = await chromium.launchPersistentContext(scratch, {
     executablePath: await binaryPath(),
     args: PERSISTENT_ARGS,
     headless: true,
@@ -170,6 +198,10 @@ try {
 } catch (e) {
   failure = e?.message || String(e);
 } finally {
-  await closable.close();
+  try {
+    await closable.close();
+  } finally {
+    if (scratch) rmSync(scratch, { recursive: true, force: true });
+  }
 }
 if (failure) die(failure);
