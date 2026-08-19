@@ -1,12 +1,11 @@
 #!/usr/bin/env node
-// Headless capture → PDF / PNG / DOM, driven over CDP.
+// Headless capture → PDF / PNG / DOM over CDP.
 //
-// Default capture path on this workstation: it adds full-page PNG, working
-// prefers-color-scheme dark, and settle waits over Chrome's own capture
-// switches. Those switches stay the fallback -- they take arbitrary Chrome
-// flags (`--window-size`, `--user-agent`, `--force-device-scale-factor`, proxy
-// flags) and need the browser binary alone, so reach for them when a capture
-// wants flag-level control or when this script's node stack is unavailable.
+// Default capture path here: adds full-page PNG, working prefers-color-scheme
+// dark + settle waits over Chrome's own capture switches. Those switches =
+// fallback: browser binary alone + arbitrary Chrome flags (`--window-size`,
+// `--user-agent`, `--force-device-scale-factor`, proxy) → reach for them on
+// flag-level control or a missing node stack.
 //
 // Usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]
 //   --full-page        whole scroll height in PNG (PDF spans the document always)
@@ -16,22 +15,21 @@
 //   --selector CSS     wait for this element before capture
 //   --wait MS          settle delay after load, default 0
 //   --timeout MS       navigation timeout, default 45000
-//   --user-data-dir D  persistent profile; Chrome opens D/Default, so a browser
-//                      keeping its session in another profile dir hands back an
-//                      empty one (close that browser first -- Chrome locks the
-//                      directory). Authenticated pages otherwise go through
-//                      BrowserOS MCP, which reads them with the browser running.
+//   --user-data-dir D  capture as this profile's user; D is copied, never opened
+//   --profile-directory P
+//                      profile inside D, default = D's Local State last_used
 // Writes every requested artifact, prints one path per line.
 
-import { existsSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const FLAGS = new Set(["--full-page", "--dark"]);
 const VALUED = new Set([
   "--pdf", "--png", "--dom", "--width", "--height",
-  "--selector", "--wait", "--timeout", "--user-data-dir",
+  "--selector", "--wait", "--timeout", "--user-data-dir", "--profile-directory",
 ]);
 
 function die(msg) {
@@ -63,7 +61,7 @@ function parseArgs(argv) {
   return opts;
 }
 
-// chromiumfish and playwright-core are pnpm workspace deps here, not globals.
+// chromiumfish + playwright-core = pnpm workspace deps here, not globals.
 const WORKSPACE = join(homedir(), ".local/share/chromiumfish/node_modules");
 
 function resolveModule(pkg) {
@@ -79,13 +77,12 @@ if (!opts.pdf && !opts.png && !opts.dom) die("choose at least one of --pdf, --pn
 const { ChromiumFish, BASE_ARGS, binaryPath } = await import(`${resolveModule("chromiumfish")}/dist/index.js`);
 const context = { viewport: { width: Number(opts.width), height: Number(opts.height) } };
 
-// CDP media emulation leaves prefers-color-scheme at light in this build --
-// newPage colorScheme and emulateMedia both report dark=false -- so promote
-// every dark media block to `all` instead. Dark blocks follow their light
-// counterparts, so the cascade already resolves in their favour. Cross-origin
-// stylesheets deny cssRules access → they stay light. matchMedia keeps
-// reporting light; pages that gate theming on it rather than on the media query
-// need their own theme switch.
+// This build answers prefers-color-scheme light under CDP media emulation
+// (newPage colorScheme + emulateMedia both report dark=false) → promote every
+// dark media block to `all`. Dark blocks follow their light counterparts → the
+// cascade already resolves in their favour. Cross-origin sheets deny cssRules
+// → stay light. matchMedia keeps reporting light → pages theming off it rather
+// than off the media query need their own switch.
 function promoteDarkRules() {
   const walk = (rules) => {
     for (const rule of rules) {
@@ -105,28 +102,83 @@ function promoteDarkRules() {
   return { sheets: document.styleSheets.length, reached };
 }
 
-// Capture needs a composited frame on screen. A page that loads instantly --
-// file:// and localhost above all -- reaches `load` before the compositor
-// produces one, and CDP then answers "Unable to capture screenshot". Two
-// animation frames put a real frame in place first.
+// Capture needs a composited frame. Instant loads (file://, localhost above
+// all) reach `load` before the compositor produces one → CDP answers "Unable
+// to capture screenshot". Two animation frames put a real one in place.
 function nextFrames() {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
 let closable;
 let page;
+
+// The named profile stays read-only: capture runs against a copy. Any build
+// opening the original garbage-collects the component extensions it does not
+// itself provide + rewrites `Local State` profile.last_used → the owning
+// browser loses extensions its Preferences still names, and its next session
+// opens elsewhere. Copying also sheds ProcessSingleton → leave that browser
+// running.
+//
+// Copy lands beside the original = the only place --reflink could share
+// extents. It cannot here (psd fuse-overlayfs) → real copy: 1.4G / 11260 files,
+// ~1.2s into the tmpfs already holding it, 0.13s to remove; bcachefs under
+// $HOME = 1.8s + 1.4G disk. realpath first, since ~/.config/browser-os is a
+// symlink into /run and `cp -a` would copy the link alone. Singleton* name the
+// live instance's socket → a copy keeping them forwards the capture into that
+// browser.
+function cloneProfile(dir) {
+  if (!existsSync(dir)) die(`no profile at ${dir}`);
+  const source = realpathSync(dir);
+  const copy = mkdtempSync(join(dirname(source), ".webcap-"));
+  // Removal rides process exit, not the capture's `finally`: a copy this size
+  // is real memory + every `die` past this point leaves that block unreached.
+  process.on("exit", () => rmSync(copy, { recursive: true, force: true }));
+  const cp = spawnSync("cp", ["-a", "--reflink=auto", `${source}/.`, copy], { encoding: "utf8" });
+  if (cp.status !== 0) {
+    rmSync(copy, { recursive: true, force: true });
+    die(`cannot copy ${source}: ${cp.stderr?.trim() || cp.error?.message || `cp exited ${cp.status}`}`);
+  }
+  for (const entry of readdirSync(copy)) {
+    if (entry.startsWith("Singleton")) unlinkSync(join(copy, entry));
+  }
+  return copy;
+}
+
+// Chrome opens the profile `Local State` last used, not `Default`. An absent
+// name gets created empty rather than refused → a signed-out capture that
+// reads like a login failure → resolve it here + report what exists.
+function resolveProfileDir(copy, wanted, label) {
+  let name = wanted;
+  if (!name) {
+    try {
+      name = JSON.parse(readFileSync(join(copy, "Local State"), "utf8")).profile?.last_used;
+    } catch {
+      // no Local State yet
+    }
+  }
+  name ||= "Default";
+  if (existsSync(join(copy, name, "Preferences"))) return name;
+  const found = readdirSync(copy, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && existsSync(join(copy, e.name, "Preferences")))
+    .map((e) => e.name);
+  die(`${label} has no profile ${JSON.stringify(name)}; found ${found.join(", ") || "none"}`);
+}
+
 if (opts["user-data-dir"]) {
+  const scratch = cloneProfile(opts["user-data-dir"]);
+  const profileDir = resolveProfileDir(scratch, opts["profile-directory"], opts["user-data-dir"]);
   const pw = await import(`${resolveModule("playwright-core")}/index.mjs`);
   const chromium = pw.chromium ?? pw.default.chromium;
-  // Chrome deletes every cookie it fails to decrypt, and playwright-core pins
-  // --password-store=basic in its own switches, so a jar encrypted against the
-  // login keyring empties on first launch. KWallet is disabled on this
-  // workstation, so the session browser falls back to the hardcoded key and
-  // writes rows that any store reads -- naming the store its KDE 6 session
-  // selects keeps the two in step if that wallet is ever enabled.
-  closable = await chromium.launchPersistentContext(opts["user-data-dir"], {
+  // Chrome deletes every cookie it fails to decrypt. playwright-core pins
+  // --password-store=basic into every launch on every platform beside
+  // --use-mock-keychain → a later --password-store wins on Chrome's
+  // last-duplicate rule. That pin = explicit switch, not a detector → no
+  // desktop-environment variable moves it. Name the store actually running: no
+  // keyring daemon here + a v10 jar (the hardcoded-key format `basic` reads) →
+  // naming a wallet would write v11 rows the session browser cannot read back.
+  closable = await chromium.launchPersistentContext(scratch, {
     executablePath: await binaryPath(),
-    args: [...BASE_ARGS, "--password-store=kwallet6"],
+    args: [...BASE_ARGS, "--password-store=basic", `--profile-directory=${profileDir}`],
     headless: true,
     ...context,
   });
