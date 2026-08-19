@@ -119,12 +119,18 @@ function nextFrames() {
 
 let closable;
 let page;
+// Chrome encrypts a profile's cookie jar against the login keyring and deletes
+// every cookie it fails to decrypt. Store auto-detection lands on `basic` inside
+// this container, which empties a keyring-encrypted jar on the first launch, so
+// name the keyring store and the profile's signed-in session survives.
+const PERSISTENT_ARGS = [...BASE_ARGS, "--password-store=gnome-libsecret"];
+
 if (opts["user-data-dir"]) {
   const pw = await import(`${resolveGlobal("playwright-core")}/index.mjs`);
   const chromium = pw.chromium ?? pw.default.chromium;
   closable = await chromium.launchPersistentContext(opts["user-data-dir"], {
     executablePath: await binaryPath(),
-    args: BASE_ARGS,
+    args: PERSISTENT_ARGS,
     headless: true,
     ...context,
   });
