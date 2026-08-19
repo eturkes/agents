@@ -65,6 +65,14 @@ headroom mcp install --agent claude --proxy-url http://127.0.0.1:8787 --force
 
 This command rewrites only the `headroom` entry in `~/.claude.json`. New sessions load the updated entry.
 
+`wrap` also writes a `SessionStart` self-heal hook into each project's `.claude/settings.local.json`. That hook stores the absolute path of the binary that wrote it. After the binary moves, sweep the hooks and point each one at the current path:
+
+```sh
+rg -uu 'headroom wrap selfheal' ~/Projects/*/.claude ~/.local/app/*/.claude
+```
+
+Every hook must name `/home/eturkes/.local/bin/headroom`. These files are gitignored, so each machine repairs its own.
+
 ## Knobs
 
 `HEADROOM_IMAGE_ADMISSION_TIMEOUT_SECONDS` (default 1.0), `HEADROOM_IMAGE_TERMINATE_GRACE_SECONDS` (5.0), and `HEADROOM_OCR_INTRA_THREADS` / `HEADROOM_OCR_INTER_THREADS` (1) tune the guard. The checkout documents the rest in `docs/content/docs/proxy.mdx` and `docs/content/docs/configuration.mdx`.
