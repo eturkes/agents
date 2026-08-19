@@ -22,24 +22,23 @@ The PATH shadow adds hard termination for timed-out image-compression workers. R
 - Limit OCR ONNX intra-operation and inter-operation threads to one.
 - Honor `--no-image-optimize`, `HEADROOM_NO_IMAGE_OPTIMIZE=1`, `--no-optimize`, and the per-request bypass header.
 
-The patch targets upstream base `01df2452`. The installed shadow is `~/.local/bin/headroom`, ahead of the package-managed binary on `PATH`.
+The patch applies to upstream tag `v0.34.0`. The installed shadow is `~/.local/bin/headroom`, ahead of the package-managed binary on `PATH`.
 
 ### Build and install
 
-1. Clone upstream at base `01df2452`.
+1. Check out the upstream tag for the packaged version.
 2. Run `git am image-pool-hard-termination.patch`.
-3. Run `uv build --wheel`.
-4. Alternatively, copy the container's prebuilt `~/src/headroom/dist/headroom_ai-*.whl`.
-5. Install the wheel:
+3. Run `uv build --wheel`. To skip the build, copy a prebuilt wheel that matches the tag.
+4. Install the wheel:
 
    ```sh
    uv tool install --force --python 3.14 "headroom-ai[all] @ file://<wheel-path>"
    ```
 
-6. Run `command -v headroom` and confirm that it resolves to `~/.local/bin/headroom`.
-7. Restart the proxy so that it loads the installed code.
-8. Prepare the test environment with `uv sync --extra all --extra dev`.
-9. Run the bounded suites:
+5. Run `command -v headroom` and confirm that it resolves to `~/.local/bin/headroom`.
+6. Restart the proxy so that it loads the installed code.
+7. Prepare the test environment with `uv sync --extra all --extra dev`.
+8. Run the bounded suites:
 
    ```sh
    uv run pytest \
@@ -50,7 +49,7 @@ The patch targets upstream base `01df2452`. The installed shadow is `~/.local/bi
 
 Use Rust 1.95 or newer for the build. The repository `rust-toolchain.toml` applies only to rustup-managed Cargo.
 
-`paru -Syu` continues to update the package-managed binary beneath the shadow. After the repository package includes the guard, run `uv tool uninstall headroom-ai` to restore it.
+`paru -Syu` updates the package-managed binary beneath the shadow. Keep the shadow at the packaged version, so that the guard stays the only difference. After a package upgrade, rebase the patch onto the matching upstream tag and rebuild. After the repository package includes the guard, run `uv tool uninstall headroom-ai` to restore it.
 
 ## Shadow side effects
 

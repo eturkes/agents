@@ -1,4 +1,4 @@
-From 99481d5a47e49d46804e5947856cb23205505b6a Mon Sep 17 00:00:00 2001
+From e6d916eadb95f9b36a53e22ead5f4673bf3009a2 Mon Sep 17 00:00:00 2001
 From: Emir Turkes <eturkes@bu.edu>
 Date: Mon, 3 Aug 2026 16:56:39 +0900
 Subject: [PATCH] fix(proxy): hard-terminate timed-out image workers and honor
@@ -58,7 +58,7 @@ OCR bounds:
  14 files changed, 1118 insertions(+), 18 deletions(-)
 
 diff --git a/docs/content/docs/configuration.mdx b/docs/content/docs/configuration.mdx
-index c4bf1bc8..e71b0d64 100644
+index 40ee5653..8ec3c002 100644
 --- a/docs/content/docs/configuration.mdx
 +++ b/docs/content/docs/configuration.mdx
 @@ -245,9 +245,13 @@ headroom proxy \
@@ -77,7 +77,7 @@ index c4bf1bc8..e71b0d64 100644
  headroom proxy --no-cache
  
 diff --git a/docs/content/docs/proxy.mdx b/docs/content/docs/proxy.mdx
-index 5de6a334..42bfed12 100644
+index 98428514..80712f45 100644
 --- a/docs/content/docs/proxy.mdx
 +++ b/docs/content/docs/proxy.mdx
 @@ -38,7 +38,8 @@ Telemetry is **local-only and off by default**. `HEADROOM_TELEMETRY=on` (or `--t
@@ -90,7 +90,7 @@ index 5de6a334..42bfed12 100644
  | `--no-cache` | `false` | Disable semantic caching |
  | `--no-rate-limit` | `false` | Disable rate limiting |
  | `--log-file` | None | Path to JSONL log file |
-@@ -305,6 +306,10 @@ See [Metrics](/docs/metrics) for the Prometheus and Grafana setup.
+@@ -306,6 +307,10 @@ See [Metrics](/docs/metrics) for the Prometheus and Grafana setup.
  |---|---|---|
  | `--embedding-server` / `HEADROOM_EMBEDDING_SERVER` | off | Share one ONNX embedder across workers (~600 MB RSS saved). |
  | `--compression-max-workers` / `HEADROOM_COMPRESSION_MAX_WORKERS` | CPU count | Bound the CPU-bound compression threadpool. |
@@ -612,7 +612,7 @@ index 2e2addf5..3b59bc4b 100644
 +    finally:
 +        _IMAGE_JOB_SLOT.release()
 diff --git a/headroom/proxy/server.py b/headroom/proxy/server.py
-index 04ea3cb5..593f0b75 100644
+index c03c76ee..3f400a09 100644
 --- a/headroom/proxy/server.py
 +++ b/headroom/proxy/server.py
 @@ -713,6 +713,23 @@ def _apply_compressor_selection(
@@ -654,7 +654,7 @@ index 04ea3cb5..593f0b75 100644
          # External (non-built-in) `headroom.compressor` selections are ignored by
          # `_apply_compressor_selection` (they have no enable_* flag). Thread them
          # to the router here so it can route matching blocks through them; None
-@@ -5340,6 +5365,15 @@ if __name__ == "__main__":
+@@ -5382,6 +5407,15 @@ if __name__ == "__main__":
  
      # Optimization
      parser.add_argument("--no-optimize", action="store_true", help="Disable optimization")
@@ -670,7 +670,7 @@ index 04ea3cb5..593f0b75 100644
      parser.add_argument("--min-tokens", type=int, default=500, help="Min tokens to crush")
      parser.add_argument("--max-items", type=int, default=50, help="Max items after crush")
      parser.add_argument(
-@@ -5519,6 +5553,12 @@ if __name__ == "__main__":
+@@ -5561,6 +5595,12 @@ if __name__ == "__main__":
          else (args.code_aware or not args.no_code_aware)
      )
      optimize = env_optimize if not args.no_optimize else False
@@ -683,7 +683,7 @@ index 04ea3cb5..593f0b75 100644
      cache_enabled = env_cache if not args.no_cache else False
      rate_limit_enabled = env_rate_limit if not args.no_rate_limit else False
      disable_kompress = args.disable_kompress or _get_env_bool("HEADROOM_DISABLE_KOMPRESS", False)
-@@ -5573,6 +5613,7 @@ if __name__ == "__main__":
+@@ -5615,6 +5655,7 @@ if __name__ == "__main__":
          bedrock_api_url=_get_env_str("BEDROCK_TARGET_API_URL", args.bedrock_api_url),
          anyllm_provider=_get_env_str("HEADROOM_ANYLLM_PROVIDER", args.anyllm_provider),
          optimize=optimize,
@@ -1504,5 +1504,5 @@ index 7459021a..3a074788 100644
 +    ]
 +    assert any("ocr_thread_bounds_rejected" in r.getMessage() for r in caplog.records)
 -- 
-2.47.3
+2.55.0
 
