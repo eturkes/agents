@@ -1,18 +1,20 @@
 #!/bin/sh
-# Poll GET /api/oauth/usage into the 5h/7d cache ($1, default ~/.claude/.oauth_usage.json) once it is
-# >=180s old, under a lock in a detached job ⇒ callers return at once and render from the cache alone.
-# Shared by statusline (per render) + oauth-limit-alert (if wired); token via ./oauth-token.
+# Refresh 5h/7d OAuth cache when age >=180s. Detached locked poll ⇒ callers
+# return immediately and render cached state. Cache path = $1, default
+# ~/.claude/.oauth_usage.json. Shared by statusline + oauth-limit-alert; token =
+# ./oauth-token.
 uc="${1:-${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}}"
 lk="$uc.lock"
 now=$(date +%s)
 
 ca=$(stat -c %Y "$uc" 2>/dev/null || echo 0)
 [ "$(( now - ca ))" -ge 180 ] || exit 0
-lm=$(stat -c %Y "$lk" 2>/dev/null || echo 0)     # reap a lock left behind by a killed fetch
+lm=$(stat -c %Y "$lk" 2>/dev/null || echo 0)     # reap stale-fetch lock
 [ "$lm" -gt 0 ] && [ "$(( now - lm ))" -ge 60 ] && rmdir "$lk" 2>/dev/null
-mkdir "$lk" 2>/dev/null || exit 0                # a live fetch holds it ⇒ let that one finish
+mkdir "$lk" 2>/dev/null || exit 0                # live fetch owns lock
 
-# Token stays in the child's files + variables, off the argv any local process can read.
+# Credential transport = child-local files/variables; process listings expose
+# command structure alone.
 setsid -f sh -c '
   t=$("$1" 2>/dev/null)
   if [ -n "$t" ]; then

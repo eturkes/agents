@@ -1,8 +1,9 @@
 #!/bin/sh
 # Claude Code context gauge + rate limits + prompt-cache warmth.
-# Branch on stdin, NOT env: statusline pipes JSON + sets CLAUDE_CODE_SESSION_ID → env can't tell modes apart. JSON stdin = statusline; TTY/empty = manual (read transcript).
-# Live total_input_tokens includes cache reads/writes but excludes output; sum total_output_tokens to match the transcript fallback.
-# Gauge colors compare TOKENS → meaning holds at any denominator: green >=120K, yellow >=180K, red >=220K (= the CLI's own context-low warning).
+# Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
+# Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens;
+# transcript fallback uses the same sum.
+# Gauge token colors: green >=120K; yellow >=180K; red >=220K.
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u ⇒ manual.
@@ -21,19 +22,19 @@ else
   c=0
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=273000
-# Gauge denominator = the AUTO-COMPACTION POINT = the number that ends a turn; the raw model window the JSON
-# reports (1M for a `[1m]` id) stays informational. Budget = min(raw, ACW) from env, since the JSON omits it;
-# compaction fires 33K below it → 273K budget = 240K here.
+# Gauge denominator = auto-compaction turn limit. Effective budget =
+# min(JSON raw window, env ACW) - 33K; 273K ACW ⇒ 240K.
 acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
 [ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
 w=$((w - 33000))
 now=$(date +%s)  # one clock read, reused for reset-delta + cache warmth
-# Rate-limit suffix; present once rate_limits arrives (manual mode + pre-first-response render bare).
-# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA] ⇒ "LABEL N%EXTRA MM/DD HH:MM";
-#   EXTRA = pre-formatted, leading space, slots between used% and reset (" fable 100%").
-#   LABEL+used% (one unit): green >=50, yellow >=75, red >=90.
-#   reset time alone (the label keeps its used% color): red <=RED_S away, yellow <=YELLOW_S, green <=GREEN_S.
-#   Defaults red<=1h, yellow<=2h, green=today; 5h ⇒ red<=1h, yellow<=2h, green<=3h; 7d ⇒ red<=5h, yellow<=10h, green<=15h.
+# Rate-limit suffix: rate_limits present ⇒ segments; manual/pre-first response ⇒ gauge only.
+# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA] ⇒ "LABEL N%EXTRA MM/DD HH:MM".
+# EXTRA = preformatted leading-space insert between used% and reset.
+# LABEL+used%: green >=50; yellow >=75; red >=90.
+# Reset: red <=RED_S; yellow <=YELLOW_S; green <=GREEN_S.
+# Defaults: red<=1h; yellow<=2h; green=today. 5h green<=3h; 7d red<=5h,
+# yellow<=10h, green<=15h.
 seg() {
   pct=$(awk -v p="$1" -v l="$3" 'BEGIN{q=int(p+0.5)
     if(q>=90)printf "\033[31m%s %d%%\033[0m",l,q
@@ -49,10 +50,8 @@ seg() {
   fi
   printf '%s%s %s' "$pct" "$7" "$dt"
 }
-# Native rate_limits (the jq above) arrive empty behind the proxy: CC reads 5h/7d usage from GET
-# /api/oauth/usage, and with ANTHROPIC_BASE_URL on the Headroom→CLIProxyAPI chain, CLIProxyAPI 404s
-# that path ⇒ poll it directly instead. ./oauth-refresh owns the cache + its detached background
-# poll, keeping this render synchronous on the cache alone.
+# Empty native rate_limits ⇒ cached OAuth usage. oauth-refresh owns cache +
+# detached poll; render reads cache synchronously.
 if [ -z "$sp$wp" ]; then
   uc="$HOME/.claude/.oauth_usage.json"
   "$HOME/.claude/oauth-refresh" "$uc"
@@ -65,8 +64,8 @@ EOF2
   fi
 fi
 rl=""
-# Model-scoped weekly limit (.limits[] weekly_scoped, cache path only) ⇒ 7d-segment insert,
-# same color thresholds: "7d 92% fable 100% 08/03 18:00".
+# Weekly model-scoped cache limit (`.limits[] weekly_scoped`) ⇒ 7d-segment
+# insert with shared color thresholds.
 fx=""
 [ -n "$fn" ] && [ -n "$fp" ] && fx=$(awk -v p="$fp" -v n="$fn" 'BEGIN{q=int(p+0.5)
   if(q>=90)printf " \033[31m%s %d%%\033[0m",n,q
@@ -75,12 +74,11 @@ fx=""
   else printf " %s %d%%",n,q}')
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800)"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000 "$fx")"
-# "last" = clock time of the last real API turn, which is also the prompt-cache anchor; TTL 1h.
-# Anchor = last real API turn that moved cache tokens, found by backward scan exiting on the first hit.
-# Assistant records alone are authoritative: mode / permission-mode / last-prompt / queue-operation
-# entries advance transcript mtime with no API call, leaving mtime warm past expiry. Streaming turns
-# append assistant records, so the anchor stays live mid-turn.
-# Color = warmth left: >30m plain, <=30m green, <=15m yellow, expired red.
+# `last` = latest cache-moving API-turn timestamp; prompt-cache TTL = 1h.
+# Backward scan stops at latest qualifying assistant usage. Assistant usage is
+# authoritative; transcript metadata can advance mtime independently. Streaming
+# appends assistant records ⇒ live mid-turn anchor.
+# Warmth color: >30m plain; <=30m green; <=15m yellow; expired red.
 ttl=3600
 ce=$(tac "${tp:-$f}" 2>/dev/null | jq -rn "first(inputs|select($api and ((.message.usage.cache_read_input_tokens//0)+(.message.usage.cache_creation_input_tokens//0))>0)|.timestamp)//empty" 2>/dev/null)
 [ -n "$ce" ] && te=$(date -d "$ce" +%s 2>/dev/null) && [ -n "$te" ] && {

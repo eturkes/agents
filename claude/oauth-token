@@ -1,9 +1,8 @@
 #!/bin/sh
-# Live Claude OAuth access token → stdout for GET /api/oauth/usage; a blank print keeps the cached poll.
-# Order: ~/.claude/.credentials.json while it holds an unexpired token → CLIProxyAPI store, newest refresh.
-# The store is the copy that survives: CC + CLIProxyAPI drive one account, so a sibling refresh rotates the
-# refresh token, CC's own refresh then meets invalid_grant, and CC writes accessToken/refreshToken="" +
-# expiresAt=0 while scopes/subscriptionType stay (CC ships CAS + sibling-adoption for exactly this race).
+# Emit live Claude OAuth token for GET /api/oauth/usage; empty stdout preserves
+# cached poll. Source order: unexpired ~/.claude/.credentials.json → newest
+# CLIProxyAPI Claude-store refresh. Shared-account refresh races can clear local
+# Claude credentials; proxy store = fallback.
 cred="${OAUTH_CRED_FILE:-$HOME/.claude/.credentials.json}"
 store="${CLI_PROXY_AUTH_DIR:-$HOME/.cli-proxy-api}"
 
@@ -11,8 +10,8 @@ t=$(jq -r --argjson now "$(( $(date +%s) * 1000 ))" \
   '.claudeAiOauth | select((.accessToken // "") != "" and (.expiresAt // 0) > $now) | .accessToken' \
   "$cred" 2>/dev/null)
 
-# Newest claude entry wins: one jq per file keeps the scan alive past a malformed sibling, and `sort -r`
-# on "<last_refresh> <token>" puts the latest refresh first (an absent last_refresh sorts last = fallback).
+# Newest Claude entry wins. One jq/file isolates malformed siblings. Descending
+# `<last_refresh> <token>` sort puts latest first; absent timestamp = fallback.
 if [ -z "$t" ]; then
   best=$(for f in "$store"/*.json; do
       [ -f "$f" ] || continue

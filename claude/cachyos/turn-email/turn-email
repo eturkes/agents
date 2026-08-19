@@ -1,11 +1,8 @@
 #!/bin/sh
-# Stop hook → one email per completed MAIN-thread turn. Subagents fire SubagentStop and never Stop,
-# so main-only is structural, not filtered. The SMTP send is detached and this always exits 0: a
-# slow relay or a dead mailbox can neither stall a turn nor fail one. Credentials live in
-# ~/.msmtprc (0600); missing client or config ⇒ silent no-op, so the hook is safe to leave wired.
-#
-# Body is base64 text/plain: assistant turns carry >998-char lines (SMTP's cap) and non-ASCII, both
-# of which 8bit would mangle or get rejected on. Subject is RFC 2047 for the same reason.
+# Stop hook: one email per completed MAIN turn. Stop/SubagentStop event split =
+# structural scope. Detached SMTP + unconditional exit 0 isolate turn outcome.
+# Missing client/config ⇒ silent no-op. Credentials = ~/.msmtprc (0600).
+# Body = base64 text/plain for SMTP line limit + Unicode; subject = RFC 2047.
 TO=${CLAUDE_TURN_EMAIL_TO:-emir.turkes@eturkes.com}
 FROM=${CLAUDE_TURN_EMAIL_FROM:-$TO}
 cache=$HOME/.claude/cache/turn-email
@@ -20,12 +17,11 @@ cwd=$(printf '%s' "$IN" | jq -r '.cwd // ""' 2>/dev/null)
 tp=$(printf '%s' "$IN" | jq -r '.transcript_path // ""' 2>/dev/null)
 mode=$(printf '%s' "$IN" | jq -r '.permission_mode // "?"' 2>/dev/null)
 effort=$(printf '%s' "$IN" | jq -r '.effort.level // "?"' 2>/dev/null)
-# Cap the response: a turn can emit a huge diff, and mail is a notification, not an archive.
+# Response cap keeps mail notification-sized; transcript remains archive.
 resp=$(printf '%s' "$IN" | jq -r '(.last_assistant_message // "")[0:100000]' 2>/dev/null)
 
-# Prompt, model and context in ONE streaming reduce — transcripts reach tens of MB, so `[inputs]`
-# would load the whole session into memory every turn. Sidechain (subagent) entries are skipped;
-# tool_result user entries carry no text block and fall out via the emptiness test.
+# One streaming reduce extracts prompt/model/context with bounded memory.
+# Sidechain entries skip; textless tool_result entries fall through empty-text gate.
 meta=$(jq -cn '
   def txt: if type == "string" then .
            else [.[]? | select(.type == "text") | .text] | join("\n") end;
@@ -75,8 +71,7 @@ body=$(mktemp "${TMPDIR:-/tmp}/cc-body.XXXXXX") || { rm -f "$hdr"; exit 0; }
   printf '%s\n' "${resp:-(none)}"
 } >"$body"
 
-# References ties every turn of a session into one mail thread; Auto-Submitted stops vacation
-# responders from answering a robot.
+# References threads session turns; Auto-Submitted suppresses automated replies.
 {
   printf 'From: %s\n' "$FROM"
   printf 'To: %s\n' "$TO"

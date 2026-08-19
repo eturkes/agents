@@ -1,17 +1,12 @@
-# xml-lsp
+# XML language server on CachyOS
 
-Eclipse LemMinX XML LSP: DMN, BPMN, SHACL-XML, XSD.
+Eclipse LemMinX provides XML language support for DMN, BPMN, SHACL-XML, and XSD.
 
-Tracks latest. `../../../upgrade-servers` resolves the current release from the
-Eclipse Maven repo, swaps the jar, verifies an LSP handshake, and rolls back on
-failure. It runs from `host/cachyos/upgrade`, so there is nothing to do by hand
-and no version recorded here.
+`../../../upgrade-servers` resolves the Eclipse Maven `<release>` value and stages the JAR. It requires a successful LSP handshake before activation. If validation fails, it restores the previous JAR. `host/cachyos/upgrade` runs the shared upgrader.
 
-Prerequisites:
-1. JRE present: `jdk-openjdk`; headless option:
-   `sudo pacman -S --needed jre-openjdk-headless`.
-2. `~/.local/bin/lemminx`: `java -jar ~/.local/share/lemminx/lemminx.jar "$@"`.
+## Prerequisites
 
-Version truth is the Maven repo's `maven-metadata.xml` `<release>`, NOT GitHub
-releases: that project's `releases/latest` reports 0.11.0, an ancient entry that
-would hold upgrades back indefinitely.
+1. Install a Java runtime. Use `jdk-openjdk`, or run `sudo pacman -S --needed jre-openjdk-headless` for the headless package.
+2. Configure `~/.local/bin/lemminx` to run `java -jar ~/.local/share/lemminx/lemminx.jar "$@"`.
+
+The Maven `maven-metadata.xml` `<release>` value is authoritative. GitHub releases lag this artifact.

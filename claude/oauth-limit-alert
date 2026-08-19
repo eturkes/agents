@@ -1,14 +1,12 @@
 #!/bin/sh
-# PostToolUse hook → one alert per limit-window at 100%: 5h, 7d all-models, or a model-scoped weekly
-# (`.limits[]`). Every window meters the Anthropic OAuth account, so an alert reaches the calls that
-# account bills — Claude models, and for a scoped window the model it names. Refreshes the shared
-# usage cache itself (utilization/percent = 0-100), covering tool-only runs between statusline
-# renders. <100% = silent; a cross injects a self-contained stop-now instruction, work resuming on
-# renewed credits.
+# PostToolUse: one 100%-usage alert per context/window: 5h, 7d all-models,
+# or scoped weekly (`.limits[]`). Account-billed Claude contexts receive the
+# relevant alert; scoped windows match named model. Refresh shared usage cache
+# for tool-only runs. <100% = silent; 100% ⇒ stop until renewed credits.
 uc="${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}"
 
-# Payload names session + agent + transcript; the model comes from the transcript itself, below.
-# Hooks always pipe it; a bare terminal run skips the read and serves as a manual limit check.
+# Payload = session + agent + transcript; transcript supplies model below.
+# Hook stdin carries payload; TTY invocation = manual limit check.
 IN=""
 [ -t 0 ] || IN=$(cat)
 { read -r sid; read -r aid; read -r tp; } <<EOF
@@ -18,13 +16,12 @@ date +%s >"$HOME/.claude/.oauth_limit_alert.stamp" 2>/dev/null   # liveness mark
 "${OAUTH_REFRESH_CMD:-$HOME/.claude/oauth-refresh}" "$uc"        # cache + poll shared with the statusline
 [ -s "$uc" ] || exit 0
 
-# epoch = resets_at rounded to the nearest hour = a dedupe key stable across polls (the API wobbles the
-# boundary by ~1s, e.g. 09:00:00 ↔ 08:59:59).
+# Dedupe key = resets_at rounded to nearest hour; absorbs boundary jitter.
 hkey='def hkey: try (.[0:19] | strptime("%Y-%m-%dT%H:%M:%S") | mktime
                      | (. + 1800) - ((. + 1800) % 3600)) catch 0;'
 
-# Precedence at >=100%: 5h (soonest reset) > 7d > scoped weekly. Stage 1 reads the cache alone → the
-# common path costs one jq, the model resolving once a window runs hot. "WIN EPOCH" = the dedupe key.
+# >=100% precedence: 5h (soonest reset) > 7d > scoped weekly. Stage 1 =
+# cache-only single jq; resolve model after a hot window. `WIN EPOCH` = key.
 sel=$(jq -r "$hkey"'
   (.five_hour.utilization // 0) as $f | (.seven_day.utilization // 0) as $w |
   if   $f >= 100 and $f >= $w then "5h \(.five_hour.resets_at // "" | hkey)"
@@ -33,10 +30,10 @@ sel=$(jq -r "$hkey"'
   else "" end' "$uc" 2>/dev/null)
 [ -n "$sel" ] || exit 0
 
-# Acting model ← the transcript of the call's own context: a teammate's turns sit at
-# <session>/subagents/agent-<agent_id>.jsonl, beside the MAIN path every payload carries. Bounded tail
-# holds the per-call cost flat, `fromjson?` spanning the severed head line; the launch env answers for
-# a transcript younger than its first turn.
+# Acting model source = calling-context transcript. Teammate path =
+# <session>/subagents/agent-<agent_id>.jsonl beside MAIN transcript. Bounded tail
+# fixes read cost; `fromjson?` tolerates severed first line; launch env covers
+# pre-first-turn transcript.
 f=$tp
 [ -n "$aid" ] && f="${tp%.jsonl}/subagents/agent-$aid.jsonl"
 mdl=""
@@ -45,14 +42,14 @@ mdl=""
   awk '$0 != "<synthetic>" { m = $0 } END { print m }')
 [ -n "$mdl" ] || { [ -n "$aid" ] && mdl=$CLAUDE_CODE_SUBAGENT_MODEL || mdl=$ANTHROPIC_MODEL; }
 
-# Claude models spend this account → they alert. A `gpt-*` teammate bills its own provider and keeps
-# working, leaving MAIN's alert for MAIN. An undetermined model keeps the account-wide windows, while
-# scoped windows below hold out for a named match.
+# Billing filter: Claude + undetermined models receive account-wide alerts;
+# other-provider models continue independently. Scoped windows require the named
+# match below.
 case "$mdl" in ""|*claude*) ;; *) exit 0 ;; esac
 
-# Stage 2 = hottest scoped weekly the acting model runs under (window = lowercased model name, "fable");
-# a surface-scoped window names no model, binding whatever runs here. Selecting on the match inside the
-# scan keeps a matching window alertable while another model's sits hotter.
+# Stage 2 = hottest scoped weekly window matching acting model. Surface scope
+# binds current model. Match during scan preserves this model's alert despite a
+# hotter peer window.
 [ "$sel" = "SCOPED" ] && sel=$(jq -r --arg m "$mdl" "$hkey"'
   [ .limits[]?
     | select(.kind == "weekly_scoped" and (.percent // 0) >= 100)
@@ -63,8 +60,8 @@ case "$mdl" in ""|*claude*) ;; *) exit 0 ;; esac
   | max_by(.p) | if . == null then "" else "\(.k) \(.r | hkey)" end' "$uc" 2>/dev/null)
 [ -n "$sel" ] || exit 0
 
-# One alert per acting context per window: each session + teammate keeps its own marker, so every one
-# of them sees the window that bills it. Stale files reaped after 7d.
+# Marker per session+agent+window ⇒ each billed context sees alert once.
+# Reap markers after 7d.
 state_dir=${OAUTH_ALERT_STATE:-$HOME/.claude/cache/oauth-limit-alert}
 mkdir -p "$state_dir" 2>/dev/null || exit 0
 find "$state_dir" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null

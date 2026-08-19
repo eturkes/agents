@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""One-time Gmail OAuth2 authorization for the turn-email hook.
+"""Authorize Gmail OAuth2 for the turn-email hook.
 
-Runs the installed-app loopback flow: prints an authorization URL, serves 127.0.0.1 to catch the
-redirect, then exchanges the code for a refresh token and writes ~/.config/claude-mail/oauth.json.
+The command starts an installed-app loopback flow. It prints an authorization URL and listens on 127.0.0.1 for the redirect. It then exchanges the code and writes ~/.config/claude-mail/oauth.json.
 
-  gmail-oauth-setup --client-id ID --client-secret SECRET
+Usage: gmail-oauth-setup --client-id ID --client-secret SECRET
 
-SMTP XOAUTH2 needs the full https://mail.google.com/ scope; the narrower gmail.send scope is
-rejected by the SMTP endpoint. access_type=offline + prompt=consent are what make Google return a
-refresh token rather than an access token alone.
+SMTP XOAUTH2 requires the full https://mail.google.com/ scope. It rejects the narrower gmail.send scope. access_type=offline and prompt=consent request a refresh token.
 """
 import argparse
 import http.server

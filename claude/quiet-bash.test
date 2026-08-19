@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Gate for the sibling `quiet-bash` PreToolUse hook. Each case feeds the hook a payload the way
-# Claude Code does -- tool_input JSON on stdin -- and asserts the command it hands back.
+# Regression gate for sibling `quiet-bash` PreToolUse hook.
+# Feed tool_input JSON on stdin → assert returned command.
 # Usage: ./quiet-bash.test [path-to-hook]
-# Case = <label> <command in> <command out, or SAME when the hook answers `{}`>.
+# Case = <label> <command in> <command out; SAME for `{}`>.
 set -u
 HOOK="${1:-$(dirname "$(readlink -f "$0")")/quiet-bash}"
 pass=0; fail=0
@@ -51,7 +51,7 @@ check git-push      'git push origin main'                  'git push --quiet or
 check curl          'curl https://example.com'              'curl -sS https://example.com'
 check wget          'wget https://example.com/f'            'wget -nv https://example.com/f'
 
-# --- runners left alone: silencing them costs the failure diagnostic ------
+# --- preserve default verbosity for complete failure diagnostics ----------
 check npm-ci        'npm ci'                                SAME
 check npm-install   'npm install express'                   SAME
 check pnpm-install  'pnpm install'                           SAME
@@ -79,7 +79,7 @@ check moon-test     'moon test'                              SAME
 check uv-pip        'uv pip list'                            SAME
 check remake-word   'ls remake'                              SAME
 
-# --- word starts: `-` and `=` open no runner ------------------------------
+# --- token bounds: `-` and `=` stay inside words -------------------------
 check pkg-hyphen    'paru -S python-pytest python-pip'       SAME
 check pkg-hyphen2   'paru -S python-pytest'                  SAME
 check bin-hyphen    'ls run-pytest'                          SAME
@@ -99,7 +99,7 @@ check chained       'pytest && cargo test'                   'pytest -q && cargo
 check piped         'pytest tests/ | head -5'                'pytest -q tests/ | head -5'
 check quoted-arg    'pytest -k "not slow"'                   'pytest -q -k "not slow"'
 check two-same      'make a && make b'                       'make -s a && make -s b'
-# a trailing `;` is not the space-or-EOL the rules close on, so the second `make` carries the flag
+# Trailing `;` falls outside the space/EOL close ⇒ second `make` receives flag.
 check two-adjacent  'make; make'                             'make; make -s'
 check hand-flag-win 'pytest -q a && pytest b'                SAME
 

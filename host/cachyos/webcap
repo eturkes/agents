@@ -15,7 +15,7 @@
 //   --selector CSS     wait for this element before capture
 //   --wait MS          settle delay after load, default 0
 //   --timeout MS       navigation timeout, default 45000
-//   --user-data-dir D  capture as this profile's user; D is copied, never opened
+//   --user-data-dir D  capture as this profile's user; runs against a copy of D
 //   --profile-directory P
 //                      profile inside D, default = D's Local State last_used
 // Writes every requested artifact, prints one path per line.

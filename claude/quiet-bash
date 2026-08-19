@@ -1,25 +1,19 @@
 #!/bin/sh
-# PreToolUse(Bash) hook → injects quiet flags into verbose runners, so a green run costs a few lines
-# instead of a few hundred. Deterministic floor under the model's own restraint; the global CLAUDE.md
-# `Reading` rule carries the judgment cases this table cannot reach.
+# PreToolUse(Bash): inject progress-only quiet flags into selected runners.
+# Green-run output shrinks; diagnostics + runner rc stay intact. Global
+# CLAUDE.md `Reading` owns judgment cases beyond this table.
 #
 # Invariants:
-#   - Flags alone, never pipes → rc stays the runner's + a failure keeps its full diagnostic. The
-#     stock `| grep FAIL | head -100` shape reports rc=0 for a red suite, which reads as a pass.
-#   - `updatedInput` REPLACES the whole `tool_input` → merge onto the original, else `description`,
-#     `timeout` + `run_in_background` silently drop.
-#   - No `permissionDecision` → the rewrite rides the session's normal permission path, so deny rules
-#     keep governing the command that actually runs.
-#   - Stand down on an explicit verbosity request (`-v`/`--verbose`/`--debug`) + on any heredoc, whose
-#     body is data a substitution would corrupt.
-#   - Membership = flag suppresses progress alone → results, warnings + failure diagnostics survive
-#     verbatim. Below that bar: `just -q` = suppress ALL output (recipe stdout + failed-recipe
-#     diagnostic); `moon test -q` = drops green pass/fail totals → 0 discovered reads as pass;
-#     `git diff|log|show -q` = exit-code/content mode; `npm --silent` + `pnpm --reporter=silent` =
-#     a failed install exits 1 printing NOTHING, over a non-TTY success already costing ~75/190
-#     bytes; `bun --silent` clears the bar (errors verbatim) → keeps its rule; R = work-skipping
-#     flags alone (`--no-manual`/`--no-vignettes`/`--no-test-load`), `Rscript` already implying
-#     `--no-echo`.
+# - Flags-only rewrites preserve runner rc + full failure diagnostics.
+# - `updatedInput` replaces `tool_input` ⇒ merge original fields (`description`,
+#   `timeout`, `run_in_background`).
+# - Return only `updatedInput` ⇒ session permission path + deny rules remain active.
+# - Explicit verbosity or heredoc ⇒ unchanged input; heredoc body = opaque data.
+# - Membership = suppress progress while preserving results, warnings + failures.
+# Exclusions: `just -q` suppresses recipe output; `moon test -q` drops totals;
+# `git diff|log|show -q` changes semantics; npm/pnpm silent modes can hide failed-
+# install diagnostics; R quiet flags skip work. `bun --silent` preserves errors ⇒
+# included. `Rscript` already suppresses echo.
 IN=""
 [ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 cmd=$(printf '%s' "$IN" | jq -r '.tool_input.command // empty' 2>/dev/null)
@@ -32,11 +26,10 @@ orig=$cmd
 Q='(^|[[:space:]])--?q(uiet)?([[:space:]]|$)'
 W='(^|[^-=[:alnum:]_])'
 
-# rule <already-quiet ERE> <sed -E expr>: a present match anywhere in the ORIGINAL command leaves the
-# rule unapplied, so chained runners each get their own flag and a hand-written flag always wins.
-# Each expr opens on `W` + closes on a space-or-EOL → `/usr/bin/pytest` matches while `pytest.ini`,
-# `cmake`, `python-pytest` + `RUNNER=make` stay intact; `W` excludes `-` and `=` for that reason,
-# which `\b` alone reads as word starts.
+# rule <already-quiet ERE> <sed -E expr>: ORIGINAL-command match ⇒ preserve
+# input; otherwise flag each chained runner. Hand-written flag wins.
+# Expr bounds = `W` + space/EOL. Absolute paths match; dotted names, package
+# names + assignments stay intact because `W` keeps `-` and `=` inside tokens.
 rule() {
   printf '%s' "$orig" | grep -Eq -- "$1" && return 0
   cmd=$(printf '%s' "$cmd" | sed -E "$2")
@@ -50,8 +43,8 @@ rule "$Q" 's@'"$W"'(uvx)([[:space:]]|$)@\1\2 -q\3@g'
 rule "$Q" 's@'"$W"'(ruff[[:space:]]+(check|format))([[:space:]]|$)@\1\2 -q\4@g'
 # Rust
 rule "$Q" 's@'"$W"'(cargo[[:space:]]+(build|check|test|clippy|run|fmt|doc|add|update|bench))([[:space:]]|$)@\1\2 -q\4@g'
-# Lean / MoonBit — `lake -q` = global flag hiding lake's own logs alone (child stdout + compile
-# errors survive); `moon -q` keeps warnings + errors verbatim.
+# Lean/MoonBit: `lake -q` hides only lake logs; child output + compile errors
+# survive. `moon -q` preserves warnings + errors.
 rule "$Q" 's@'"$W"'(lake)([[:space:]]|$)@\1\2 -q\3@g'
 rule "$Q" 's@'"$W"'(moon[[:space:]]+(check|build|fmt))([[:space:]]|$)@\1\2 -q\4@g'
 # JS/TS — node/bun/vite + the two dot-reporter suites

@@ -1,49 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Upgrade run for this CachyOS workstation, the host counterpart to
-# container/aeon/upgrade.
-#
-# The two machines need very different scripts. Aeon is a Debian container where
-# every toolchain was installed by its own installer, so its script drives a long
-# list of self-updaters (rustup, uv, corepack, elan, moon, ...). Here almost
-# everything is a pacman/AUR package -- rust, uv, pnpm, node, npm, ripgrep,
-# headroom, cli-proxy-api and codex are all repo-owned -- so `paru -Syu` IS the
-# toolchain upgrade, and running those installers' self-updaters on top would
-# fight the package manager over the same files. What remains is the handful of
-# things pacman does not own; this script covers exactly those, rolling each to
-# its latest upstream release.
-#
-# Run it deliberately, not on a timer: a full -Syu on Arch is a rolling upgrade
-# that can want intervention (.pacnew files, keyring bumps, manual pacman -Sy
-# fallout). Anything requiring judgement is left to you and merely reported.
+# CachyOS workstation upgrade; host counterpart to container/aeon/upgrade.
+# Ownership split: `paru -Syu` upgrades pacman/AUR toolchain; this script also
+# updates user-managed sources. Invoke with operator present because rolling
+# system upgrades can require `.pacnew`, keyring + package-state decisions.
 
 repo_root="$HOME/Projects/agents"
 
 echo "=== System packages (pacman/AUR) ==="
-# paru covers repo + AUR in one pass. This is the upgrade path for nearly every
-# tool on this box, so it runs first: later steps assume current binaries.
+# paru owns repo + AUR toolchain; run first so later steps use current binaries.
 paru -Syu
 
-# headroom: the image-worker-termination fix (upstream-pending) deploys as a
-# patched uv-tool build shadowing the repo package on PATH; -Syu moving the
-# repo package underneath it is harmless. Once a repo release ships the fix,
-# drop the shadow: uv tool uninstall headroom-ai. State + recipe:
-#   $repo_root/host/cachyos/headroom/README.md
+# Headroom = patched uv-tool shadow with image-worker termination guard. Repo
+# package upgrades remain underneath it. After repo package includes the guard,
+# remove shadow: `uv tool uninstall headroom-ai`. State + recipe:
+# $repo_root/host/cachyos/headroom/README.md
 
 echo
 echo "=== MoonBit ==="
-# The toolchain lives user-global under ~/.moon and carries its own updater: `moon upgrade` rolls the
-# binaries to the latest release, `moon update` refreshes the registry index it keeps as a standing
-# local git repo under ~/.moon/registry/index -- cargo/uv/pnpm resolve against the live registry per
-# command and need no such step. Per-project dependencies stay with `moon` inside each project.
+# ~/.moon toolchain self-updates: `moon upgrade` updates binaries; `moon update`
+# refreshes registry index. Project dependencies remain project-local.
 moon_home="${MOON_HOME:-$HOME/.moon}"
 case ":$PATH:" in
   *":$moon_home/bin:"*) ;;
   *) export PATH="$moon_home/bin:$PATH" ;;
 esac
 
-# `moon upgrade` reads its confirmation from the terminal, so hand it a pty when one is absent.
+# `moon upgrade` confirmation requires TTY; allocate pty for non-TTY caller.
 if [[ -t 0 ]]; then
   moon upgrade
 else
@@ -58,8 +42,8 @@ git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only
 
 echo
 echo "=== pnpm globals ==="
-# vite and vitest are pnpm globals, so `update -g --latest` is their upgrade path. Export the global
-# bin directory to keep this working outside a login shell.
+# vite/vitest = pnpm globals; `update -g --latest` upgrades them. Export global
+# bin for direct/non-login invocation.
 case ":$PATH:" in
   *":$HOME/.local/share/pnpm/bin:"*) ;;
   *) export PATH="$HOME/.local/share/pnpm/bin:$PATH" ;;
@@ -68,16 +52,10 @@ pnpm update -g --latest
 
 echo
 echo "=== chromiumfish ==="
-# Upgrade the pnpm workspace, then fetch the browser build the freshly upgraded
-# chromiumfish package points at -- `update --latest` moves the package, `fetch`
-# follows it.
-#
-# Upstream Linux archives omit chrome_crashpad_handler and the fetcher accepts
-# them -- it checks for the main chrome binary alone. That handler must be
-# present: the browser posix_spawns it at startup, so a cache lacking it aborts
-# every headless run at launch. Repair the cache in place from Chrome for
-# Testing; same MAJOR.MINOR.BUILD = the crashpad revision this browser expects.
-# The cache persists → one download per browser-version bump.
+# Upgrade pnpm workspace, then fetch browser referenced by updated chromiumfish.
+# Browser startup requires executable chrome_crashpad_handler. If fetched cache
+# lacks it, install Chrome for Testing handler matching MAJOR.MINOR.BUILD.
+# Persistent cache ⇒ one repair per browser-version bump.
 if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
   pnpm -C "$HOME/.local/share/chromiumfish" update --latest
   chromiumfish fetch
@@ -100,12 +78,8 @@ if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
     echo "chromiumfish $browser_version: installed chrome_crashpad_handler from Chrome for Testing $cft_version"
   fi
 
-  # Always verify size + a real run: an existence check passes a corrupt copy
-  # that still kills the browser at launch. Truncated and non-ELF handlers exit
-  # nonzero, though the code is payload-specific -- bash runs a shebang-less
-  # file as a script, so it reports whatever the first word yields. A zero-byte
-  # one needs the size test, since bash reports success for the empty script it
-  # becomes.
+  # Gate = nonzero size + successful `--help`. Together they reject corrupt,
+  # truncated, non-ELF + zero-byte handlers across shell fallback semantics.
   if [[ ! -s "$chromiumfish_dir/chrome_crashpad_handler" ]] ||
      ! "$chromiumfish_dir/chrome_crashpad_handler" --help >/dev/null 2>&1; then
     echo "chromiumfish cache $chromiumfish_dir has an unrunnable chrome_crashpad_handler; replace it before headless use" >&2
@@ -117,11 +91,8 @@ fi
 
 echo
 echo "=== Docs mirror ==="
-# Refresh the local llms.txt copy from upstream. It is git-ignored rather than
-# tracked (see .gitignore), since it can always be re-fetched here. Download to
-# a temp file first, then move it into place, so an interrupted or failed fetch
-# leaves the existing copy intact. A fetch failure is non-fatal: warn and keep
-# the current copy rather than aborting the rest of the run.
+# Refresh gitignored llms.txt mirror via temp + atomic move. Fetch failure warns,
+# retains current copy + keeps upgrade running.
 agentlang_doc="$repo_root/docs/agentlanguages.dev/llms.txt"
 agentlang_tmp="$(mktemp)"
 mkdir -p "$(dirname "$agentlang_doc")"
@@ -133,20 +104,14 @@ else
   echo "agentlanguages.dev/llms.txt fetch failed; keeping existing copy" >&2
 fi
 
-# docs/scopedcommits.com/llms.txt is deliberately NOT fetched here: the site is
-# live but has never published an llms.txt, so the repo's tracked copy is the
-# original rather than a mirror. Maintain it by hand; adding a fetch would
-# overwrite it with a 404.
+# docs/scopedcommits.com/llms.txt = manually maintained tracked document;
+# automated mirror applies only to agentlanguages.dev.
 
 echo
 echo "=== Marketplace LSP servers ==="
-# Nothing above touches these: no package manager owns a hand-fetched jar or a
-# SWI-Prolog pack, so they only move here. Each is taken to its latest upstream
-# release, verified with a real LSP handshake, and rolled back if that fails --
-# upstream has shipped a release that broke Claude Code before, so latest is
-# taken on evidence rather than on faith.
-# `|| true` because a rolled-back upgrade (exit 1) or an upstream outage (exit 2)
-# must not fail the whole run: the previous working server is still in place.
+# Marketplace servers = user-managed. Shared updater resolves candidates,
+# requires real LSP handshake + restores prior server on failure. Caller absorbs
+# exit 1/2 so workstation upgrade continues with retained working server.
 if [[ -x "$repo_root/claude/marketplace/upgrade-servers" ]]; then
   "$repo_root/claude/marketplace/upgrade-servers" || true
 else

@@ -1,12 +1,9 @@
 #!/bin/sh
-# PostToolUse hook → pushes the closure signal to the agent: ONE wrap-up notice per tier per session,
-# freeing it to work until told. Same last-assistant-turn usage sum as the gauges; silent between tiers.
-#
-# Tiers, both contexts: 200K notice → 220K final warning → auto-compaction 240K; each states the
-# live remainder to 240K, computed per call, since a turn can land well past the tier it crosses.
-# Prefix + override clause wrap every tier once: a mode may license working through compaction
-# (PLANNING/MILESTONE-REVIEW/user-requested tasks do), and the notice yields to that license.
-# ACW=273000 → 240K trigger; subagents compact on the same path.
+# PostToolUse: emit one closure notice per tier/session. Usage sum = gauges.
+# Tiers: 200K notice → 220K final warning → 240K auto-compaction. Each notice
+# computes live remainder; threshold jumps emit the highest crossed tier.
+# Applicable standing instructions authorize compaction-spanning work and override notice.
+# ACW 273K ⇒ 240K trigger for MAIN + subagents.
 IN=""
 [ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 { read -r tp; read -r at; read -r sid; } <<EOF
@@ -23,7 +20,7 @@ u=$(jq -n 'last(inputs|select(.type=="assistant" and .isSidechain!=true and .mes
 [ -n "$u" ] || exit 0
 
 final=220000
-# Tiers ascend; report the highest crossed that has yet to fire, so a jump past both lands on the higher.
+# Ascending tiers; emit highest newly crossed tier after a jump.
 if   [ "$u" -ge "$final" ]; then tier=final
 elif [ "$u" -ge 200000 ];   then tier=200
 else exit 0; fi

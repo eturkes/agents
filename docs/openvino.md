@@ -1,42 +1,72 @@
-# OpenVINO GPU+NPU — Intel Lunar Lake
+# OpenVINO acceleration on Intel Lunar Lake
 
-Ref for the OpenVINO stub (`CLAUDE.local.md`). Paths absolute: `$HOME=/var/home/eturkes/debian` → `~/.local` ≠ the install root below.
+This document expands the OpenVINO guidance in `CLAUDE.local.md`. In the container, `$HOME` is `/var/home/eturkes/debian`. Therefore, `~/.local` differs from the installation paths below.
 
-## HW — Intel Core Ultra 7 268V (Lunar Lake)
-- GPU = Arc 140V iGPU · PCI `8086:64a0` · drv `xe` · `/dev/dri/renderD128`
-- NPU = AI Boost (NPU 4) · PCI `8086:643e` · drv `intel_vpu` · `/dev/accel/accel0`
-- device nodes = `nobody:nogroup 0660` · uid 1000 access = `CAP_DAC_OVERRIDE`
+## Hardware
+
+- The GPU is an Intel Arc 140V iGPU. It uses the `xe` driver and `/dev/dri/renderD128`.
+- The NPU is Intel AI Boost NPU 4. It uses `intel_vpu` and `/dev/accel/accel0`.
+- The device nodes use `nobody:nogroup` with mode 0660. User ID 1000 accesses them through `CAP_DAC_OVERRIDE`.
 
 ## OpenVINO runtime
-- v2026.2.1 @ `/var/home/eturkes/.local/app/openvino_genai` (prebuilt, incl. GenAI)
-- python import = accel build via `PYTHONPATH` (host `~/.profile` sources OpenVINO `setupvars.sh`; container shells inherit it)
-- pip `openvino` wheel = optional fallback: `PYTHONPATH` precedes venv site-packages in `sys.path` → accel build resolves first; wheel builds also ship plugins. Device enumeration with either package → source the accel env
-- compiled bindings = cpython-{310,311,312,313} → python MUST ∈ {3.10–3.13}, else `_pyopenvino` load fails
 
-## Enable (per shell, before python)
+- The accelerated runtime, including GenAI, is at `/var/home/eturkes/.local/app/openvino_genai`.
+- `PYTHONPATH` selects the accelerated Python build. The host profile sources OpenVINO `setupvars.sh`, and container shells inherit the environment.
+- A pip `openvino` wheel is an optional fallback. `PYTHONPATH` precedes virtual-environment site packages, so the accelerated build resolves first.
+- The compiled bindings support Python 3.10 through 3.13. Use a Python version in this range.
+
+## Enable the runtime
+
+Before you start Python, run:
+
 ```bash
 source /var/home/eturkes/.local/app/intel-accel/env.sh
 ```
-→ sets `LD_LIBRARY_PATH` (driver farm) + `OCL_ICD_VENDORS` (GPU OpenCL ICD) + `ZE_ENABLE_ALT_DRIVERS` (GPU+NPU Level Zero). `LD_LIBRARY_PATH` read at exec → source the env before starting python. Device strings `"NPU"` | `"GPU"` | `"CPU"`; run preference + `AUTO:`/`HETERO:` selection → the stub.
 
-## Python deps (numpy) — use a project venv
-- OpenVINO imports numpy eagerly; container python lacks it → provide numpy through a project venv
-- venv = python 3.10–3.13 + numpy 2.x; OpenVINO still resolves from `PYTHONPATH` → OpenVINO-specific venv deps = numpy (+ pure deps)
-- bootstrap = `uv venv --python 3.13 .venv && uv pip install numpy`
-- run = source the accel env → invoke the venv's python (activate, or `.venv/bin/python` directly)
-- run with the inherited environment to preserve `PYTHONPATH`; isolated python (`-E`/`-I`, some `uv run` modes) strips it → requires the pip-wheel fallback
+The script configures `LD_LIBRARY_PATH`, `OCL_ICD_VENDORS`, and `ZE_ENABLE_ALT_DRIVERS`. These variables expose the GPU and NPU drivers. Because the loader reads `LD_LIBRARY_PATH` at process startup, source the environment first.
 
-## Verify / maintain
-- self-test → `source /var/home/eturkes/.local/app/intel-accel/env.sh && <venv-python> /var/home/eturkes/.local/app/intel-accel/selftest.py` (names each device + runs an infer)
-- host Intel driver update → rebuild the symlink farm: `python3 /var/home/eturkes/.local/app/intel-accel/make_farm.py` (pinned IGC preserved)
+Use the exact device strings `"NPU"`, `"GPU"`, and `"CPU"`. See `CLAUDE.local.md` for device preference and `AUTO:` or `HETERO:` selection.
 
-## `intel-accel/` architecture
-- driver farm = host Intel drivers + pinned Ubuntu IGC 2.30.1 (glibc ≤2.39). Host IGC requires glibc 2.43 > container 2.41 → load failure + unavailable GPU JIT
-- generic libs (`libc`/`libstdc++`/`libtbb`/…) resolve from the container → ABI isolation
-- non-standard driver registration: OpenCL = ICD vendor dir via `OCL_ICD_VENDORS` (`OCL_ICD_FILENAMES` alone yields `-1001`) · Level Zero = `ZE_ENABLE_ALT_DRIVERS`
-- plugin dependencies: GPU = OpenCL + ICD + IGC · NPU = Level Zero + own compiler
-- installation scope = user-local; system packages unchanged; removal = `rm -rf /var/home/eturkes/.local/app/intel-accel`
+## Create a Python environment
+
+OpenVINO imports NumPy at startup, while the container Python omits it. Create a project virtual environment with Python 3.10 through 3.13 and NumPy 2.x.
+
+```bash
+uv venv --python 3.13 .venv
+uv pip install numpy
+```
+
+Source the acceleration environment before you run the virtual-environment Python. Activate the environment, or invoke `.venv/bin/python` directly.
+
+Preserve the inherited `PYTHONPATH`. Isolated Python modes such as `-E`, `-I`, and some `uv run` modes remove it. Use the pip-wheel fallback with those modes.
+
+## Test and maintain
+
+Run the device self-test:
+
+```bash
+source /var/home/eturkes/.local/app/intel-accel/env.sh
+<venv-python> /var/home/eturkes/.local/app/intel-accel/selftest.py
+```
+
+After a host Intel driver update, rebuild the symlink farm:
+
+```bash
+python3 /var/home/eturkes/.local/app/intel-accel/make_farm.py
+```
+
+## `intel-accel` architecture
+
+- The driver farm combines host Intel drivers with a container-compatible pinned IGC. The host IGC requires a newer glibc than the container provides.
+- Generic libraries, including `libc`, `libstdc++`, and `libtbb`, resolve from the container to preserve ABI isolation.
+- OpenCL registration uses the `OCL_ICD_VENDORS` directory. `OCL_ICD_FILENAMES` alone produces error `-1001`.
+- Level Zero registration uses `ZE_ENABLE_ALT_DRIVERS`.
+- The GPU plugin uses OpenCL, ICD, and IGC. The NPU plugin uses Level Zero and its compiler.
+- The installation is user-local and leaves system packages unchanged.
+
+To remove the acceleration environment, run `rm -rf /var/home/eturkes/.local/app/intel-accel`.
 
 ## Caveats
-- `intel-accel/` under the host-shared home → `farm/` symlinks target `/run/host/...` → container-only; from the host they dangle + remain inert
-- Git-tracked OpenVINO state = reference docs; host+container-coupled `intel-accel/` artifacts stay external to project repos
+
+- The host-shared `intel-accel/farm` symlinks target `/run/host/...`. They work in the container and remain inert on the host.
+- Git tracks only this reference documentation. The host-and-container-coupled `intel-accel` artifacts remain outside project repositories.

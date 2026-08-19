@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Upgrade the user-global marketplace LSP servers to their latest upstream
-# release, verifying each one before it goes live.
-#
-# No version numbers are recorded here: these servers sit behind no package
-# manager (a hand-fetched jar; a SWI-Prolog pack) and hand-edited pins drift.
-# Each server's current release is resolved from upstream at run time.
-# "Latest" alone is not a safety property ("latest" can break `initialize` for
-# utf-16 clients) -- every upgrade is staged, handshaked as a real LSP client,
-# and rolled back on failure; a server goes live only after answering correctly.
-#
-# Exit codes: 0 = every server current or upgraded, 1 = an upgrade failed and was
-# rolled back (previous version still live), 2 = a check could not complete
-# (network/tooling). Callers under `set -e` should use `|| true`.
+# User-global marketplace LSP updater.
+# Resolve upstream version at run time → stage candidate → real UTF-16 LSP
+# handshake → activate. Failure → restore previous installation.
+# Exit: 0 = current/upgraded; 1 = candidate failed + previous version restored;
+# 2 = check incomplete (network/tooling). `set -e` callers use `|| true`.
 
 status=0
 
@@ -31,9 +23,8 @@ if [[ -n "${missing:-}" ]]; then
   exit 2
 fi
 
-# Speak one LSP `initialize` over stdio and confirm the server answers with a
-# capabilities result -- a real client handshake, not a --version check; the
-# gate that makes tracking latest safe. Args: <cmd> [expected-substring]
+# One stdio LSP `initialize` → require capabilities result. Real-client gate
+# protects upstream tracking. Args: <cmd> [expected-substring]
 lsp_handshake() {
   local cmd=$1 want=${2:-'"capabilities"'} req out
   req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{"general":{"positionEncodings":["utf-16"]}}}}'
@@ -45,9 +36,8 @@ lsp_handshake() {
 }
 
 # --- xml-lsp: Eclipse LemMinX ---
-# Version truth = the Eclipse Maven repo's <release>, NOT GitHub releases: that
-# project's releases/latest reports 0.11.0, ancient. Upgrade = jar swap, so
-# rollback is a file move.
+# Version source = Eclipse Maven `<release>`; GitHub releases lag. Upgrade = JAR
+# swap; rollback = file move.
 echo "xml-lsp (Eclipse LemMinX)"
 lemminx_meta="https://repo.eclipse.org/content/repositories/lemminx-releases/org/eclipse/lemminx/org.eclipse.lemminx/maven-metadata.xml"
 lemminx_jar="$HOME/.local/share/lemminx/lemminx.jar"
@@ -58,7 +48,7 @@ else
   if [[ -z "$latest" ]]; then
     skip "could not read <release>; keeping current jar"
   else
-    # The jar reports no usable version → record the installed one alongside it.
+    # Sidecar stamp = installed-version state.
     stamp="${lemminx_jar%.jar}.version"
     current=$(cat "$stamp" 2>/dev/null || echo "none")
     if [[ "$current" == "$latest" && -f "$lemminx_jar" ]]; then
@@ -92,20 +82,17 @@ else
 fi
 
 # --- prolog-lsp: jamesnvc/lsp_server ---
-# Tracks the default branch, not tags: the newest tag (v3.17.0) breaks utf-16
-# `initialize` and the fix is untagged on master, so "latest release" resolves
-# BACKWARDS into the bug. The handshake below makes branch-tracking safe -- a
-# regressed master is rejected and the working pack stays.
+# Source = default-branch HEAD. Tagged release fails UTF-16 `initialize`; branch
+# contains the fix. Candidate handshake guards branch tracking; regression ⇒
+# retain working pack.
 #
-# Install from a local checkout: swipl's resolver (10.0.2) rejects
-# commit()/branch selection through a git URL ("pack `lsp_server' does not
-# exist") and a bare pack name pulls the broken tag; file:// sidesteps the
-# resolver.
+# Local checkout + file:// pins resolver input to HEAD. SWI-Prolog's Git URL
+# resolver lacks commit/branch selection; bare pack name selects incompatible
+# tag.
 #
-# Stage the rollback copy OUTSIDE the pack root: swipl registers every
-# directory under the pack root as a pack, so a sibling `lsp_server.prev/`
-# shadows the real prolog/ -- the handshake then tests the OLD code and every
-# upgrade rolls back forever.
+# Rollback copy lives outside pack root. SWI-Prolog treats each child directory
+# as a pack; sibling `lsp_server.prev/` shadows active `prolog/` and makes the
+# handshake exercise previous code.
 echo "prolog-lsp (jamesnvc/lsp_server)"
 pack_dir="$HOME/.local/share/swi-prolog/pack/lsp_server"
 pack_backup_dir="$HOME/.local/share/swi-prolog/pack-backup"
@@ -125,8 +112,7 @@ else
       rm -rf "$src"
       skip "clone failed; keeping current pack"
     else
-      # A stray `lsp_server.prev` under the pack root would shadow the pack
-      # (see above) -- clear it before staging.
+      # Clear pack-root `lsp_server.prev`; it shadows the active pack.
       rm -rf "${pack_dir}.prev"
       backup=""
       if [[ -d "$pack_dir" ]]; then
@@ -135,8 +121,8 @@ else
         rm -rf "$backup"
         cp -a "$pack_dir" "$backup"
       fi
-      # pack_install refuses to overwrite, so remove first. Failure is tolerated:
-      # a missing pack is exactly the state install expects.
+      # pack_install requires an absent destination. Remove current pack first;
+      # tolerant removal also covers an already-absent pack.
       swipl -q -g "use_module(library(prolog_pack)), catch(pack_remove(lsp_server,[interactive(false),dependencies(false)]),_,true)" -t halt >/dev/null 2>&1 || true
       if swipl -q -g "use_module(library(prolog_pack)), pack_install('file://$src',[interactive(false),test(false),register(false)])" -t halt >/dev/null 2>&1 \
          && lsp_handshake "$HOME/.local/bin/prolog-lsp" '"positionEncoding":"utf-16"'; then
@@ -150,8 +136,7 @@ else
       else
         fail "${head_sha:0:8} failed to install (no previous version to restore)"
       fi
-      # Leave no staging dir behind on any path; it must never become a
-      # long-lived sibling of the pack root.
+      # Remove staging dir on every path; keep pack-root siblings transient.
       rm -rf "$src"
       rmdir "$pack_backup_dir" 2>/dev/null || true
     fi

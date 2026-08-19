@@ -1,21 +1,16 @@
 # shellcheck shell=bash
-# Route file contents to Claude Code's Read tool, which Headroom excludes from
-# lossy compression and reclaims once stale/superseded; Bash output is a
-# designated compression target that is never reclaimed.
+# Route file operands to Claude Code Read. Read bytes = lossless + reclaimable;
+# Bash output = lossy + persistent in context.
 #
-# Sourced from ~/.profile so the definitions land in the login shell Claude Code
-# snapshots for every Bash call, alongside its own find/grep/pkill shadows.
-# Defined unconditionally and gated at call time on CLAUDECODE, so an
-# interactive human shell keeps plain head/tail even though the snapshot that
-# captures these functions is generated before the agent session begins.
+# ~/.profile source ⇒ functions enter Claude Code's login-shell snapshot beside
+# find/grep/pkill shadows. Define globally; CLAUDECODE call-time gate keeps human
+# shells native because snapshot capture precedes agent session start.
 #
-# Only the file-reading form is refused. `cmd | head -N` and `cmd | tail -N`
-# read stdin, carry no file bytes into context, and pass straight through.
+# Existing path operand ⇒ refusal + Read guidance. Stdin pipeline ⇒ native
+# head/tail.
 #
-# The helper name must start with a letter: Claude Code's snapshot drops an
-# underscore-prefixed helper while capturing the wrappers, which would then call
-# a missing function. The wrappers also fall back to `command <name>` whenever
-# the helper is absent, so pipelines keep working under any snapshot miss.
+# Letter-prefixed helper survives snapshot capture. Wrappers fall back to native
+# commands when helper lookup misses.
 
 cc_read_guard() {
   local _name=$1
@@ -27,15 +22,14 @@ cc_read_guard() {
 
   local _a _skip=""
   for _a in ${1+"$@"}; do
-    # -n/-c take a separate value; skip it so a file named e.g. `20` in the
-    # working directory cannot be mistaken for a path operand.
+    # -n/-c consume next arg; skip value to classify path operands correctly.
     if [ -n "$_skip" ]; then _skip=""; continue; fi
     case "$_a" in
       -n|-c|--lines|--bytes) _skip=1 ;;
       -*) ;;
       *)
         if [ -e "$_a" ]; then
-          # Backticks and %s belong to the printf format, not the shell.
+          # Literal backticks/%s belong to printf format.
           # shellcheck disable=SC2016
           printf '%s: refusing to read %s — use the Read tool (offset/limit cover `%s -n N`). Piped input is fine; `command %s` bypasses.\n' \
             "$_name" "$_a" "$_name" "$_name" >&2
