@@ -41,7 +41,7 @@ The repository `rust-toolchain.toml` pins the Rust version for the build.
 
 The uv receipt at `~/.local/share/uv/tools/headroom-ai/uv-receipt.toml` path-pins the installed wheel. Therefore, the routine upgrade routes hold the pin instead of moving it. `container/aeon/upgrade` runs `uv tool upgrade --all`, and `headroom update` detects the uv-tool install and runs `uv tool upgrade headroom-ai`. Both re-resolve the same path. Keep the wheel on disk.
 
-Neither route moves this build. To move it, rebase the branch onto the newest upstream tag, rebuild, reinstall, and delete the superseded wheel.
+To move this build, rebase the branch onto the newest upstream tag, rebuild, reinstall, and delete the superseded wheel.
 
 Because the guard sits on a release tag, the local build reports the same `headroom --version` value as the published package. To identify the installed build, read the receipt path, or run `rg _retire_image_pool` under the tool's `site-packages`.
 

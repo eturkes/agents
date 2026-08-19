@@ -41,7 +41,7 @@ Use Rust 1.95 or newer for the build. The repository `rust-toolchain.toml` appli
 
 The uv receipt at `~/.local/share/uv/tools/headroom-ai/uv-receipt.toml` path-pins the installed wheel. Therefore, the routine upgrade routes hold the pin instead of moving it. `host/cachyos/upgrade` runs `uv tool upgrade --all`, and `headroom update` detects the uv-tool install and runs `uv tool upgrade headroom-ai`. Both re-resolve the same path. Keep the wheel on disk.
 
-Neither route moves this build. To move it, rebase the branch onto the newest upstream tag, rebuild, reinstall, and delete the superseded wheel.
+To move this build, rebase the branch onto the newest upstream tag, rebuild, reinstall, and delete the superseded wheel.
 
 This build is the whole Headroom install. `command -v headroom` must resolve to `~/.local/bin/headroom`. The uv routes above own every Headroom upgrade on this machine.
 
