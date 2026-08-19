@@ -1,25 +1,25 @@
 #!/usr/bin/env node
-// Headless capture → PDF / PNG / DOM, driven over CDP.
+// Headless capture → PDF / PNG / DOM over CDP.
 //
-// Chrome's capture switches (`--print-to-pdf`, `--dump-dom`, `--screenshot`) hang
-// forever in the ChromiumFish build: the page loads, the browser stays live, the
-// headless command handler never completes → rc=124, no artifact. CDP drives the
-// same binary correctly, so always capture through here.
+// Sole capture path here: Chrome's own switches (`--print-to-pdf`, `--dump-dom`,
+// `--screenshot`) hang in the ChromiumFish build — page loads, browser stays
+// live, the headless command handler never completes → rc=124, no artifact.
+// CDP drives the same binary correctly → always capture through here.
 //
 // Rendering is sound: `--use-gl=angle --use-angle=swiftshader` (chromiumfish
 // BASE_ARGS) rasterizes text + backgrounds. This build answers
-// prefers-color-scheme light under CDP emulation and under `--force-dark-mode`,
-// so `--dark` rewrites the page's own dark media blocks instead.
+// prefers-color-scheme light under CDP emulation + `--force-dark-mode` →
+// `--dark` rewrites the page's own dark media blocks.
 //
 // Usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]
 //   --full-page        whole scroll height in PNG (PDF spans the document always)
-//   --dark             emulate prefers-color-scheme: dark
+//   --dark             render the page's prefers-color-scheme: dark styles
 //   --width N          viewport width, default 1280
 //   --height N         viewport height, default 800
 //   --selector CSS     wait for this element before capture
 //   --wait MS          settle delay after load, default 0
 //   --timeout MS       navigation timeout, default 45000
-//   --user-data-dir D  capture as this profile's user; D is copied, never written
+//   --user-data-dir D  capture as this profile's user; runs against a copy of D
 // Writes every requested artifact, prints one path per line.
 
 import { spawnSync } from "node:child_process";
@@ -82,13 +82,12 @@ if (!opts.pdf && !opts.png && !opts.dom) die("choose at least one of --pdf, --pn
 const { ChromiumFish, BASE_ARGS, binaryPath } = await import(`${resolveGlobal("chromiumfish")}/dist/index.js`);
 const context = { viewport: { width: Number(opts.width), height: Number(opts.height) } };
 
-// CDP media emulation leaves prefers-color-scheme at light in this build --
-// newPage colorScheme and emulateMedia both report dark=false -- so promote
-// every dark media block to `all` instead. Dark blocks follow their light
-// counterparts, so the cascade already resolves in their favour. Cross-origin
-// stylesheets deny cssRules access → they stay light. matchMedia keeps
-// reporting light; pages that gate theming on it rather than on the media query
-// need their own theme switch.
+// This build answers prefers-color-scheme light under CDP media emulation
+// (newPage colorScheme + emulateMedia both report dark=false) → promote every
+// dark media block to `all`. Dark blocks follow their light counterparts → the
+// cascade already resolves in their favour. Cross-origin sheets deny cssRules
+// → stay light. matchMedia keeps reporting light → pages theming off it rather
+// than off the media query need their own switch.
 function promoteDarkRules() {
   const walk = (rules) => {
     for (const rule of rules) {
@@ -108,11 +107,10 @@ function promoteDarkRules() {
   return { sheets: document.styleSheets.length, reached };
 }
 
-// Capture needs a composited frame. A page that loads instantly -- file:// and
-// localhost above all -- can reach `load` before the compositor produces one,
-// and CDP then answers "Unable to capture screenshot". Two animation frames put
-// a real frame in place first. Chrome's own capture switches hang here, so this
-// script is the only capture route and the guard stays unconditional.
+// Capture needs a composited frame. Instant loads (file://, localhost above
+// all) reach `load` before the compositor produces one → CDP answers "Unable
+// to capture screenshot". Two animation frames put a real one in place. This
+// script = the only capture route here → the guard stays unconditional.
 function nextFrames() {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
@@ -121,16 +119,15 @@ let closable;
 let page;
 let scratch;
 
-// A profile named here stays read-only, because capture runs against a copy of
-// it. Any build that opens the original garbage-collects the component
-// extensions it does not itself provide, and the owning browser can no longer
-// load them. Copying also frees capture from ProcessSingleton, so that browser
-// can keep running.
+// The named profile stays read-only: capture runs against a copy. Any build
+// opening the original garbage-collects the component extensions it does not
+// itself provide → the owning browser loses extensions its Preferences still
+// names. Copying also sheds ProcessSingleton → leave that browser running.
 //
 // `cp --reflink` shares extents: a 5GB profile copies in ~1.5s for no disk. It
-// reflinks within a single filesystem, so the copy lands beside the original.
-// Singleton files name the live instance's socket, and a copy that keeps them
-// forwards the capture into that browser instead of rendering the page.
+// reflinks within one filesystem → the copy lands beside the original.
+// Singleton* name the live instance's socket → a copy keeping them forwards
+// the capture into that browser.
 function cloneProfile(dir) {
   if (!existsSync(dir)) die(`no profile at ${dir}`);
   const source = realpathSync(dir);
@@ -146,13 +143,12 @@ function cloneProfile(dir) {
   return copy;
 }
 
-// Chrome deletes every cookie it fails to decrypt, and playwright-core pins
-// `--password-store=basic` into every launch on every platform, next to
-// `--use-mock-keychain`, so a jar encrypted against the login keyring empties on
-// open. Naming the store after those switches wins on Chrome's last-duplicate
-// rule, and the cloned jar opens with the signed-in session intact. The pin is an
-// explicit switch rather than a detector, so no desktop-environment variable
-// substitutes for naming the store here.
+// Chrome deletes every cookie it fails to decrypt. playwright-core pins
+// --password-store=basic into every launch on every platform beside
+// --use-mock-keychain → a jar encrypted against the login keyring empties on
+// open. A later --password-store wins on Chrome's last-duplicate rule → the
+// cloned jar opens with the signed-in session intact. That pin = explicit
+// switch, not a detector → no desktop-environment variable moves it.
 const PERSISTENT_ARGS = [...BASE_ARGS, "--password-store=gnome-libsecret"];
 
 if (opts["user-data-dir"]) {

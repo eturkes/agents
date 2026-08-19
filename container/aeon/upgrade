@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Upgrade run for the Debian container on this Aeon machine, the container
-# counterpart to host/cachyos/upgrade.
+# Upgrade run for the Debian container on Aeon; counterpart = host/cachyos/upgrade.
 #
-# The two machines need very different scripts. On CachyOS almost everything is
-# a pacman/AUR package, so `paru -Syu` IS the toolchain upgrade there. Here
-# every toolchain was installed by its own installer, so this script drives
-# that long list of self-updaters (rustup, uv, corepack, elan, moon, ...),
-# rolling each to its latest upstream release. Debian's apt packages are
-# upgraded out of band (done manually) and are not covered here.
+# Every toolchain here arrived through its own installer → this script drives
+# that list of self-updaters (rustup, uv, corepack, elan, moon, ...) to their
+# latest upstream release. apt packages upgrade out of band by hand.
 
 # Make pnpm globals reachable when this script runs outside an interactive shell.
 export PNPM_HOME="${PNPM_HOME:-$HOME/.local/share/pnpm}"
@@ -26,20 +22,18 @@ rustup update
 cargo install-update -a
 
 # --- Python: uv and uv-managed tools ---
-# Update uv itself, then upgrade uv tool/uvx-managed command-line tools.
-#
-# headroom-ai is path-pinned to the locally built wheel in ~/src/headroom/dist
-# (image-worker termination fix, upstream-pending): upgrade --all re-resolves
-# that same path, so the pin holds -- and the wheel must stay on disk. Keep it
-# until an upstream release ships the fix, then return headroom to PyPI:
+# headroom-ai path-pins the locally built wheel in ~/src/headroom/dist
+# (image-worker termination fix): `upgrade --all` re-resolves that same path →
+# the pin holds + the wheel must stay on disk. Once an upstream release ships
+# the fix, return headroom to PyPI:
 #   uv tool install --force --python 3.14.5 "headroom-ai[all]"
 # Details: ~/agents/container/aeon/headroom/README.md
 uv self update
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 
-# A resident uvx tool (e.g. the Serena MCP server while any Claude session is
-# open) holds the uv cache lock and `uv cache prune` waits on it forever; cap
-# the wait and skip pruning in that case rather than hanging the whole run.
+# A resident uvx tool (Serena MCP while a Claude session is open) holds the uv
+# cache lock → `uv cache prune` waits on it forever. Cap the wait + skip the
+# prune to keep the run moving.
 timeout 30 uv cache prune || echo "uv cache in use (resident uvx tool); prune skipped"
 
 # --- Node: Corepack and pnpm globals ---
@@ -51,13 +45,13 @@ corepack install -g pnpm@latest-10
 pnpm add -g npm@latest
 
 # --- ChromiumFish ---
-# Upgrade the pnpm globals, then fetch the browser build the freshly upgraded
-# package points at. Upstream Linux archives omit chrome_crashpad_handler and
-# the fetcher accepts them -- it checks for the main chrome binary alone. That
-# handler must be present: the browser posix_spawns it at startup, so a cache
-# lacking it aborts every headless run at launch. Repair the cache in place from
-# Chrome for Testing; same MAJOR.MINOR.BUILD = the crashpad revision this
-# browser expects. The cache persists → one download per browser-version bump.
+# Upgrade the pnpm globals, then fetch the browser build the upgraded package
+# names. Upstream Linux archives omit chrome_crashpad_handler + the fetcher
+# accepts them, checking the main chrome binary alone. The browser posix_spawns
+# that handler at startup → it must be present, or every headless run aborts at
+# launch. Repair the cache in place from Chrome for Testing: same
+# MAJOR.MINOR.BUILD = the crashpad revision this browser expects. The cache
+# persists → one download per browser-version bump.
 pnpm add -g chromiumfish@latest playwright-core@latest
 chromiumfish fetch
 chromiumfish_dir="$(dirname "$(chromiumfish path)")"
@@ -79,9 +73,9 @@ if [[ ! -x "$chromiumfish_dir/chrome_crashpad_handler" ]]; then
 fi
 
 # Always verify size + a real run: an existence check passes a corrupt copy that
-# still kills the browser at launch. Truncated and non-ELF handlers fail the run
+# still kills the browser at launch. Truncated + non-ELF handlers fail the run
 # (SIGSEGV, command not found); a zero-byte one needs the size test, since bash
-# falls back to running it as an empty script and reports success.
+# runs it as an empty script + reports success.
 if [[ ! -s "$chromiumfish_dir/chrome_crashpad_handler" ]] ||
    ! "$chromiumfish_dir/chrome_crashpad_handler" --help >/dev/null 2>&1; then
   echo "chromiumfish cache $chromiumfish_dir has an unrunnable chrome_crashpad_handler; replace it before headless use" >&2
@@ -102,15 +96,12 @@ printf '%s\n' "$out"
 [[ $rc -eq 0 || "$out" == *"already installed"* ]] || exit "$rc"
 
 # --- MoonBit: moon toolchain + registry index ---
-# The MoonBit toolchain is installed user-global under ~/.moon and shared by
-# every project, so keep it current here alongside the other language
-# toolchains. `moon upgrade` is its installer-based self-updater and fetches the
-# latest release. Unlike cargo/uv/pnpm/npm — which resolve against the live
-# registry on demand and keep no standing index to go stale — MoonBit caches a
-# persistent local package index (a git repo under ~/.moon/registry/index), so
-# `moon update` refreshes it (and the symbol index) for all projects, the way
-# `apt update` refreshes APT's. Per-project dependencies (each project's
-# .mooncakes) are still resolved by `moon` inside that project.
+# ~/.moon = user-global, shared by every project → keep it current here.
+# `moon upgrade` = its installer-based self-updater. MoonBit also caches a
+# persistent local package index (git repo under ~/.moon/registry/index) →
+# `moon update` refreshes that index + the symbol index for all projects, the
+# way `apt update` refreshes APT's. `moon` resolves per-project .mooncakes
+# inside each project.
 moon_home="${MOON_HOME:-$HOME/.moon}"
 case ":$PATH:" in
   *":$moon_home/bin:"*) ;;
@@ -127,25 +118,22 @@ fi
 moon update
 
 # --- SWI-Prolog packs ---
-# The interpreter and its built-in `pack` package manager (library(prolog_pack))
-# ship in Debian's swi-prolog-* apt packages, upgraded out of band with the rest
-# of apt (done manually), so this script only refreshes globally installed packs.
-# Upgrade every installed pack except lsp_server, which upgrade-servers owns (it
-# tracks the default branch and gates on an LSP handshake; upstream's newest TAG
-# still regresses initialize for utf-16 clients, so a plain pack upgrade here
-# would resolve backwards into the broken release). The pack list is computed at
-# runtime, so packs added later are upgraded automatically; the per-pack catch
-# keeps one failing upgrade from aborting the run.
+# The interpreter + its built-in `pack` manager (library(prolog_pack)) ship in
+# Debian's swi-prolog-* apt packages, upgraded out of band → this script
+# refreshes globally installed packs. upgrade-servers owns lsp_server: it tracks
+# the default branch + gates on an LSP handshake, while upstream's newest TAG
+# still regresses initialize for utf-16 clients → a plain pack upgrade here
+# would resolve backwards into the broken release. The pack list is computed at
+# runtime → later additions upgrade automatically; the per-pack catch keeps one
+# failing upgrade from aborting the run.
 swipl -q -g 'use_module(library(prolog_pack)), Pinned = [lsp_server], findall(P, (pack_property(P, version(_)), \+ memberchk(P, Pinned)), Ps), forall(member(P, Ps), catch(pack_install(P, [upgrade(true), interactive(false)]), E, print_message(warning, E))), halt' -t 'halt(1)'
 
 # --- Marketplace LSP servers ---
-# lemminx and prolog-lsp have no package manager behind them, so they move only
-# here. Each is taken to its latest upstream release, verified with a real LSP
-# handshake, and rolled back if that fails -- upstream has shipped a release that
-# broke Claude Code before, so latest is taken on evidence rather than faith.
-# No version numbers are recorded anywhere: that is what drifted before.
-# `|| true` because a rolled-back upgrade (exit 1) or an upstream outage (exit 2)
-# must not abort the rest of the run.
+# lemminx + prolog-lsp have no package manager behind them → they move only
+# here. Each goes to its latest upstream release, verified with a real LSP
+# handshake + rolled back on failure, so latest is taken on evidence. Version
+# numbers live nowhere: the handshake is the gate. `|| true` keeps a rolled-back
+# upgrade (exit 1) or an upstream outage (exit 2) from aborting the run.
 if [[ -x "$HOME/agents/claude/marketplace/upgrade-servers" ]]; then
   "$HOME/agents/claude/marketplace/upgrade-servers" || true
 fi
@@ -158,11 +146,10 @@ codex update
 curl -fsSL https://raw.githubusercontent.com/router-for-me/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer | bash -s -- upgrade
 
 # --- Docs mirror: agentlanguages.dev/llms.txt ---
-# Refresh the local llms.txt copy from upstream on every run. It is git-ignored
-# rather than tracked (see .gitignore), since it can always be re-fetched here.
-# Download to a temp file first, then move it into place, so an interrupted or
-# failed fetch leaves the existing copy intact. A fetch failure is non-fatal:
-# warn and keep the current copy rather than aborting the rest of the upgrade.
+# Refresh the local copy every run. It stays git-ignored (see .gitignore) since
+# this fetch can always re-create it. Download to a temp file, then move it into
+# place → an interrupted fetch leaves the existing copy intact. A fetch failure
+# warns + keeps the current copy.
 agentlang_doc="$HOME/agents/docs/agentlanguages.dev/llms.txt"
 agentlang_tmp="$(mktemp)"
 mkdir -p "$(dirname "$agentlang_doc")"
@@ -173,7 +160,6 @@ else
   rm -f "$agentlang_tmp"
   echo "agentlanguages.dev/llms.txt fetch failed; keeping existing copy" >&2
 fi
-# docs/scopedcommits.com/llms.txt is deliberately NOT fetched here: the site is
-# live but has never published an llms.txt, so the repo's tracked copy is the
-# original rather than a mirror. Maintain it by hand; adding a fetch would
-# overwrite it with a 404.
+# docs/scopedcommits.com/llms.txt stays hand-maintained: the live site publishes
+# no llms.txt, so the repo's tracked copy is the original rather than a mirror.
+# A fetch here would overwrite it with a 404.
