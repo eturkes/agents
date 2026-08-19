@@ -16,10 +16,11 @@
 //   --selector CSS     wait for this element before capture
 //   --wait MS          settle delay after load, default 0
 //   --timeout MS       navigation timeout, default 45000
-//   --user-data-dir D  persistent profile, e.g. ~/.config/browser-os
-//                      (close that browser first; Chrome locks the directory).
-//                      Authenticated pages otherwise go through BrowserOS MCP,
-//                      which reads them with the browser still running.
+//   --user-data-dir D  persistent profile; Chrome opens D/Default, so a browser
+//                      keeping its session in another profile dir hands back an
+//                      empty one (close that browser first -- Chrome locks the
+//                      directory). Authenticated pages otherwise go through
+//                      BrowserOS MCP, which reads them with the browser running.
 // Writes every requested artifact, prints one path per line.
 
 import { existsSync, writeFileSync } from "node:fs";
@@ -117,9 +118,15 @@ let page;
 if (opts["user-data-dir"]) {
   const pw = await import(`${resolveModule("playwright-core")}/index.mjs`);
   const chromium = pw.chromium ?? pw.default.chromium;
+  // Chrome deletes every cookie it fails to decrypt, and playwright-core pins
+  // --password-store=basic in its own switches, so a jar encrypted against the
+  // login keyring empties on first launch. KWallet is disabled on this
+  // workstation, so the session browser falls back to the hardcoded key and
+  // writes rows that any store reads -- naming the store its KDE 6 session
+  // selects keeps the two in step if that wallet is ever enabled.
   closable = await chromium.launchPersistentContext(opts["user-data-dir"], {
     executablePath: await binaryPath(),
-    args: BASE_ARGS,
+    args: [...BASE_ARGS, "--password-store=kwallet6"],
     headless: true,
     ...context,
   });

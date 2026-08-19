@@ -101,9 +101,11 @@ if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
   fi
 
   # Always verify size + a real run: an existence check passes a corrupt copy
-  # that still kills the browser at launch. Truncated and non-ELF handlers fail
-  # the run (SIGSEGV, rc=1); a zero-byte one needs the size test, since bash
-  # falls back to running it as an empty script and reports success.
+  # that still kills the browser at launch. Truncated and non-ELF handlers exit
+  # nonzero, though the code is payload-specific -- bash runs a shebang-less
+  # file as a script, so it reports whatever the first word yields. A zero-byte
+  # one needs the size test, since bash reports success for the empty script it
+  # becomes.
   if [[ ! -s "$chromiumfish_dir/chrome_crashpad_handler" ]] ||
      ! "$chromiumfish_dir/chrome_crashpad_handler" --help >/dev/null 2>&1; then
     echo "chromiumfish cache $chromiumfish_dir has an unrunnable chrome_crashpad_handler; replace it before headless use" >&2
