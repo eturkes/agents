@@ -7,8 +7,9 @@
 // same binary correctly, so always capture through here.
 //
 // Rendering is sound: `--use-gl=angle --use-angle=swiftshader` (chromiumfish
-// BASE_ARGS) rasterizes text + backgrounds. Emulation beats flags → `--dark`
-// sets prefers-color-scheme, no stylesheet rewriting.
+// BASE_ARGS) rasterizes text + backgrounds. This build answers
+// prefers-color-scheme light under CDP emulation and under `--force-dark-mode`,
+// so `--dark` rewrites the page's own dark media blocks instead.
 //
 // Usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]
 //   --full-page        whole scroll height in PNG (PDF spans the document always)
@@ -81,10 +82,13 @@ if (!opts.pdf && !opts.png && !opts.dom) die("choose at least one of --pdf, --pn
 const { ChromiumFish, BASE_ARGS, binaryPath } = await import(`${resolveGlobal("chromiumfish")}/dist/index.js`);
 const context = { viewport: { width: Number(opts.width), height: Number(opts.height) } };
 
-// The build pins prefers-color-scheme to light and ignores CDP media emulation,
-// so promote every dark media block to `all` instead. Dark blocks follow their
-// light counterparts, so the cascade already resolves in their favour.
-// Cross-origin stylesheets deny cssRules access → they stay light.
+// CDP media emulation leaves prefers-color-scheme at light in this build --
+// newPage colorScheme and emulateMedia both report dark=false -- so promote
+// every dark media block to `all` instead. Dark blocks follow their light
+// counterparts, so the cascade already resolves in their favour. Cross-origin
+// stylesheets deny cssRules access → they stay light. matchMedia keeps
+// reporting light; pages that gate theming on it rather than on the media query
+// need their own theme switch.
 function promoteDarkRules() {
   const walk = (rules) => {
     for (const rule of rules) {
@@ -102,6 +106,15 @@ function promoteDarkRules() {
     }
   }
   return { sheets: document.styleSheets.length, reached };
+}
+
+// Capture needs a composited frame. A page that loads instantly -- file:// and
+// localhost above all -- can reach `load` before the compositor produces one,
+// and CDP then answers "Unable to capture screenshot". Two animation frames put
+// a real frame in place first. Chrome's own capture switches hang here, so this
+// script is the only capture route and the guard stays unconditional.
+function nextFrames() {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
 let closable;
@@ -130,6 +143,7 @@ try {
     const { sheets, reached } = await page.evaluate(promoteDarkRules);
     if (reached < sheets) process.stderr.write(`webcap: ${sheets - reached}/${sheets} stylesheets are cross-origin and stay light\n`);
   }
+  await page.evaluate(nextFrames);
 
   if (opts.dom) {
     const html = await page.content();
