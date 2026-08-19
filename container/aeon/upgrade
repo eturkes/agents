@@ -52,17 +52,36 @@ pnpm add -g npm@latest
 
 # --- ChromiumFish ---
 # Upgrade the pnpm globals, then fetch the browser build the freshly upgraded
-# package points at. The 150.0.7844 Linux archive once unpacked without
-# chrome_crashpad_handler and the fetcher accepted that partial cache (it only
-# checks for the main chrome binary); this machine's cache was manually repaired
-# with an existing Chrome-for-Testing crashpad handler. So validate the handler
-# after every fetch and fail loudly if it is missing, rather than leaving a
-# silently broken cache for the next headless run.
+# package points at. Upstream Linux archives omit chrome_crashpad_handler and
+# the fetcher accepts them -- it checks for the main chrome binary alone. That
+# handler must be present: the browser posix_spawns it at startup, so a cache
+# lacking it aborts every headless run at launch. Repair the cache in place from
+# Chrome for Testing; same MAJOR.MINOR.BUILD = the crashpad revision this
+# browser expects. The cache persists → one download per browser-version bump.
 pnpm add -g chromiumfish@latest playwright-core@latest
 chromiumfish fetch
-chromiumfish_bin="$(chromiumfish path)"
-if [[ ! -x "$(dirname "$chromiumfish_bin")/chrome_crashpad_handler" ]]; then
-  echo "chromiumfish cache at $(dirname "$chromiumfish_bin") lacks chrome_crashpad_handler; repair it (see git history of this section) before headless use" >&2
+chromiumfish_dir="$(dirname "$(chromiumfish path)")"
+if [[ ! -x "$chromiumfish_dir/chrome_crashpad_handler" ]]; then
+  browser_version="$(chromiumfish --version | sed -n 's/.*browser \([^)]*\)).*/\1/p')"
+  cft_json="$(curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/latest-patch-versions-per-build-with-downloads.json)"
+  cft_version="$(jq -r --arg build "${browser_version%.*}" '.builds[$build].version // empty' <<<"$cft_json")"
+  cft_url="$(jq -r --arg build "${browser_version%.*}" '.builds[$build].downloads.chrome[]? | select(.platform == "linux64") | .url' <<<"$cft_json")"
+  if [[ -z "$cft_url" ]]; then
+    echo "chromiumfish cache $chromiumfish_dir needs chrome_crashpad_handler; no Chrome for Testing linux64 build matches ${browser_version:-unknown} -- install one by hand before headless use" >&2
+    exit 1
+  fi
+  cft_tmp="$(mktemp -d)"
+  curl -fsSL -o "$cft_tmp/chrome-linux64.zip" "$cft_url"
+  unzip -q -o -j "$cft_tmp/chrome-linux64.zip" chrome-linux64/chrome_crashpad_handler -d "$cft_tmp"
+  install -m 0755 "$cft_tmp/chrome_crashpad_handler" "$chromiumfish_dir/chrome_crashpad_handler"
+  rm -rf "$cft_tmp"
+  echo "chromiumfish $browser_version: installed chrome_crashpad_handler from Chrome for Testing $cft_version"
+fi
+
+# Always verify by running the handler: an existence check passes a truncated or
+# wrong-arch copy that still kills the browser at launch.
+if ! "$chromiumfish_dir/chrome_crashpad_handler" --help >/dev/null 2>&1; then
+  echo "chromiumfish cache $chromiumfish_dir has an unrunnable chrome_crashpad_handler; replace it before headless use" >&2
   exit 1
 fi
 
