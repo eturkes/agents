@@ -41,6 +41,18 @@ The script does two jobs. It selects the container OpenVINO build with `PYTHONPA
 
 Use the exact device strings `"NPU"`, `"GPU"`, and `"CPU"`. See `CLAUDE.local.md` for device preference and `AUTO:` or `HETERO:` selection.
 
+## Dynamic output shapes
+
+The static-shape rule covers inputs. An output dimension can stay dynamic, and compilation still succeeds. The plugin allocates the maximum-size buffer and pads the unused rows.
+
+- CPU returns the true shape.
+- GPU pads with zeros.
+- NPU pads with uninitialized memory. Those values fall outside the valid range of the tensor.
+
+An NPU pad row passes a threshold filter, so it enters the data as a real row. Select rows by their own values, such as a score or a label sentinel. A row count is an unsafe selector.
+
+To qualify a model on a device, compile it and infer a zero tensor. Compare the output shape and the value range against the CPU result.
+
 ## Create a Python environment
 
 OpenVINO imports NumPy at startup, while the container Python omits it. Create a project virtual environment with Python 3.10 through 3.13 and NumPy 2.x.
