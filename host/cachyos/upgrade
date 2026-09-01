@@ -47,6 +47,16 @@ git -C "$HOME/.local/app/bgcmd" pull --ff-only
 git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only
 
 echo
+echo "=== Codexify ==="
+# doctor reports installation health + release status; connector self_update
+# owns verified replacement.
+if command -v codexify >/dev/null 2>&1; then
+  codexify doctor
+else
+  echo "codexify install pending; skipping"
+fi
+
+echo
 echo "=== pnpm globals ==="
 # vite/vitest = pnpm globals; `update -g --latest` upgrades them. Export global
 # bin for direct/non-login invocation.
