@@ -140,8 +140,9 @@
   "theme": "light",
   "preferredNotifChannel": "notifications_disabled",
   "switchModelsOnFlag": false,
+  "fileCheckpointingEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "useAutoModeDuringPlan": false,
-  "fileCheckpointingEnabled": false
+  "crossSessionInbound": "accept"
 }
