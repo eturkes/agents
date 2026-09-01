@@ -78,19 +78,6 @@
     "pr": "off"
   },
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/context-alert"
-          }
-        ]
-      }
-    ]
-  },
-  "hooks": {
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -99,6 +86,17 @@
             "type": "command",
             "command": "$HOME/.claude/quiet-bash",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/context-alert"
           }
         ]
       }
@@ -131,8 +129,9 @@
   "theme": "light",
   "preferredNotifChannel": "notifications_disabled",
   "switchModelsOnFlag": false,
+  "fileCheckpointingEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "useAutoModeDuringPlan": false,
-  "fileCheckpointingEnabled": false
+  "crossSessionInbound": "accept"
 }
