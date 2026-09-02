@@ -6,9 +6,9 @@
 - Filesystem scope = active project root + user-scoped targets.
 - Cross-chat continuity = `update_plan` + `remember`/`recall`; live `exec_command` sessions stay MCP-transport-scoped.
 
-## Confirmation
+## Execution
 
-- Confirm immediately before external writes, destructive actions, purchases, or material scope expansion.
+- Execute within stated task scope. Ask only when required information/authority is missing or an action materially expands scope.
 
 ## Response
 

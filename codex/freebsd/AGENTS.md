@@ -5,9 +5,9 @@
 - External-service action requires connection verification.
 - Filesystem scope = launch directory + user-scoped targets.
 
-## Confirmation
+## Execution
 
-- Confirm immediately before external writes, destructive actions, purchases, machine-wide software installation, or material scope expansion.
+- Execute within stated task scope. Ask only when required information/authority is missing or an action materially expands scope.
 
 ## Response
 
