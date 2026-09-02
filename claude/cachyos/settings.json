@@ -144,6 +144,7 @@
   "fileCheckpointingEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
+  "crossSessionInbound": "accept",
   "useAutoModeDuringPlan": false,
-  "crossSessionInbound": "accept"
+  "timeFormat": "24-hour-utc"
 }
