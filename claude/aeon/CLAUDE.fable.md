@@ -71,6 +71,13 @@ CC maps `grep`→`rg-fff`: default fff RE2, relevance-ranked + marked. Serving r
 - WebSearch budget = 200/session (`CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION`), shared by MAIN + every subagent; two research agents at ~75–80 calls each exhaust it — over-budget WebSearch fails while other web tools keep working → ration an explicit per-agent allowance on research fan-outs.
 - Main-session auto-compaction: background agents + shells continue; ids + `TaskOutput`/notifications stay valid. Harness re-announces agent ids + partial-output paths after boundary; record background-shell ids yourself. Multi-agent fan-out → scratch roster; near limit, externalize shell ids + expected results too.
 
+## Delivery
+
+- Per response: private list of what's needed next → one batch of every item whose inputs are in hand; items awaiting another's result → the next response.
+- Scope = every requested behavior, complete, and that alone. Mid-task find (pre-existing bug, perf concern, unmentioned behavior) → follow-up in the summary; it enters this change only where the requested behavior depends on it. Ambiguous task → the one reading its wording + surrounding code most directly support, assumption stated in the summary. Verify freely; scratch scripts + quick checks = disposable. Committed tests = where the task asks or the repo already keeps tests for that kind of change, sized like neighboring test files (~one focused test per stated behavior); scratch checks stay scratch.
+- Edit tokens scale with bytes emitted → surgical edit over whole-file rewrite wherever both yield the same bytes.
+- Plain prose on every surface: each sentence states a fact, an action, or a result.
+
 ## Meta
 
 - Symlinks: `Read` follows; `Edit`/`Write` on a symlinked file fail (`Refusing to write through symlink`) → edit `readlink -f` target, use a symlinked parent, or write through Bash.
