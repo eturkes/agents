@@ -88,6 +88,15 @@ check read   knob-shrinks   cat "$D/small"
 export CC_READ_MAX_BYTES=4096
 check native knob-restored  cat "$D/small"
 
+# --- snapshot path ----------------------------------------------------------
+# Agent shell = snapshot functions with both budgets unset ⇒ routing holds +
+# stderr stays clean.
+unset CC_READ_MAX_BYTES CC_READ_MAX_LINES
+check read   snapshot-routes  cat "$D/big"
+unset CC_READ_MAX_BYTES CC_READ_MAX_LINES
+noise=$(head -n 5 "$D/small" 2>&1 >/dev/null)
+[ -z "$noise" ]; tally snapshot-quiet $?
+
 # --- stdin + write forms emit nothing into context ⇒ always native ---------
 printf 'x\n' | cat > /dev/null; tally stdin-into-cat $?
 printf 'x\n' | head -n 1 > /dev/null; tally stdin-into-head $?

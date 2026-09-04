@@ -17,10 +17,9 @@
 # dump; route those through `command cat`.
 #
 # Letter-prefixed helpers survive snapshot capture. Wrappers fall back to native
-# commands when helper lookup misses.
-
-CC_READ_MAX_BYTES=${CC_READ_MAX_BYTES:-4096}
-CC_READ_MAX_LINES=${CC_READ_MAX_LINES:-100}
+# commands when helper lookup misses. Capture carries functions, aliases +
+# options alone ⇒ every budget defaults per call inside the guard, keeping the
+# captured function self-sufficient in the agent shell.
 
 # <n|c> <value> ⇒ 0 when the flag caps output inside budget.
 cc_read_bounded() {
@@ -38,6 +37,7 @@ cc_read_guard() {
   case "${CLAUDECODE:-}" in
     "") command "$_name" ${1+"$@"}; return ;;
   esac
+  : "${CC_READ_MAX_BYTES:=4096}" "${CC_READ_MAX_LINES:=100}"
 
   local _a _want="" _files="" _capped="" _bytes=0 _size
   for _a in ${1+"$@"}; do
