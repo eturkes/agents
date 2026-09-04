@@ -94,6 +94,34 @@ check dot-path      './pytest'                               './pytest -q'
 check subshell      '(cd x && make)'                         SAME
 check subshell-run  '(cd x && make all)'                     '(cd x && make -s all)'
 
+# --- pipe-source cat → leading redirect -----------------------------------
+check cat-pipe       'cat f | grep x'                        '< f grep x'
+check cat-pipe-tight 'cat f|wc -l'                           '< f wc -l'
+check cat-pipe-chain 'cat /etc/hosts | grep x | head -3'     '< /etc/hosts grep x | head -3'
+check cat-after-semi 'ls; cat f | wc -l'                     'ls; < f wc -l'
+check cat-after-and  'a && cat f | wc -l'                    'a && < f wc -l'
+check cat-after-or   'a || cat f | wc -l'                    'a || < f wc -l'
+check cat-then-rule  'cat f | pytest'                        '< f pytest -q'
+# Verbosity holds flag injection alone ⇒ the redirect still lands.
+check cat-verbose    'cat f | pytest -v'                     '< f pytest -v'
+
+# --- pipe rewrite stand-downs ---------------------------------------------
+# Extra operands concatenate + flags annotate ⇒ no single-source equivalent.
+check cat-two-files  'cat a b | wc -l'                       SAME
+check cat-flagged    'cat -A f | grep x'                     SAME
+check cat-quoted     'cat "my file" | wc -l'                 SAME
+# Mid-pipeline `cat f` discards stdin ⇒ the redirect would change semantics.
+check cat-mid-pipe   'ls | cat f | wc -l'                    SAME
+# Leading redirection is a simple-command form; `bash -n` rejects the rest.
+check cat-keyword    'cat f | while read l; do echo x; done'  SAME
+check cat-subshell   'cat f | (read a; echo b)'              SAME
+check cat-stdin      'echo hi | cat'                         SAME
+check cat-bare       'cat | wc -l'                           SAME
+check cat-no-pipe    'cat f'                                 SAME
+check cat-sudo       'sudo cat f | wc -l'                    SAME
+check cat-prefixed   'bcat f | wc -l'                        SAME
+check cat-in-string  'echo "cat f | grep x"'                 SAME
+
 # --- interactions ---------------------------------------------------------
 check chained       'pytest && cargo test'                   'pytest -q && cargo test -q'
 check piped         'pytest tests/ | head -5'                'pytest -q tests/ | head -5'

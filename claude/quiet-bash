@@ -1,14 +1,16 @@
 #!/bin/sh
-# PreToolUse(Bash): inject progress-only quiet flags into selected runners.
-# Green-run output shrinks; diagnostics + runner rc stay intact. Global
-# CLAUDE.md `Reading` owns judgment cases beyond this table.
+# PreToolUse(Bash): inject progress-only quiet flags into selected runners, and
+# turn pipe-source `cat` into a leading redirect. Green-run output shrinks;
+# diagnostics + runner rc stay intact. Global CLAUDE.md `Reading` owns judgment
+# cases beyond this table.
 #
 # Invariants:
-# - Flags-only rewrites preserve runner rc + full failure diagnostics.
+# - Rewrites preserve runner rc + full failure diagnostics.
 # - `updatedInput` replaces `tool_input` ⇒ merge original fields (`description`,
 #   `timeout`, `run_in_background`).
 # - Return only `updatedInput` ⇒ session permission path + deny rules remain active.
-# - Explicit verbosity or heredoc ⇒ unchanged input; heredoc body = opaque data.
+# - Heredoc ⇒ unchanged input; heredoc body = opaque data. Explicit verbosity
+#   holds flag injection alone, leaving the pipe rewrite in force.
 # - Membership = suppress progress while preserving results, warnings + failures.
 # Exclusions: `just -q` suppresses recipe output; `moon test -q` drops totals;
 # `git diff|log|show -q` changes semantics; npm/pnpm silent modes can hide failed-
@@ -20,9 +22,27 @@ cmd=$(printf '%s' "$IN" | jq -r '.tool_input.command // empty' 2>/dev/null)
 [ -n "$cmd" ] || { printf '{}\n'; exit 0; }
 
 case $cmd in *'<<'*) printf '{}\n'; exit 0 ;; esac
-printf '%s' "$cmd" | grep -Eq '(^|[[:space:]])--?(v|vv|vvv|verbose|debug)([[:space:]]|$)' && { printf '{}\n'; exit 0; }
 
 orig=$cmd
+
+emit() {
+  [ "$cmd" = "$orig" ] && { printf '{}\n'; exit 0; }
+  printf '%s' "$IN" | jq -c --arg c "$cmd" \
+    '{hookSpecificOutput:{hookEventName:"PreToolUse",updatedInput:(.tool_input + {command:$c})}}'
+  exit 0
+}
+
+# Pipe-source `cat` hands a whole file to a consumer that already bounds output;
+# `< f consumer` keeps that bound and keeps read-guard's operand budget out of a
+# pipeline it cannot measure. One unflagged operand alone: further operands
+# concatenate + flags annotate. Leading redirection is a simple-command form, so
+# `bash -n` discards keyword consumers (`| while`) + every other bad splice.
+piped=$(printf '%s' "$cmd" | sed -E 's@(^|[;&(]|&&|\|\|)([[:space:]]*)cat[[:space:]]+([^-[:space:]|;&<>()][^[:space:]|;&<>()]*)[[:space:]]*\|[[:space:]]*([[:alnum:]_./])@\1\2< \3 \4@g')
+if [ "$piped" != "$cmd" ] && bash -n -c "$piped" 2>/dev/null; then cmd=$piped; fi
+
+# Hand-written verbosity holds flag injection; the pipe rewrite already stands.
+printf '%s' "$cmd" | grep -Eq '(^|[[:space:]])--?(v|vv|vvv|verbose|debug)([[:space:]]|$)' && emit
+
 Q='(^|[[:space:]])--?q(uiet)?([[:space:]]|$)'
 W='(^|[^-=[:alnum:]_])'
 
@@ -59,6 +79,4 @@ rule "$Q" 's@'"$W"'(git[[:space:]]+(clone|fetch|pull|push|checkout|submodule))([
 rule '(^|[[:space:]])-[[:alnum:]]*s|--silent' 's@'"$W"'(curl)([[:space:]]|$)@\1\2 -sS\3@g'
 rule "$Q"'|(^|[[:space:]])-nv([[:space:]]|$)|--no-verbose' 's@'"$W"'(wget)([[:space:]]|$)@\1\2 -nv\3@g'
 
-[ "$cmd" = "$orig" ] && { printf '{}\n'; exit 0; }
-printf '%s' "$IN" | jq -c --arg c "$cmd" \
-  '{hookSpecificOutput:{hookEventName:"PreToolUse",updatedInput:(.tool_input + {command:$c})}}'
+emit

@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Regression gate for sibling `read-guard.sh` shell-fn shadows.
+# Source the guard against fixtures → assert routing of each invocation form.
+# Usage: ./read-guard.test [path-to-guard]
+# Case = <native|read> <label> <command + args>; `read` = routed to the Read tool.
+set -u
+GUARD="${1:-$(dirname "$(readlink -f "$0")")/read-guard.sh}"
+pass=0; fail=0
+
+D=$(mktemp -d) || exit 1
+trap 'rm -rf "$D"' EXIT
+printf '%*s' 9000 '' | tr ' ' x > "$D/big"      # over budget
+printf '%*s' 200 '' | tr ' ' y > "$D/small"     # under budget
+mkdir "$D/adir"
+
+# Fixtures are built before the shadows exist; every later native call needs
+# `command` so the guard under test never intercepts the harness itself.
+export CLAUDECODE=1
+# shellcheck source=./read-guard.sh disable=SC1091
+. "$GUARD"
+
+check() {
+  local want=$1 label=$2; shift 2
+  local err rc got
+  err=$("$@" 2>&1 >/dev/null); rc=$?
+  got="native"
+  [[ $rc -ne 0 && $err == *"with the Read tool"* ]] && got="read"
+  if [[ $got == "$want" ]]; then
+    pass=$((pass+1))
+  else
+    fail=$((fail+1))
+    printf 'FAIL %s\n  ran: %s\n  got: %s (rc=%s)\n  want:%s\n' "$label" "$*" "$got" "$rc" "$want"
+  fi
+}
+
+tally() {
+  if [[ $2 -eq 0 ]]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL %s\n' "$1"; fi
+}
+
+# Assert a plain command succeeds; keeps `$?` off a `[[ ]]` condition.
+want_ok() {
+  local label=$1; shift
+  "$@" > /dev/null 2>&1
+  tally "$label" $?
+}
+
+# --- explicit caps run native ---------------------------------------------
+check native head-n-space   head -n 5 "$D/big"
+check native head-n-tight   head -n5 "$D/big"
+check native head-n-old     head -20 "$D/big"
+check native head-n-long    head --lines=5 "$D/big"
+check native head-c         head -c 100 "$D/big"
+check native tail-n-old     tail -3 "$D/big"
+check native tail-n-long    tail --lines=5 "$D/big"
+
+# --- caps above budget route to Read --------------------------------------
+check read   head-n-huge    head -n 5000 "$D/big"
+check read   head-c-huge    head -c 99999 "$D/big"
+
+# --- operand size decides when no cap is given ----------------------------
+check native head-small     head "$D/small"
+check native cat-small      cat "$D/small"
+check native cat-two-small  cat "$D/small" "$D/small"
+check read   head-big       head "$D/big"
+check read   tail-big       tail "$D/big"
+check read   cat-big        cat "$D/big"
+check read   cat-sum-over   cat "$D/small" "$D/big"
+
+# --- cat flags annotate a whole dump ⇒ size still decides -----------------
+check native cat-A-small    cat -A "$D/small"
+check native cat-n-small    cat -n "$D/small"
+check native cat-vET-small  cat -vET "$D/small"
+check read   cat-A-big      cat -A "$D/big"
+
+# --- unmeasurable + blocking forms route to Read --------------------------
+check read   cat-dir        cat "$D/adir"
+check read   tail-follow-f  tail -f "$D/small"
+check read   tail-follow-F  tail -F "$D/small"
+check read   tail-follow-lg tail --follow "$D/small"
+
+# --- absent operand leaves the native error path ---------------------------
+check native cat-missing    cat "$D/nope"
+
+# --- budget knob ------------------------------------------------------------
+# The guard reads the budget per call ⇒ a later assignment retunes it in place.
+export CC_READ_MAX_BYTES=50
+check read   knob-shrinks   cat "$D/small"
+export CC_READ_MAX_BYTES=4096
+check native knob-restored  cat "$D/small"
+
+# --- stdin + write forms emit nothing into context ⇒ always native ---------
+printf 'x\n' | cat > /dev/null; tally stdin-into-cat $?
+printf 'x\n' | head -n 1 > /dev/null; tally stdin-into-head $?
+printf 'x\n' | tail -n 1 > /dev/null; tally stdin-into-tail $?
+printf 'body\n' | cat > "$D/w1"; tally cat-redirect-write $?
+cat > "$D/w2" <<'XEOF'
+heredoc body
+XEOF
+tally cat-heredoc-write $?
+want_ok redirect-write-landed test -s "$D/w1"
+want_ok heredoc-write-landed test -s "$D/w2"
+
+# --- escape hatches ---------------------------------------------------------
+( unset CLAUDECODE; cat "$D/big" ) > /dev/null 2>&1; tally human-shell-native $?
+command cat "$D/big" > /dev/null 2>&1; tally command-prefix-bypass $?
+
+# --- bounded reads return real bytes ----------------------------------------
+want_ok head-c-returns-bytes test "$(head -c 10 "$D/small" | command wc -c)" -eq 10
+want_ok cat-returns-bytes test "$(cat "$D/small" | command wc -c)" -eq 200
+
+printf '\npass=%d fail=%d\n' "$pass" "$fail"
+[[ $fail -eq 0 ]]
