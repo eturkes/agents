@@ -3,7 +3,8 @@
 # Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
 # Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens;
 # transcript fallback uses the same sum.
-# Gauge token colors: green >=120K; yellow >=180K; red >=220K.
+# Gauge denominator = raw model window (JSON context_window_size): MAIN's window
+# is collapse-managed, and a teammate's 967K compaction trigger = 97% of it.
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u ⇒ manual.
@@ -18,15 +19,10 @@ else
   f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name "$CLAUDE_CODE_SESSION_ID.jsonl" -print -quit 2>/dev/null)
   [ -n "$f" ] || f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d ' ' -f 2- | head -1)
   u=$(jq -n "last(inputs|select($api)|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty" "$f" 2>/dev/null)
-  w=273000
+  w=1000000
   c=0
 fi
-[ "$w" -gt 0 ] 2>/dev/null || w=273000
-# Gauge denominator = auto-compaction turn limit. Effective budget =
-# min(JSON raw window, env ACW) - 33K; 273K ACW ⇒ 240K.
-acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
-[ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
-w=$((w - 33000))
+[ "$w" -gt 0 ] 2>/dev/null || w=1000000
 now=$(date +%s)  # one clock read, reused for reset-delta + cache warmth
 # Rate-limit suffix: rate_limits present ⇒ segments; manual/pre-first response ⇒ gauge only.
 # seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA] ⇒ "LABEL N%EXTRA MM/DD HH:MM".
@@ -98,5 +94,5 @@ function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);re
               return sprintf("%dK",int(n/1000+0.5)) }
 BEGIN{ if(u==""){ print "? ?/" h(w) r; exit }
        p=int(u*100/w+0.5); s=p "% " h(u) "/" h(w)
-       if(c&&u>=220000) s="\033[31m" s "\033[0m"; else if(c&&u>=180000) s="\033[33m" s "\033[0m"; else if(c&&u>=120000) s="\033[32m" s "\033[0m"
+       if(c&&p>=92) s="\033[31m" s "\033[0m"; else if(c&&p>=75) s="\033[33m" s "\033[0m"; else if(c&&p>=50) s="\033[32m" s "\033[0m"
        print s r }'
