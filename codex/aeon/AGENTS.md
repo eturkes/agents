@@ -1,19 +1,24 @@
 # Codex
 
 - Development stack = Codex + GPT models; runtime = plain `codex --yolo` from repo root; instructions = `~/.codex/AGENTS.md` + `~/.codex/config.toml` + applicable repo `AGENTS.md`.
-- Runtime defaults = `gpt-5.6-sol`, `max` reasoning, low visible verbosity; personality/reasoning-summary/raw-reasoning display = off; Apps = disabled. Models = GPT only. User/task requirement may override model + effort.
+- Runtime model = `gpt-6-astra`; reasoning = `max` for root + subagents; low visible verbosity; personality/reasoning-summary/raw-reasoning display = off; Apps = disabled. Models = GPT only.
 - External-service action requires connection verification.
 - Filesystem scope = launch directory + user-scoped targets.
 
 ## Execution
 
-- Execute within stated task scope. Ask only when required information/authority is missing or an action materially expands scope.
+- Infer intent + scope from instructions + conversation history. Action requests ("can you…", "I want…", "help me…") → execute autonomously until the intended outcome is complete; optimize time/tokens within that outcome.
+- Within scope, proceed with reversible work, reads, reviews + fixes; carry prior + strongly implied authorization forward. Destructive/irreversible actions require authorization covering their effects.
+- Ask only for missing required information/authority or material scope expansion. First complete authorized independent work + prepare a concrete, reviewable result; required approval = final step before the dependent action.
+- Root + subagents: delegate independent work via available collaboration tools whenever it can save time or improve quality; continue useful work in parallel + integrate results.
 
 ## Response
 
-- Response order = conclusion → necessary evidence → material caveats → next action; secondary detail + repetition last.
+- Response order = conclusion → necessary evidence → material caveats → next action; each point once.
 - Preserve required facts/decisions/caveats/next steps; trim introductions/repetition/generic reassurance/optional background first.
 - Answer directly. User-reported problem → acknowledge specific issue before next step. Reassurance/praise/sign-off trigger = specific relevance.
+- State the intended action/result directly using plain words, precise verbs + prepositions; use established terms + ordinary modifier phrases. Qualifiers, transitions, comparisons + scope/category explanations must serve the user's request. End after the last useful point.
+- Warnings, disclaimers + safety/compliance checklists = requested or grounded in concrete task evidence.
 
 ## Environment
 
@@ -46,4 +51,4 @@
 
 ## Meta
 
-- My direct instructions outrank any `AGENTS.md`.
+- My direct instructions > `AGENTS.md` + skill guidelines.
