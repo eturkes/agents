@@ -13,7 +13,7 @@ Claude Code uses `Stop` for main turns and `SubagentStop` for subagents. Therefo
 | `gmail-oauth-setup` | `~/.claude/gmail-oauth-setup` | 755 |
 | `msmtprc` | `~/.msmtprc` | 600 |
 
-Install the relay with `sudo pacman -S msmtp`. The hook registration is in `../settings.json` under `hooks.Stop`. After you change hook definitions, restart Claude Code.
+Install the relay with `sudo pacman -S msmtp`. The hook registration is in `../settings.opus.json` and `../settings.fable.json` under `hooks.Stop`. After you change hook definitions, restart Claude Code.
 
 ## Gmail relay
 
@@ -59,7 +59,7 @@ Environment overrides:
 ## Disable or remove
 
 1. To pause mail while retaining the hook, move `~/.msmtprc` aside.
-2. To unregister the hook, remove `hooks.Stop` from `~/.claude/settings.json` and `../settings.json`.
+2. To unregister the hook, remove `hooks.Stop` from `~/.claude/settings.json`, `../settings.opus.json` and `../settings.fable.json`.
 3. For full removal, unregister the hook first.
 4. Run `rm -rf ~/.config/claude-mail ~/.claude/{turn-email,gmail-oauth-token,gmail-oauth-setup} ~/.msmtprc`.
 5. Revoke the grant at <https://myaccount.google.com/permissions>.

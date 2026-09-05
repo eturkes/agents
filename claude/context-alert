@@ -1,9 +1,10 @@
 #!/bin/sh
 # PostToolUse: emit one closure notice per tier/session. Usage sum = gauges.
-# Tiers: 900K notice → 950K final warning, inside the 1M window. Each notice
+# Tiers keep their distance from the compaction trigger at any window size:
+# notice = window - 100K, final = window - 50K (1M ⇒ 900K/950K). Each notice
 # computes live remainder; threshold jumps emit the highest crossed tier.
 # Applicable standing instructions authorize limit-spanning work and override notice.
-# Teammate compaction = 967K (window - 33K); MAIN's = collapse-managed.
+# Teammate compaction = window - 33K; MAIN's = collapse-managed.
 IN=""
 [ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 { read -r tp; read -r at; read -r sid; } <<EOF
@@ -19,27 +20,32 @@ find "$state_dir" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null
 u=$(jq -n 'last(inputs|select(.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object")|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty' "$tp" 2>/dev/null)
 [ -n "$u" ] || exit 0
 
-final=950000
+# Window: MAIN = first-party 1M; teammate runs the model CC reads as unknown, so
+# its window is declared (200K when unset).
+w=1000000
+[ "$at" = main ] || [ -z "$at" ] || w=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-200000}
+final=$((w - 50000))
 # Ascending tiers; emit highest newly crossed tier after a jump.
-if   [ "$u" -ge "$final" ]; then tier=final
-elif [ "$u" -ge 900000 ];   then tier=900
+if   [ "$u" -ge "$final" ];        then tier=final
+elif [ "$u" -ge $((w - 100000)) ]; then tier=notice
 else exit 0; fi
 marker=$state_dir/${sid:-unknown}.$tier
 [ -e "$marker" ] && exit 0
 : > "$marker"
 
-k=$((u / 1000)); left=$(( (1000000 - u) / 1000 )); [ "$left" -lt 0 ] && left=0
+k=$((u / 1000)); left=$(( (w - u) / 1000 )); [ "$left" -lt 0 ] && left=0
+wl=$((w / 1000))K; [ $((w % 1000000)) -eq 0 ] && wl=$((w / 1000000))M
 if [ "$at" = "main" ] || [ -z "$at" ]; then
   case $tier in
-    900)   msg="Hold scope fixed and steer toward closure: finish the current unit and verify it." ;;
-    final) msg="Close now: persist finished work and leave open threads where the next session picks them up." ;;
+    notice) msg="Hold scope fixed and steer toward closure: finish the current unit and verify it." ;;
+    final)  msg="Close now: persist finished work and leave open threads where the next session picks them up." ;;
   esac
 else
   case $tier in
-    900)   msg="Hold scope fixed, finish and verify the current unit, then return your result." ;;
-    final) msg="Return your result now: compacting costs a turn and drops detail." ;;
+    notice) msg="Hold scope fixed, finish and verify the current unit, then return your result." ;;
+    final)  msg="Return your result now: compacting costs a turn and drops detail." ;;
   esac
 fi
 
-msg="Context ${k}K/1M — ${left}K left. ${msg} Standing instructions to work past the context limit override this notice."
+msg="Context ${k}K/${wl} — ${left}K left. ${msg} Standing instructions to work past the context limit override this notice."
 jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'

@@ -3,8 +3,9 @@
 # Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
 # Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens;
 # transcript fallback uses the same sum.
-# Gauge denominator = raw model window (JSON context_window_size): MAIN's window
-# is collapse-managed, and a teammate's 967K compaction trigger = 97% of it.
+# Gauge denominator = MAIN's raw model window (JSON context_window_size), which
+# is collapse-managed. Teammates declare their own window ⇒ read them with
+# context-gauge, which resolves it per target.
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u ⇒ manual.
@@ -19,7 +20,7 @@ else
   f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name "$CLAUDE_CODE_SESSION_ID.jsonl" -print -quit 2>/dev/null)
   [ -n "$f" ] || f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d ' ' -f 2- | head -1)
   u=$(jq -n "last(inputs|select($api)|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty" "$f" 2>/dev/null)
-  w=1000000
+  w=1000000  # MAIN's first-party window
   c=0
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=1000000
