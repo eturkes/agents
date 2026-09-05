@@ -4,7 +4,7 @@
 # notice = window - 100K, final = window - 50K (1M ⇒ 900K/950K). Each notice
 # computes live remainder; threshold jumps emit the highest crossed tier.
 # Applicable standing instructions authorize limit-spanning work and override notice.
-# Teammate compaction = window - 33K; MAIN's = collapse-managed.
+# Compaction = window - 33K; a 1M first-party MAIN is collapse-managed.
 IN=""
 [ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 { read -r tp; read -r at; read -r sid; } <<EOF
@@ -20,10 +20,12 @@ find "$state_dir" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null
 u=$(jq -n 'last(inputs|select(.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object")|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty' "$tp" 2>/dev/null)
 [ -n "$u" ] || exit 0
 
-# Window: MAIN = first-party 1M; teammate runs the model CC reads as unknown, so
-# its window is declared (200K when unset).
+# Raw window: MAIN = first-party 1M; a teammate's unknown model declares its own
+# (200K when unset). ACW then clamps every model.
 w=1000000
 [ "$at" = main ] || [ -z "$at" ] || w=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-200000}
+acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
+[ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
 final=$((w - 50000))
 # Ascending tiers; emit highest newly crossed tier after a jump.
 if   [ "$u" -ge "$final" ];        then tier=final

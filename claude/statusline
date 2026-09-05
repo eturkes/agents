@@ -3,9 +3,9 @@
 # Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
 # Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens;
 # transcript fallback uses the same sum.
-# Gauge denominator = MAIN's raw model window (JSON context_window_size), which
-# is collapse-managed. Teammates declare their own window ⇒ read them with
-# context-gauge, which resolves it per target.
+# Gauge denominator = min(JSON context_window_size, CLAUDE_CODE_AUTO_COMPACT_WINDOW):
+# context_window_size carries the raw model window, ACW clamps every model.
+# Teammates → context-gauge, resolving the same way per target.
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u ⇒ manual.
@@ -24,6 +24,8 @@ else
   c=0
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=1000000
+acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
+[ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
 now=$(date +%s)  # one clock read, reused for reset-delta + cache warmth
 # Rate-limit suffix: rate_limits present ⇒ segments; manual/pre-first response ⇒ gauge only.
 # seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA] ⇒ "LABEL N%EXTRA MM/DD HH:MM".
