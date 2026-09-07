@@ -40,7 +40,6 @@
 - `bgcmd` (`~/.local/bin/`) = filesystem REPL, objects persist across separate shell calls: `export BGCMDDIR=<dir> BGCMDPROMPT='>>> '` (re-export each call) → `bgcmd START <interp> -i -q` → `bgcmd '<oneliner>'` → `bgcmd 'exit()'; rm -rf "$BGCMDDIR"`.
 - Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index`.
 - Shell rc: capture + label immediately (`cmd; rc=$?`) before `printf`, substitution, or another command; every command overwrites `$?`. EMPTY-output findings (zero matches/processes/modifications) → report rc + run a positive control. Missing command (127), mistyped path + unmatched glob emit the same bytes as a true negative.
-- Docs mirror `~/agents/docs/<site>/llms.txt` (scopedcommits.com, agentlanguages.dev) > web fetch.
 
 ## Reading
 

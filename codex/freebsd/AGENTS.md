@@ -34,7 +34,6 @@
 - `pgrep -f`/`pkill -f` can self-match Codex `bash -c` wrapper → one bracketed pattern (`index[.]js`) + `|| echo none`; kill/relaunch calls separate.
 - Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index`.
 - Shell rc: capture + label immediately (`cmd; rc=$?`) before `printf`, substitution, or another command; every command overwrites `$?`. EMPTY-output findings (zero matches/processes/modifications) → report rc + run a positive control. Missing command (127), mistyped path + unmatched glob emit the same bytes as a true negative.
-- scopedcommits.com docs: `~/pro/agents/docs/scopedcommits.com/llms.txt` > web fetch.
 
 ## Reading
 

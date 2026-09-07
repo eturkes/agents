@@ -1,2 +1,0 @@
-  "skillListingMaxDescChars": 1500,
-  "skillListingBudgetFraction": 0.15,

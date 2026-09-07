@@ -106,24 +106,6 @@ else
 fi
 
 echo
-echo "=== Docs mirror ==="
-# Refresh gitignored llms.txt mirror via temp + atomic move. Fetch failure warns,
-# retains current copy + keeps upgrade running.
-agentlang_doc="$repo_root/docs/agentlanguages.dev/llms.txt"
-agentlang_tmp="$(mktemp)"
-mkdir -p "$(dirname "$agentlang_doc")"
-if curl -fsSL -o "$agentlang_tmp" https://agentlanguages.dev/llms.txt; then
-  mv "$agentlang_tmp" "$agentlang_doc"
-  echo "agentlanguages.dev/llms.txt updated"
-else
-  rm -f "$agentlang_tmp"
-  echo "agentlanguages.dev/llms.txt fetch failed; keeping existing copy" >&2
-fi
-
-# docs/scopedcommits.com/llms.txt = manually maintained tracked document;
-# automated mirror applies only to agentlanguages.dev.
-
-echo
 echo "=== Marketplace LSP servers ==="
 # Marketplace servers = user-managed. Shared updater resolves candidates,
 # requires real LSP handshake + restores prior server on failure. Caller absorbs

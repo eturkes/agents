@@ -1,0 +1,15 @@
+# Migrate
+
+One pass per project running the retired roadmap flow (`.claude/commands/session-*.md`, `.agent/roadmap.md`, `polish.md`, `memory.md`, `contracts/`, `review-*.md`). Copy `CLAUDE.project.md` over the repo's `CLAUDE.md` first; then, in a fresh session at the project root, paste everything below the rule as a plain prompt.
+
+---
+
+Move this repo to the phase flow (project `CLAUDE.md` `Session flow`). Global + project `CLAUDE.md` law applies as written.
+
+1. Attached: @.agent/roadmap.md @.agent/polish.md @.agent/memory.md @README.md — a file past the attachment size arrives empty → read it. Read the rest of `.agent/`, `.claude/commands/`, `.claude/rules/`. Ask me in one `AskUserQuestion`: current phase (PROTOTYPE | ITERATE | IMPLEMENT | MAINTAIN), the inspectable artifact + approval of your `Intent` draft; ask again wherever the record is ambiguous.
+2. `.agent/spec.md` ≤ 8 KB: `Intent` from the initial prompt/README + the roadmap's scope source; `Artifacts` (path + run command each); `Decisions` = rulings from roadmap, contracts + reviews that still bind; `Deferred` = live `polish.md` rows + unfinished units, one line + acceptance check each; `Phase`.
+3. `.agent/memory.md` → `.claude/rules/`: project-wide law bare, area-bound law under `paths:` (quoted globs, repo-root-relative, narrowest file set); superseded or code-derivable content is dropped. One topic = one file, folded into the file that owns it; the bare tier stays small.
+4. `roadmap.md`, `polish.md`, `contracts/`, `review-*.md` → `.agent/archive/` as the historical record; delete `.claude/commands/`; rewrite every rule or doc naming a retired file — `rg -n 'session-(roadmap|prompt|polish)|polish\.md|memory\.md|roadmap\.md' --hidden` outside `.agent/archive/` returns nothing.
+5. `CLAUDE.md` = the refreshed template I copied in before this session, carrying the `@.agent/spec.md` import; `git diff HEAD -- CLAUDE.md` shows the repo-measured law it replaced → fold that law back into `.claude/rules/` (an `upstream-sync` rule names the invariants where the repo keeps one).
+6. Verify: a fresh `claude -p` answers a question only `spec.md` answers with zero tool calls; one `paths:` rule arrives on `Read` of a matching file.
+7. One scoped commit. Report: source per spec section, rules written, files archived, bytes retired vs added, both verifications.

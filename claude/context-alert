@@ -3,8 +3,8 @@
 # Tiers keep their distance from the compaction trigger at any window size:
 # notice = window - 100K, final = window - 50K (1M ⇒ 900K/950K). Each notice
 # computes live remainder; threshold jumps emit the highest crossed tier.
-# Applicable standing instructions authorize limit-spanning work and override notice.
-# Compaction = window - 33K; a 1M first-party MAIN is collapse-managed.
+# Compaction = window - 33K; a 1M first-party MAIN is collapse-managed. MAIN
+# notices ask for a checkpoint, never a stop: a /goal run continues past both.
 IN=""
 [ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 { read -r tp; read -r at; read -r sid; } <<EOF
@@ -39,8 +39,8 @@ k=$((u / 1000)); left=$(( (w - u) / 1000 )); [ "$left" -lt 0 ] && left=0
 wl=$((w / 1000))K; [ $((w % 1000000)) -eq 0 ] && wl=$((w / 1000000))M
 if [ "$at" = "main" ] || [ -z "$at" ]; then
   case $tier in
-    notice) msg="Hold scope fixed and steer toward closure: finish the current unit and verify it." ;;
-    final)  msg="Close now: persist finished work and leave open threads where the next session picks them up." ;;
+    notice) msg="Checkpoint ahead of compaction: land the current unit on a commit with .agent/spec.md current, then continue." ;;
+    final)  msg="Compaction is imminent: commit now with .agent/spec.md current; afterwards reorient from spec.md + git log and continue." ;;
   esac
 else
   case $tier in
@@ -49,5 +49,5 @@ else
   esac
 fi
 
-msg="Context ${k}K/${wl} — ${left}K left. ${msg} Standing instructions to work past the context limit override this notice."
+msg="Context ${k}K/${wl} — ${left}K left. ${msg}"
 jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'

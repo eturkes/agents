@@ -148,21 +148,3 @@ codexify doctor
 # --- CLIProxyAPI ---
 curl -fsSL https://raw.githubusercontent.com/router-for-me/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer | bash -s -- upgrade
 
-# --- Docs mirror: agentlanguages.dev/llms.txt ---
-# Refresh the local copy every run. It stays git-ignored (see .gitignore) since
-# this fetch can always re-create it. Download to a temp file, then move it into
-# place → an interrupted fetch leaves the existing copy intact. A fetch failure
-# warns + keeps the current copy.
-agentlang_doc="$HOME/agents/docs/agentlanguages.dev/llms.txt"
-agentlang_tmp="$(mktemp)"
-mkdir -p "$(dirname "$agentlang_doc")"
-if curl -fsSL -o "$agentlang_tmp" https://agentlanguages.dev/llms.txt; then
-  mv "$agentlang_tmp" "$agentlang_doc"
-  echo "agentlanguages.dev/llms.txt updated"
-else
-  rm -f "$agentlang_tmp"
-  echo "agentlanguages.dev/llms.txt fetch failed; keeping existing copy" >&2
-fi
-# docs/scopedcommits.com/llms.txt stays hand-maintained: the live site publishes
-# no llms.txt, so the repo's tracked copy is the original rather than a mirror.
-# A fetch here would overwrite it with a 404.

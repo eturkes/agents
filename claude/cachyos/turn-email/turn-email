@@ -1,5 +1,7 @@
 #!/bin/sh
-# Stop hook: one email per completed MAIN turn. Stop/SubagentStop event split =
+# Stop + Notification hook: one email per completed MAIN turn (Stop) and one per
+# pending user dialog (Notification, permission_prompt|elicitation_dialog =
+# AskUserQuestion + permission prompts). Stop/SubagentStop event split =
 # structural scope. Detached SMTP + unconditional exit 0 isolate turn outcome.
 # Missing client/config ⇒ silent no-op. Credentials = ~/.msmtprc (0600).
 # Body = base64 text/plain for SMTP line limit + Unicode; subject = RFC 2047.
@@ -15,6 +17,7 @@ command -v msmtp >/dev/null 2>&1 || exit 0
 sid=$(printf '%s' "$IN" | jq -r '.session_id // "unknown"' 2>/dev/null)
 cwd=$(printf '%s' "$IN" | jq -r '.cwd // ""' 2>/dev/null)
 tp=$(printf '%s' "$IN" | jq -r '.transcript_path // ""' 2>/dev/null)
+event=$(printf '%s' "$IN" | jq -r '.hook_event_name // "Stop"' 2>/dev/null)
 mode=$(printf '%s' "$IN" | jq -r '.permission_mode // "?"' 2>/dev/null)
 effort=$(printf '%s' "$IN" | jq -r '.effort.level // "?"' 2>/dev/null)
 # Response cap keeps mail notification-sized; transcript remains archive.
@@ -43,17 +46,39 @@ meta=$(jq -cn '
 prompt=$(printf '%s' "$meta" | jq -r '.prompt // ""' 2>/dev/null)
 model=$(printf '%s' "$meta" | jq -r '.model // "?"' 2>/dev/null)
 ctx=$(printf '%s' "$meta" | jq -r 'if .ctx then "\(.ctx / 1000 | floor)K" else "?" end' 2>/dev/null)
-[ -n "$prompt$resp" ] || exit 0
 
-# Per-session turn counter; stale sessions reaped after 7d.
+# Per-session turn counter; stale sessions reaped after 7d. Stop advances it;
+# a Notification reads it, so the mail threads under the turn it interrupts.
 mkdir -p "$cache" 2>/dev/null || exit 0
 find "$cache" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null
 n=0; [ -f "$cache/$sid" ] && IFS= read -r n <"$cache/$sid" 2>/dev/null
-n=$((n + 1)); printf '%s' "$n" >"$cache/$sid" 2>/dev/null
 
 proj=$(basename "${cwd:-$HOME}")
-line1=$(printf '%s' "$prompt" | jq -Rrs 'split("\n")[0] | .[0:72]' 2>/dev/null)
-subj="[cc] $proj #$n — ${line1:-(no prompt)}"
+if [ "$event" = Notification ]; then
+  # Payload carries no assistant text: the pending question = the transcript's
+  # last AskUserQuestion input; a bare permission prompt reports its message.
+  ntype=$(printf '%s' "$IN" | jq -r '.notification_type // "?"' 2>/dev/null)
+  nmsg=$(printf '%s' "$IN" | jq -r '.message // ""' 2>/dev/null)
+  q=$(jq -rn '[inputs | select(.type == "assistant" and (.isSidechain // false | not))
+                | .message.content[]? | select(.type == "tool_use" and .name == "AskUserQuestion")
+                | .input] | last // empty
+              | .questions[] | "[\(.header)] \(.question)\n"
+                + ([.options[] | "  - \(.label): \(.description)"] | join("\n"))' "$tp" 2>/dev/null)
+  resp="pending: $ntype — $nmsg
+${q:+
+$q}"
+  line1=$(printf '%s' "${q:-$nmsg}" | jq -Rrs 'split("\n")[0] | .[0:72]' 2>/dev/null)
+  subj="[cc] $proj #$n needs input — ${line1:-(dialog)}"
+  mid="cc.$sid.$n.ask.$(date +%s)"
+  label=input
+else
+  [ -n "$prompt$resp" ] || exit 0
+  n=$((n + 1)); printf '%s' "$n" >"$cache/$sid" 2>/dev/null
+  line1=$(printf '%s' "$prompt" | jq -Rrs 'split("\n")[0] | .[0:72]' 2>/dev/null)
+  subj="[cc] $proj #$n — ${line1:-(no prompt)}"
+  mid="cc.$sid.$n"
+  label=response
+fi
 
 hdr=$(mktemp "${TMPDIR:-/tmp}/cc-mail.XXXXXX") || exit 0
 body=$(mktemp "${TMPDIR:-/tmp}/cc-body.XXXXXX") || { rm -f "$hdr"; exit 0; }
@@ -67,7 +92,7 @@ body=$(mktemp "${TMPDIR:-/tmp}/cc-body.XXXXXX") || { rm -f "$hdr"; exit 0; }
   printf 'Transcript: %s\n' "${tp:-?}"
   printf '\n───────────────────────────── prompt ─────────────────────────────\n\n'
   printf '%s\n' "${prompt:-(none)}"
-  printf '\n──────────────────────────── response ────────────────────────────\n\n'
+  printf '\n──────────────────────────── %s ────────────────────────────\n\n' "$label"
   printf '%s\n' "${resp:-(none)}"
 } >"$body"
 
@@ -77,7 +102,7 @@ body=$(mktemp "${TMPDIR:-/tmp}/cc-body.XXXXXX") || { rm -f "$hdr"; exit 0; }
   printf 'To: %s\n' "$TO"
   printf 'Subject: =?UTF-8?B?%s?=\n' "$(printf '%s' "$subj" | base64 -w0)"
   printf 'Date: %s\n' "$(date -R)"
-  printf 'Message-ID: <cc.%s.%s@eturkes.com>\n' "$sid" "$n"
+  printf 'Message-ID: <%s@eturkes.com>\n' "$mid"
   printf 'References: <cc.%s@eturkes.com>\n' "$sid"
   printf 'In-Reply-To: <cc.%s@eturkes.com>\n' "$sid"
   printf 'Auto-Submitted: auto-generated\n'
