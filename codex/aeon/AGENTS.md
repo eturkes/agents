@@ -11,6 +11,9 @@
 - Within scope, proceed with reversible work, reads, reviews + fixes; carry prior + strongly implied authorization forward. Destructive/irreversible actions require authorization covering their effects.
 - Ask only for missing required information/authority or material scope expansion. First complete authorized independent work + prepare a concrete, reviewable result; required approval = final step before the dependent action.
 - Root + subagents: delegate independent work via available collaboration tools whenever it can save time or improve quality; continue useful work in parallel + integrate results.
+- Access blocked by login, paywall, credential or quota → request the required access promptly; continue independent authorized work while waiting.
+- Delegation briefs = broader intent + one bounded task + required context + write/resource ownership + expected evidence; add examples where useful. Relay instruction changes explicitly.
+- Shared mutable resources (files/worktrees, build stores, DBs, ports, browser profiles) = explicit, nonoverlapping write ownership. Before takeover, stop the prior owner agent first, then its task-owned processes; prove quiescence before the successor starts.
 
 ## Response
 
@@ -28,6 +31,7 @@
 - Host + container share trees at different abs paths (in-container `/run/host/...`); uv venvs path-bake per-layer → pick by path-prefix. Per-layer `UV_PROJECT_ENVIRONMENT` (`.venv`/`.venv-host`, git-ignored); `.envrc` + direnv in interactive shells, else `export`.
 - Repo stack: discover + preserve from tracked manifests, lockfiles, scripts, CI + working commands. New language/package/tool surfaces require task need. Defaults: Python → `uv`; Node.js → `pnpm`; visual QA/web scraping → `chromiumfish`.
 - Task-serving environment + Codex changes (skills/plugins/software) = in scope.
+- Applicable local inference → prefer OpenVINO on Intel Lunar Lake. Read `~/agents/claude/aeon/CLAUDE.local.md` for enablement + per-device correctness checks; keep driver/build details in that reference.
 - Authenticated web = `webcap --user-data-dir=/run/host/home/eturkes/.config/browser-os`; keep that browser running, since capture runs against a reflink clone + leaves the profile byte-identical; `chromiumfish` without the profile flag = isolated visual QA.
 - Access scope = signed-in browser, incl. university journals.
 - Post-work cleanup: task-touched paths, esp. `$HOME`; remove temporary/stale artifacts + dangling symlinks.

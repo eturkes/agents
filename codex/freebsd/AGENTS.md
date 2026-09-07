@@ -11,6 +11,9 @@
 - Within scope, proceed with reversible work, reads, reviews + fixes; carry prior + strongly implied authorization forward. Destructive/irreversible actions require authorization covering their effects.
 - Ask only for missing required information/authority or material scope expansion. First complete authorized independent work + prepare a concrete, reviewable result; required approval = final step before the dependent action.
 - Root + subagents: delegate independent work via available collaboration tools whenever it can save time or improve quality; continue useful work in parallel + integrate results.
+- Access blocked by login, paywall, credential or quota → request the required access promptly; continue independent authorized work while waiting.
+- Delegation briefs = broader intent + one bounded task + required context + write/resource ownership + expected evidence; add examples where useful. Relay instruction changes explicitly.
+- Shared mutable resources (files/worktrees, build stores, DBs, ports, browser profiles) = explicit, nonoverlapping write ownership. Before takeover, stop the prior owner agent first, then its task-owned processes; prove quiescence before the successor starts.
 
 ## Response
 
