@@ -1,17 +1,17 @@
 # Claude Code LSP marketplace
 
-This user-global marketplace provides LSP plugins for Claude Code. Enabled plugins in `~/.claude/settings.json` apply by file extension across projects. The marketplace uses a `directory` source. Install each server on `PATH` by following its README.
+This user-global marketplace provides LSP plugins for Claude Code. Enabled plugins in `~/.claude/settings.json` apply by file extension across projects. The marketplace uses a `directory` source. Install each server on `PATH` by following its README, then run `claude plugin install <name>@global --scope user`.
 
 ## Scope
 
-Serena is the primary user-scope LSP and supports about 70 languages through `solidlsp`. It installs servers at first use. This marketplace covers `solidlsp` gaps.
+Claude Code's built-in `LSP` tool and passive diagnostics drive every plugin here and in the official marketplace. This marketplace covers languages that the official marketplace omits.
 
-- Marketplace plugins: XML and Prolog.
-- Relevant Serena languages: HTML, JSON, Markdown, Python, YAML, TOML, and Lean 4.
+- Official plugins in use: `pyright-lsp`, `typescript-lsp`, `rust-analyzer-lsp`.
+- Marketplace plugins: Markdown (Marksman), R (`languageserver`), Bash (`bash-language-server`), XML (LemMinX), and Prolog (`lsp_server`).
 
 ## Add a plugin
 
-1. Confirm that `solidlsp` has a coverage gap.
+1. Confirm that the official marketplace has no plugin for the language.
 2. Install the server on `PATH`.
 3. Record the installation command in the plugin README.
 4. Add an `lspServers` entry to `.claude-plugin/marketplace.json`. Include the command and `extensionToLanguage` mapping.
@@ -28,7 +28,7 @@ The platform upgrade entry points call `upgrade-servers`:
 
 ## Upgrades
 
-`./upgrade-servers` resolves each current upstream version at run time. It installs the candidate and performs an LSP client handshake. A candidate becomes active after a successful response. If validation fails, the script restores the previous installation. State markers next to each server contain the installed versions.
+Package-managed servers (`marksman`, `bash-language-server`, `pyright`, `typescript-language-server`, R `languageserver`) upgrade with the system package manager. `./upgrade-servers` covers the hand-installed servers: it resolves each current upstream version at run time, installs the candidate, and performs an LSP client handshake. A candidate becomes active after a successful response. If validation fails, the script restores the previous installation. State markers next to each server contain the installed versions.
 
 - `prolog-lsp` tracks the default branch because the newest tag fails UTF-16 `initialize`. The UTF-16 initialization fix is on the default branch.
 - `xml-lsp` resolves the Eclipse Maven repository `<release>` value. GitHub releases lag this artifact.

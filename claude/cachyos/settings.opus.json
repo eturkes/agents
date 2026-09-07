@@ -67,18 +67,6 @@
     "pr": "off"
   },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/quiet-bash",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "*",
@@ -124,7 +112,13 @@
   },
   "enabledPlugins": {
     "xml-lsp@global": true,
-    "prolog-lsp@global": true
+    "prolog-lsp@global": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "markdown-lsp@global": true,
+    "r-lsp@global": true,
+    "bash-lsp@global": true
   },
   "extraKnownMarketplaces": {
     "global": {

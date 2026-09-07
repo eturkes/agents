@@ -31,17 +31,15 @@ cargo install-update -a
 uv self update
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 
-# A resident uvx tool (Serena MCP while a Claude session is open) holds the uv
-# cache lock → `uv cache prune` waits on it forever. Cap the wait + skip the
-# prune to keep the run moving.
+# A resident uvx tool holds the uv cache lock → `uv cache prune` waits on it
+# forever. Cap the wait + skip the prune to keep the run moving.
 timeout 30 uv cache prune || echo "uv cache in use (resident uvx tool); prune skipped"
 
 # --- Node: Corepack and pnpm globals ---
 # pnpm is Corepack-managed; stay on latest v10 while this container uses Node 20.
 corepack install -g pnpm@latest-10
 
-# npm is required by Serena's LSP installer, which shells out to `npm install`.
-# It lives as a pnpm global, so upgrade it explicitly.
+# npm lives as a pnpm global, so upgrade it explicitly.
 pnpm add -g npm@latest
 
 # --- ChromiumFish ---

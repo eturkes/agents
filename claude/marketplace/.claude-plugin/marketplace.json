@@ -5,7 +5,7 @@
     "email": "emir.turkes@eturkes.com"
   },
   "metadata": {
-    "description": "User-global LSP plugins available across all projects. Server binaries must be present on PATH; see plugin READMEs for install commands."
+    "description": "User-global LSP plugins available across all projects; Claude Code's built-in LSP tool + passive diagnostics drive them. Server binaries must be present on PATH; see plugin READMEs for install commands."
   },
   "plugins": [
     {
@@ -40,6 +40,68 @@
           "extensionToLanguage": {
             ".pl": "prolog",
             ".pro": "prolog"
+          }
+        }
+      }
+    },
+    {
+      "name": "markdown-lsp",
+      "description": "Markdown LSP via Marksman: link + reference diagnostics, heading symbols",
+      "version": "1.0.0",
+      "source": "./plugins/markdown-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "marksman": {
+          "command": "marksman",
+          "args": [
+            "server"
+          ],
+          "extensionToLanguage": {
+            ".md": "markdown",
+            ".qmd": "markdown",
+            ".Rmd": "markdown"
+          }
+        }
+      }
+    },
+    {
+      "name": "r-lsp",
+      "description": "R LSP via the languageserver package: diagnostics (lintr), definitions, hover",
+      "version": "1.0.0",
+      "source": "./plugins/r-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "r": {
+          "command": "Rscript",
+          "args": [
+            "-e",
+            "languageserver::run()"
+          ],
+          "extensionToLanguage": {
+            ".R": "r",
+            ".r": "r"
+          }
+        }
+      }
+    },
+    {
+      "name": "bash-lsp",
+      "description": "Bash LSP via bash-language-server; shellcheck diagnostics when shellcheck is on PATH",
+      "version": "1.0.0",
+      "source": "./plugins/bash-lsp",
+      "category": "development",
+      "strict": false,
+      "lspServers": {
+        "bash": {
+          "command": "bash-language-server",
+          "args": [
+            "start"
+          ],
+          "extensionToLanguage": {
+            ".sh": "shellscript",
+            ".bash": "shellscript"
           }
         }
       }
