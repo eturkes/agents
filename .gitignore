@@ -1,3 +1,6 @@
 # Machine-local Claude Code state: personal settings overlay + Headroom wrap runtime marker.
 /.claude/settings.local.json
 /.claude/.headroom_wrap_marker.json
+
+# Agent scratch: reports, evidence, transient artifacts.
+/.scratch/
