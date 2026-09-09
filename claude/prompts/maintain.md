@@ -18,7 +18,7 @@ Met when: the request is delivered end to end, the full gate command passes on a
 
 ---
 
-Security review of the implementation: threat surface from `.agent/spec.md` `Intent` + `Artifacts`; run the committed scanners, then a manual pass over remotely reachable code (input handling, auth, secrets, dependencies, supply chain) on a check set fixed before reading; each finding carries severity, `file:line`, and a red test or repro; every finding above informational is fixed, the rest → `Deferred` with an acceptance check. Gate green at every scoped commit. This body runs MAIN-side whole: security vocabulary kills a teammate's request (global `CLAUDE.md` `Subagents`).
+Security review of the implementation: threat surface from `.agent/spec.md` `Intent` + `Artifacts`; run the committed scanners, then a manual pass over remotely reachable code (input handling, auth, secrets, dependencies, supply chain) on a check set fixed before reading; each finding carries severity, `file:line`, and a red test or repro; every finding above informational is fixed, the rest → `.agent/deferred.md` with an acceptance check. Gate green at every scoped commit. This body runs MAIN-side whole: security vocabulary kills a teammate's request (global `CLAUDE.md` `Subagents`).
 
 Met when: the final message lists the check set with a verdict per row, every fix has a green acceptance check, the full gate command passes on a clean working tree, and the closing commit SHA is stated.
 
@@ -28,8 +28,8 @@ Met when: the final message lists the check set with a verdict per row, every fi
 
 ---
 
-Upgrade every dependency + toolchain pin to its latest release: dispatch `res` per major bump to return its changelog's breaking changes against our call sites, adapt code, refresh lockfiles, rerun the full gate with scanners; a dependency held back earns a `Deferred` row naming the blocker.
+Upgrade every dependency + toolchain pin to its latest release: dispatch `res` per major bump to return its changelog's breaking changes against our call sites, adapt code, refresh lockfiles, rerun the full gate with scanners; a dependency held back earns a `.agent/deferred.md` row naming the blocker.
 
-Met when: every dependency is at its latest release or holds a `Deferred` row, the full gate command passes on a clean working tree, and the final message lists bumped versions, held-back rows, the gate result, the dispatch line per unit, and the closing commit SHA.
+Met when: every dependency is at its latest release or holds a `.agent/deferred.md` row, the full gate command passes on a clean working tree, and the final message lists bumped versions, held-back rows, the gate result, the dispatch line per unit, and the closing commit SHA.
 
 ---

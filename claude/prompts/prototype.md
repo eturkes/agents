@@ -12,6 +12,6 @@ Stand this repo up and reach the prototype. `.agent/spec.md` `Intent`, already i
 4. Repo: `.gitignore` = stack caches, build output, local databases, `.scratch/`, `.claude/settings.local.json`, `CLAUDE.local.md`; `git init` where new.
 5. Build each artifact under `prototype/<name>/`: self-contained, own deps, one run command; shortcuts, fixtures, stubbed backends + hard-coded data welcome wherever they shorten the path to something I can see; tests, gates + hardening wait for IMPLEMENT.
 6. Run every artifact yourself; store proof I can inspect without running it under `prototype/<name>/proof/` — `webcap` screenshots for a UI, a transcript for a CLI, the figure files for figures.
-7. Off-path findings → `Deferred`, acceptance check each. Set `Phase: ITERATE`. One scoped commit per cohesive piece, its body carrying the piece's dispatch line; clean tree at close.
+7. Off-path findings → `.agent/deferred.md`, acceptance check each. Set `Phase: ITERATE`. One scoped commit per cohesive piece, its body carrying the piece's dispatch line; clean tree at close.
 
 Met when: every `Artifacts` entry runs by its recorded command with proof under `prototype/<name>/proof/`, `Phase: ITERATE` is committed on a clean working tree, and the final message lists each artifact with run command + proof path, the dispatch line per commit, the `git status` result, and the closing commit SHA.
