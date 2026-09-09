@@ -2,9 +2,11 @@
 # Context gauge = assistant usage sum: input + cache creation/read + output.
 # Output: "N% used/<window>". Cached system/tool/instruction + hidden-reasoning
 # input can exceed transcript-visible text; server tools can bill each internal
-# iteration. Window = min(raw, CLAUDE_CODE_AUTO_COMPACT_WINDOW); raw = 1M for
-# MAIN, unknown-model CLAUDE_CODE_MAX_CONTEXT_TOKENS for a teammate. Compaction
-# = window - 33K; a 1M first-party MAIN is collapse-managed.
+# iteration. Denominator = the auto-compaction trigger ⇒ 100% = compaction. Raw =
+# 1M for MAIN, CLAUDE_CODE_MAX_CONTEXT_TOKENS for a teammate's unknown model. ACW
+# set ⇒ window = min(raw, ACW), source "env"; unset ⇒ source "unknown-model" for a
+# teammate. Both enforce ⇒ trigger = window - 33K. Unpinned MAIN = collapse-managed
+# ⇒ raw window stands.
 # POSIX sh + utilities except jq. Globs pin transcript depth; `ls -t` ranks mtime.
 # Usage: context-gauge [-p] [<teammate>]
 #   (no arg)   → MAIN last turn: session id match, then newest project transcript
@@ -45,7 +47,12 @@ u=$(jq -n --argjson a "$agent" '[inputs|select(.type=="assistant" and ($a or .is
 w=1000000  # MAIN; a teammate runs the model CC reads as unknown, so its window is declared
 [ "$agent" = true ] && w=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-200000}
 acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
-[ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
+if [ "$acw" -gt 0 ] 2>/dev/null; then
+  [ "$acw" -lt "$w" ] && w=$acw
+  w=$((w - 33000))  # enforcement follows ACW being set, not the clamp firing
+elif [ "$agent" = true ]; then
+  w=$((w - 33000))  # an unknown model self-enforces; only MAIN's own window collapses
+fi
 awk -v u="$u" -v w="$w" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}
               return sprintf("%dK",int(n/1000+0.5)) }

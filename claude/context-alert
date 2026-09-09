@@ -1,10 +1,10 @@
 #!/bin/sh
 # PostToolUse: emit one closure notice per tier/session. Usage sum = gauges.
-# Tiers keep their distance from the compaction trigger at any window size:
-# notice = window - 100K, final = window - 50K (1M ⇒ 900K/950K). Each notice
-# computes live remainder; threshold jumps emit the highest crossed tier.
-# Compaction = window - 33K; a 1M first-party MAIN is collapse-managed. MAIN
-# notices ask for a checkpoint, never a stop: a /goal run continues past both.
+# Tiers hold a constant distance from the compaction trigger at any window size:
+# notice = window - 100K, final = window - 50K (1M ⇒ 900K/950K). Threshold jumps
+# emit the highest crossed tier. Trigger = window - 33K, and usage + remainder
+# report against it; an unpinned first-party MAIN is collapse-managed ⇒ the raw
+# window stands. MAIN notices ask for a checkpoint; a /goal run continues past both.
 IN=""
 [ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 { read -r tp; read -r at; read -r sid; } <<EOF
@@ -25,7 +25,14 @@ u=$(jq -n 'last(inputs|select(.type=="assistant" and .isSidechain!=true and .mes
 w=1000000
 [ "$at" = main ] || [ -z "$at" ] || w=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-200000}
 acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
-[ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
+if [ "$acw" -gt 0 ] 2>/dev/null; then
+  [ "$acw" -lt "$w" ] && w=$acw
+  t=$((w - 33000))  # enforcement follows ACW being set, not the clamp firing
+elif [ "$at" = main ] || [ -z "$at" ]; then
+  t=$w              # first-party MAIN, collapse-managed
+else
+  t=$((w - 33000))  # an unknown model self-enforces
+fi
 final=$((w - 50000))
 # Ascending tiers; emit highest newly crossed tier after a jump.
 if   [ "$u" -ge "$final" ];        then tier=final
@@ -35,8 +42,8 @@ marker=$state_dir/${sid:-unknown}.$tier
 [ -e "$marker" ] && exit 0
 : > "$marker"
 
-k=$((u / 1000)); left=$(( (w - u) / 1000 )); [ "$left" -lt 0 ] && left=0
-wl=$((w / 1000))K; [ $((w % 1000000)) -eq 0 ] && wl=$((w / 1000000))M
+k=$((u / 1000)); left=$(( (t - u) / 1000 )); [ "$left" -lt 0 ] && left=0
+tl=$((t / 1000))K; [ $((t % 1000000)) -eq 0 ] && tl=$((t / 1000000))M
 if [ "$at" = "main" ] || [ -z "$at" ]; then
   case $tier in
     notice) msg="Checkpoint ahead of compaction: land the current unit on a commit with .agent/spec.md current, then continue." ;;
@@ -49,5 +56,5 @@ else
   esac
 fi
 
-msg="Context ${k}K/${wl} — ${left}K left. ${msg}"
+msg="Context ${k}K/${tl} — ${left}K left. ${msg}"
 jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
