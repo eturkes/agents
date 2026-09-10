@@ -34,6 +34,7 @@
 - Repo stack: discover + preserve from tracked manifests, lockfiles, scripts, CI + working commands. New language/package/tool surfaces require task need; unspecified stack → installed system tools.
 - Task-serving file + Codex configuration changes = in scope.
 - Post-work cleanup: task-touched paths, esp. `$HOME`; remove temporary/stale artifacts + dangling symlinks.
+- GitHub public-repo CI reads run anonymously: `/repos/{o}/{r}/actions/runs`, `/actions/runs/{id}/jobs`, `/commits/{sha}/check-runs`, `/check-runs/{id}/annotations`; job logs (`/actions/jobs/{id}/logs`) are admin-only → an authorized `gh` token, else 403.
 - Shell/tool calls = native + uncompressed + unrewritten. `rg` = `/usr/local/bin/rg`; `grep` = FreeBSD grep (BRE); `find` = FreeBSD find. Byte-exact/clean → `command grep` | `/usr/local/bin/rg` | `/usr/bin/find`.
 - `rg` direct: recurses by default → pass `<pat> <path>` alone. Its `-r` = `--replace`; `grep -r` muscle memory consumes pattern as replacement + promotes path to pattern → readable stdin blocks; `.` rewrites every line to replacement (rc 0, fabricated match-shaped bytes); named dir = rc 1 + empty stdout. Name dot-dirs (`.agent/`, `.scratch/`) explicitly; explicit paths search regardless of hidden/ignore state; tree sweep → `--hidden`; gitignored dot-dirs require `-uu` (`--hidden --no-ignore`).
 - `pgrep -f`/`pkill -f` can self-match Codex `bash -c` wrapper → one bracketed pattern (`index[.]js`) + `|| echo none`; kill/relaunch calls separate.
