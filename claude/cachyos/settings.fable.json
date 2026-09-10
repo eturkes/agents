@@ -125,6 +125,18 @@
         "source": "directory",
         "path": "/home/eturkes/Projects/agents/claude/marketplace"
       }
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official",
+        "sparsePaths": [
+          ".claude-plugin",
+          "plugins/pyright-lsp",
+          "plugins/typescript-lsp",
+          "plugins/rust-analyzer-lsp"
+        ]
+      }
     }
   },
   "promptSuggestionEnabled": false,

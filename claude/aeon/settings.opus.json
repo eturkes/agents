@@ -88,14 +88,14 @@
     "refreshInterval": 60
   },
   "enabledPlugins": {
-    "xml-lsp@global": true,
-    "prolog-lsp@global": true,
     "pyright-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
     "markdown-lsp@global": true,
     "r-lsp@global": true,
-    "bash-lsp@global": true
+    "bash-lsp@global": true,
+    "xml-lsp@global": true,
+    "prolog-lsp@global": true
   },
   "extraKnownMarketplaces": {
     "global": {
@@ -103,10 +103,23 @@
         "source": "directory",
         "path": "/var/home/eturkes/debian/agents/claude/marketplace"
       }
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official",
+        "sparsePaths": [
+          ".claude-plugin",
+          "plugins/pyright-lsp",
+          "plugins/typescript-lsp",
+          "plugins/rust-analyzer-lsp"
+        ]
+      }
     }
   },
   "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
+  "timeFormat": "24-hour-utc",
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
@@ -116,6 +129,5 @@
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "crossSessionInbound": "accept",
-  "useAutoModeDuringPlan": false,
-  "timeFormat": "24-hour-utc"
+  "useAutoModeDuringPlan": false
 }
