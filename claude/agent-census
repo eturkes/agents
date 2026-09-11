@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""Subagent corpus census: what actually ends a teammate run, and what it leaves behind.
+
+Re-derives every measured figure the global `Subagents` law states. Run it after a
+stretch of waves to check whether the rates still hold:
+
+  agent-census [<projects-dir> ...]      default ~/.claude/projects
+
+Sections map 1:1 to the law:
+  compaction  -> "teammates do auto-compact and context is not what kills them"
+  deaths      -> terminal `API Error` classes, with peak usage at death
+  writes      -> the SubagentStop firing set (>=15 tool calls, nothing durable)
+  tail        -> `context-gauge -t`, corpus-wide: distance from the last durable write
+
+A compaction is one `type=system` entry carrying `compactMetadata` (`durationMs` is the
+summarizer's own cost) followed by the `isCompactSummary` user entry holding the summary.
+"""
+import json, os, re, sys, glob, statistics
+
+DONE = re.compile(r"[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-DONE-\d+")
+REPORT = ".scratch/agents/"
+WRITE_TOOLS = {"Write", "Edit", "NotebookEdit"}
+BASH_DURABLE = re.compile(r"git commit|git add|>>|\btee\b")
+CONTEXT_ERR = re.compile(r"prompt is too long|context (?:window|limit)|prompt_too_long", re.I)
+
+
+def durable(b):
+    n = b.get("name", "")
+    if n in WRITE_TOOLS:
+        return True
+    return n == "Bash" and bool(BASH_DURABLE.search((b.get("input") or {}).get("command", "")))
+
+
+def usage(u):
+    return sum(u.get(k, 0) for k in ("input_tokens", "cache_creation_input_tokens",
+                                     "cache_read_input_tokens", "output_tokens"))
+
+
+def text_of(m):
+    c = m.get("content")
+    if isinstance(c, str):
+        return c
+    return "".join(b.get("text", "") for b in c or [] if isinstance(b, dict))
+
+
+def scan(path):
+    r = dict(path=path, tools=0, durable=0, tail=0, peak=0, cut=False, done=False,
+             secs=[], summary_report=False, post_tools=0, post_reports=0, err="")
+    compacted = False
+    pending = set()
+    last_text = ""
+    with open(path, "rb") as fh:
+        for raw in fh:
+            if not raw.strip():
+                continue
+            try:
+                e = json.loads(raw)
+            except ValueError:
+                continue
+            m = e.get("message") if isinstance(e.get("message"), dict) else {}
+            cm = e.get("compactMetadata")
+            if isinstance(cm, dict):
+                compacted = True
+                r["secs"].append(cm.get("durationMs", 0) / 1000)
+                continue
+            if e.get("isCompactSummary"):
+                r["summary_report"] = REPORT in text_of(m)
+                continue
+            if e.get("type") == "user":
+                for b in (m.get("content") if isinstance(m.get("content"), list) else []):
+                    if isinstance(b, dict) and b.get("type") == "tool_result":
+                        pending.discard(b.get("tool_use_id"))
+                continue
+            if e.get("type") != "assistant":
+                continue
+            if isinstance(m.get("usage"), dict):
+                r["peak"] = max(r["peak"], usage(m["usage"]))
+            for b in (m.get("content") or []):
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "text" and b.get("text", "").strip():
+                    last_text = b["text"].strip()
+                if b.get("type") != "tool_use":
+                    continue
+                r["tools"] += 1
+                pending.add(b.get("id"))
+                if compacted:
+                    r["post_tools"] += 1
+                    blob = " ".join(v for v in (b.get("input") or {}).values()
+                                    if isinstance(v, str))
+                    r["post_reports"] += REPORT in blob
+                if durable(b):
+                    r["durable"] += 1
+                    r["tail"] = 0
+                else:
+                    r["tail"] += 1
+    r["cut"] = bool(pending)
+    r["done"] = bool(DONE.search(last_text[-400:]))
+    if last_text.startswith("API Error"):
+        r["err"] = last_text[:160].replace("\n", " ")
+    return r
+
+
+def q(v, p):
+    v = sorted(v)
+    return v[min(len(v) - 1, int(len(v) * p))] if v else 0
+
+
+def main():
+    roots = sys.argv[1:] or [os.path.expanduser("~/.claude/projects")]
+    files = sorted(f for r in roots
+                   for f in glob.glob(os.path.join(r, "**", "subagents", "*.jsonl"),
+                                      recursive=True))
+    rows = [scan(f) for f in files]
+    n = len(rows)
+    live = [r for r in rows if r["tools"] >= 10]
+    print(f"agents: {n}   (>=10 tool calls: {len(live)})")
+
+    comp = [r for r in rows if r["secs"]]
+    secs = [s for r in comp for s in r["secs"]]
+    print(f"\ncompaction: {len(comp)} of {n} crossed the trigger, {len(secs)} events"
+          f"   cost median {statistics.median(secs):.0f}s p90 {q(secs, .9):.0f}s "
+          f"max {max(secs):.0f}s" if secs else f"\ncompaction: none of {n}")
+    if comp:
+        print(f"  summary kept the report path: "
+              f"{sum(r['summary_report'] for r in comp)} of {len(comp)}")
+        print(f"  kept working past it: {sum(1 for r in comp if r['post_tools'])} of {len(comp)}"
+              f"   ({sum(r['post_tools'] for r in comp)} further tool calls, "
+              f"{sum(r['post_reports'] for r in comp)} further report writes)")
+
+    errs = [r for r in rows if r["err"]]
+    ctx = [r for r in errs if CONTEXT_ERR.search(r["err"])]
+    print(f"\ndeaths: {len(errs)} ended on `API Error`, {len(ctx)} of them on context")
+    for r in errs:
+        print(f"  peak {r['peak'] // 1000}K  {r['err'][:96]}")
+
+    fire = [r for r in rows if r["durable"] == 0 and r["tools"] >= 15]
+    print(f"\nwrites: {sum(1 for r in rows if r['durable'] == 0)} of {n} wrote nothing durable; "
+          f"{len(fire)} of {n} also reached 15 tool calls = the SubagentStop firing set")
+
+    print("\ntail = tool calls after the last durable write")
+    for lo, hi in ((0, 0), (1, 10), (11, 30), (31, 10 ** 9)):
+        g = [r for r in live if lo <= r["tail"] <= hi]
+        if g:
+            print(f"  {lo}-{'+' if hi > 10 ** 8 else hi}: n={len(g):3d}  "
+                  f"cut_mid_call={sum(r['cut'] for r in g):3d}  "
+                  f"ended_on_DONE={sum(r['done'] for r in g):3d}")
+    if live:
+        w = max(live, key=lambda r: r["tail"])
+        print(f"  widest: tail {w['tail']}/{w['tools']} cut={w['cut']} done={w['done']}  "
+              f"{os.path.basename(w['path'])}")
+
+
+main()

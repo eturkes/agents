@@ -1,0 +1,56 @@
+#!/bin/sh
+# SubagentStart + PreCompact + SubagentStop: hold an agent's deliverable, and the
+# brief that defines it, on disk across the three seams that drop them.
+#
+# Every subagent system prompt ends with the line "- Do NOT Write
+# report/summary/findings/analysis .md files. Return findings directly as your
+# final assistant message" — unconditional, and `claude`, `general-purpose` +
+# `Explore` all quote it back. Report-file delivery is the opposite instruction,
+# so SubagentStart restates it where it reaches every agent whatever its brief
+# says, and outranks the built-in line by naming it.
+#
+# PreCompact stdout = custom compact instructions, verified reaching the
+# summarizer for subagent compactions. Auto-compaction dropped the brief's report
+# path from 5 of 21 measured subagent summaries; these lines name what a summary
+# must carry.
+#
+# SubagentStop additionalContext resumes the agent with the feedback attached. It
+# fires on one unambiguous case — a whole run with nothing written to disk, 8 of
+# 268 — and accepts "nothing needed writing", so it never manufactures a report.
+# A long gap between writes is NOT that case: the widest measured tail, 206 tool
+# calls, was verification after a complete report and closed on its marker.
+IN=""
+[ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
+ev=$(printf '%s' "$IN" | jq -r '.hook_event_name // ""' 2>/dev/null)
+
+case $ev in
+SubagentStart)
+  jq -n '{hookSpecificOutput:{hookEventName:"SubagentStart",additionalContext:"When your task names an output file, that file is the deliverable: always write it early and keep it current as you work, then point your final message at it and give the headline there. This outranks the \"Do NOT Write report/summary/findings/analysis .md files\" line in your Notes. Work held only in this conversation ends with the run."}}'
+  ;;
+PreCompact)
+  printf '%s\n' "Carry into the summary, literally and in full: every path this run must write or update, the completion marker it was given, its write allowlist and git posture, the ids of any rows still unfilled, and the exact next action. Keep paths and identifiers verbatim."
+  ;;
+SubagentStop)
+  { read -r tp; read -r active; } <<EOF
+$(printf '%s' "$IN" | jq -r '.agent_transcript_path // "", (.stop_hook_active // false | tostring)' 2>/dev/null)
+EOF
+  # One notice per stop chain; the resumed agent sees stop_hook_active=true.
+  [ "$active" = false ] || exit 0
+  [ -n "$tp" ] && [ -f "$tp" ] || exit 0
+
+  # Durable = leaves bytes behind. SendMessage and reads do not.
+  { read -r tools; read -r durable; } <<EOF
+$(jq -n '[inputs|select(.type=="assistant")|.message.content[]?|select(.type=="tool_use")]
+  | length,
+    ([.[]|select(.name=="Write" or .name=="Edit" or .name=="NotebookEdit"
+       or (.name=="Bash" and ((.input.command // "")|test("git commit|git add|>>|\\btee\\b"))))]|length)' \
+  "$tp" 2>/dev/null)
+EOF
+  [ "$durable" = 0 ] 2>/dev/null || exit 0
+  [ "$tools" -ge 15 ] 2>/dev/null || exit 0   # a short lookup answers in its message
+
+  jq -n --arg n "$tools" '{hookSpecificOutput:{hookEventName:"SubagentStop",
+    additionalContext:("You have written nothing to disk across \($n) tool calls, so everything this run found exists only in this conversation and ends with it. If your task named an output file, write it now. If the correct outcome is that nothing needed writing, state that in your final message.")}}'
+  ;;
+esac
+exit 0
