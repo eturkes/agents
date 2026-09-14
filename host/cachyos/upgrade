@@ -6,7 +6,7 @@ set -euo pipefail
 # updates user-managed sources. Invoke with operator present because rolling
 # system upgrades can require `.pacnew`, keyring + package-state decisions.
 
-repo_root="$HOME/Projects/agents"
+repo_root="$HOME/.local/app/agents"
 
 echo "=== System packages (pacman/AUR) ==="
 # paru owns repo + AUR toolchain; run first so later steps use current binaries.

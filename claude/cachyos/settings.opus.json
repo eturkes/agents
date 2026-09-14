@@ -157,7 +157,7 @@
     "global": {
       "source": {
         "source": "directory",
-        "path": "/home/eturkes/Projects/agents/claude/marketplace"
+        "path": "/home/eturkes/.local/app/agents/claude/marketplace"
       }
     },
     "claude-plugins-official": {
