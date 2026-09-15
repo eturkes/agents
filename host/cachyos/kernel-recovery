@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""Retain one local Limine kernel/initramfs/runtime-module checkpoint."""
+
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import stat
+import sys
+import tempfile
+from pathlib import Path
+
+STATE = Path("/var/lib/agent-kernel-recovery")
+BOOT = Path("/boot")
+CONFIG = BOOT / "limine.conf"
+MODULES = Path("/usr/lib/modules")
+HOOK = Path("/etc/pacman.d/hooks/95-agent-kernel-recovery.hook")
+MARKER = "# agent-kernel-recovery: pinned local checkpoint"
+SKIP = {"build", "source", "pkgbase", "vmlinuz"}
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def digest(path, algorithm="sha256"):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, algorithm).hexdigest()
+
+
+def atomic_write(path, data, mode=0o600):
+    with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".agent-recovery-", delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+            os.chmod(temporary, mode)
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def inventory(root):
+    result = {}
+    for path in sorted(root.rglob("*")):
+        name = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            require(path.resolve().is_relative_to(root.resolve()), f"external module symlink: {path}")
+            result[name] = {"link": os.readlink(path)}
+        elif path.is_file():
+            result[name] = {"sha256": digest(path), "mode": stat.S_IMODE(path.stat().st_mode)}
+    return result
+
+
+def verify_files(root, files):
+    for name, expected in files.items():
+        path = root / name
+        require(path.is_relative_to(root) and ".." not in Path(name).parts, "invalid manifest path")
+        if "link" in expected:
+            require(path.is_symlink() and os.readlink(path) == expected["link"], f"module link mismatch: {path}")
+        else:
+            require(path.is_file() and not path.is_symlink(), f"missing module: {path}")
+            require(digest(path) == expected["sha256"], f"module checksum mismatch: {path}")
+
+
+def hook_text():
+    # Same path triggers as kernel/DKMS hooks; run after their module/initramfs work.
+    return f"""[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = usr/lib/modules/*
+Target = usr/src/*/dkms.conf
+
+[Action]
+Description = Retain the pinned agent recovery kernel modules
+When = PostTransaction
+Exec = /usr/bin/python3 {Path(__file__).resolve()} restore-modules
+"""
+
+
+def load_manifest():
+    require((STATE / "manifest.json").is_file(), "recovery checkpoint missing; run capture before upgrades")
+    manifest = json.loads((STATE / "manifest.json").read_text())
+    require(manifest["schema"] == 1, "unsupported recovery manifest")
+    require(re.fullmatch(r"[A-Za-z0-9_.+-]+", manifest["release"]), "invalid kernel release")
+    return manifest
+
+
+def entry_properties(config, title):
+    # Limine updates may re-indent comments; boot fields + module order own the contract.
+    selected = False
+    result = {}
+    for line in config.splitlines():
+        line = line.strip()
+        if line.startswith("/"):
+            if selected:
+                break
+            selected = line == title
+        elif selected and ":" in line and not line.startswith("#"):
+            key, value = line.split(":", 1)
+            if key != "comment":
+                result.setdefault(key, []).append(value.strip())
+    require(selected, "pinned recovery entry missing")
+    return result
+
+
+def verify_checkpoint(manifest, capture_prefix=False, live=True):
+    require(HOOK.is_file() and HOOK.read_text() == hook_text(), "recovery package hook changed or missing")
+    config = CONFIG.read_bytes()
+    title = f"/Agent recovery ({manifest['release']})"
+    require(entry_properties(config.decode(), title) == entry_properties(manifest["entry"], title),
+            "pinned recovery boot fields changed")
+    for line in manifest["boot_selection"]:
+        require(config.splitlines().count(line.encode()) == 1, f"boot selection changed: {line}")
+    if capture_prefix:
+        require(config.startswith((STATE / "limine.before.conf").read_bytes()), "original Limine prefix changed")
+    for name, expected in manifest["boot_files"].items():
+        path = BOOT / "agent-recovery" / manifest["release"] / name
+        require(path.is_file() and digest(path) == expected["sha256"], f"retained boot file mismatch: {path}")
+        require(digest(path, "blake2b") == expected["blake2b"], f"Limine file hash mismatch: {path}")
+        if capture_prefix:
+            require(digest(Path(expected["source"])) == expected["sha256"], "original boot image changed")
+    verify_files(STATE / "modules", manifest["modules"])
+    if live:
+        verify_files(MODULES / manifest["release"], manifest["modules"])
+
+
+def capture():
+    if STATE.exists():
+        manifest = load_manifest()
+        verify_checkpoint(manifest)
+        print(f"recovery: retained {manifest['release']}; unchanged")
+        return
+    require(not Path("/var/lib/pacman/db.lck").exists(), "package transaction active")
+    release = os.uname().release
+    require(re.fullmatch(r"[A-Za-z0-9_.+-]+", release), "unsupported kernel release")
+    source_modules = MODULES / release
+    require((source_modules / "vmlinuz").is_file(), "running kernel has no installed module tree")
+    require(BOOT.is_mount(), "/boot must be mounted")
+    original = CONFIG.read_bytes()
+    require(MARKER.encode() not in original and not HOOK.exists(), "unmanaged recovery entry/hook already exists")
+    # This helper preserves a plain Linux entry. UKI/config-enrollment changes need a separate rollout.
+    for path in Path("/sys/firmware/efi/efivars").glob("SecureBoot-*"):
+        require(int.from_bytes(path.read_bytes()[4:], "little") == 0, "Secure Boot requires enrolled-config handling")
+    enrollment = Path("/etc/boot/hooks/post.d/90-limine-enroll-config")
+    require(enrollment.is_file(), "installed Limine hook layout changed; review it before capture")
+    defaults = Path("/etc/default/limine").read_text()
+    require(not re.search(r'''(?m)^\s*ENABLE_ENROLL_LIMINE_CONFIG\s*=\s*["']?yes''', defaults),
+            "config enrollment requires a separately reviewed rollout")
+    blocks = re.split(r"(?m)(?=^[ \t]*/)", original.decode())
+    candidates = [block for block in blocks if re.search(r"(?m)^\s*protocol:\s*linux\s*$", block)
+                  and f"comment: Kernel version: {release}" in block]
+    require(len(candidates) == 1, "expected one Limine entry for the running kernel")
+    properties = []
+    for line in candidates[0].splitlines()[1:]:
+        if ":" in line and not line.lstrip().startswith("#"):
+            key, value = line.strip().split(":", 1)
+            require(key in {"comment", "protocol", "path", "module_path", "cmdline"}, f"unsupported entry field: {key}")
+            if key != "comment":
+                properties.append((key, value.strip()))
+    require(sum(key == "path" for key, _ in properties) == 1, "kernel path missing or ambiguous")
+    require(any(key == "module_path" for key, _ in properties), "initramfs missing")
+    destination = BOOT / "agent-recovery" / release
+    require(not destination.exists(), f"unmanaged recovery files exist: {destination}")
+    boot_files = {}
+    copies = []
+    rewritten = []
+    for key, value in properties:
+        if key in {"path", "module_path"}:
+            match = re.fullmatch(r"boot\(\):(/[^#]+)#([0-9a-fA-F]{128})", value)
+            require(match is not None, f"expected a local BLAKE2b-verified path: {value}")
+            source = (BOOT / match[1].lstrip("/")).resolve()
+            require(source.is_relative_to(BOOT) and source.is_file(), f"invalid boot source: {source}")
+            require(digest(source, "blake2b") == match[2].lower(), f"source Limine hash mismatch: {source}")
+            if key == "path":
+                require(digest(source) == digest(source_modules / "vmlinuz"), "boot kernel differs from running-version package")
+            name = "vmlinuz" if key == "path" else f"initramfs-{len(copies)}"
+            boot_files[name] = {"sha256": digest(source), "blake2b": match[2].lower(), "source": str(source)}
+            copies.append((source, name))
+            value = f"boot():/agent-recovery/{release}/{name}#{match[2]}"
+        rewritten.append(f"{key}: {value}")
+    entry = f"\n{MARKER}\n/Agent recovery ({release})\ncomment: Pinned local kernel; boot execution untested\n" + "\n".join(rewritten) + "\n"
+    with tempfile.TemporaryDirectory(dir=STATE.parent, prefix=".agent-kernel-recovery-") as temporary:
+        staging = Path(temporary)
+        shutil.copytree(source_modules, staging / "modules", symlinks=True,
+                        ignore=lambda path, names: SKIP.intersection(names) if Path(path) == source_modules else set())
+        manifest = {"schema": 1, "release": release, "entry": entry, "boot_files": boot_files,
+                    "boot_selection": [line for line in original.decode().splitlines()
+                                       if re.match(r"^(default_entry|remember_last_entry|timeout):", line)],
+                    "modules": inventory(staging / "modules")}
+        verify_files(source_modules, manifest["modules"])
+        (staging / "limine.before.conf").write_bytes(original)
+        (staging / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        created_state = created_boot = created_hook = changed_config = False
+        try:
+            destination.mkdir(parents=True)
+            created_boot = True
+            for source, name in copies:
+                shutil.copyfile(source, destination / name)
+                require(digest(destination / name) == boot_files[name]["sha256"], "boot copy changed")
+            STATE.mkdir(mode=0o700)
+            created_state = True
+            for child in staging.iterdir():
+                child.rename(STATE / child.name)
+            atomic_write(HOOK, hook_text().encode(), 0o644)
+            created_hook = True
+            require(CONFIG.read_bytes() == original, "Limine config changed during capture")
+            atomic_write(CONFIG, original + entry.encode(), stat.S_IMODE(CONFIG.stat().st_mode))
+            changed_config = True
+            verify_checkpoint(manifest, capture_prefix=True)
+        except BaseException:
+            if changed_config:
+                atomic_write(CONFIG, original, stat.S_IMODE(CONFIG.stat().st_mode))
+            if created_hook:
+                HOOK.unlink()
+            if created_state:
+                shutil.rmtree(STATE)
+            if created_boot:
+                shutil.rmtree(destination)
+            raise
+    print(f"recovery: captured {release}; original Limine prefix retained; boot execution untested")
+
+
+def restore_modules():
+    manifest = load_manifest()
+    verify_checkpoint(manifest, live=False)
+    destination = MODULES / manifest["release"]
+    # A same-release DKMS update may need newer user-space drivers. Never overwrite its managed tree.
+    if (destination / "pkgbase").exists():
+        verify_files(destination, manifest["modules"])
+        print("recovery: managed kernel modules match; unchanged")
+        return
+    destination.mkdir(parents=True, exist_ok=True)
+    for name, expected in manifest["modules"].items():
+        target = destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if "link" in expected:
+            if not target.is_symlink() or os.readlink(target) != expected["link"]:
+                require(not target.exists(), f"conflicting module link: {target}")
+                target.symlink_to(expected["link"])
+        elif not target.is_file() or digest(target) != expected["sha256"]:
+            atomic_write(target, (STATE / "modules" / name).read_bytes(), expected["mode"])
+    verify_checkpoint(manifest)
+    print(f"recovery: retained runtime modules available for {manifest['release']}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("capture", "check", "restore-modules"))
+    parser.add_argument("--capture-prefix", action="store_true", help="also check the original pre-capture Limine prefix")
+    args = parser.parse_args()
+    require(os.geteuid() == 0, "run with sudo")
+    require(not args.capture_prefix or args.action == "check", "--capture-prefix applies only to check")
+    if args.action == "check":
+        manifest = load_manifest()
+        verify_checkpoint(manifest, capture_prefix=args.capture_prefix)
+        print(f"recovery: hashes, modules, hook + entry match ({manifest['release']}); boot execution untested")
+    elif args.action == "capture":
+        with Path("/run/lock/boot-partition.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            capture()
+    else:
+        restore_modules()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, RuntimeError, ValueError, KeyError) as error:
+        print(f"recovery: {error}", file=sys.stderr)
+        sys.exit(1)

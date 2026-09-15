@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# CachyOS workstation upgrade; host counterpart to container/aeon/upgrade.
-# Ownership split: `paru -Syu` upgrades pacman/AUR toolchain; this script also
-# updates user-managed sources. Invoke with operator present because rolling
-# system upgrades can require `.pacnew`, keyring + package-state decisions.
+# Agent-owned CachyOS upgrade; cadence + rollout checks = MAINTENANCE.md.
+# The agent must own a PTY to review package, keyring + .pacnew decisions.
+
+if [[ ! -t 0 || ! -t 1 ]]; then
+  echo "upgrade: run in an agent-owned PTY; see host/cachyos/MAINTENANCE.md" >&2
+  exit 64
+fi
 
 repo_root="$HOME/.local/app/agents"
+
+sudo -n "$repo_root/host/cachyos/kernel-recovery" check
 
 echo "=== System packages (pacman/AUR) ==="
 # paru owns repo + AUR toolchain; run first so later steps use current binaries.
@@ -117,4 +122,8 @@ else
 fi
 
 echo
-echo "upgrade: done"
+echo "=== Bounded cache cleanup ==="
+"$repo_root/host/cachyos/cache-retention"
+
+echo
+echo "upgrade: stages complete; run the postflight checks in host/cachyos/MAINTENANCE.md"

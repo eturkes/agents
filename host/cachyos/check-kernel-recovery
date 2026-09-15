@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""Exercise recovery restoration/refusal contracts in temporary trees only."""
+
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import sys
+import tempfile
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+path = Path(__file__).with_name("kernel-recovery")
+loader = importlib.machinery.SourceFileLoader("kernel_recovery", str(path))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+recovery = importlib.util.module_from_spec(spec)
+loader.exec_module(recovery)
+
+
+def rejects(action):
+    try:
+        action()
+    except RuntimeError:
+        return
+    raise AssertionError("unsafe operation accepted")
+
+
+with tempfile.TemporaryDirectory(prefix="kernel-recovery-check-") as directory:
+    root = Path(directory)
+    recovery.STATE = root / "state"
+    recovery.BOOT = root / "boot"
+    recovery.CONFIG = recovery.BOOT / "limine.conf"
+    recovery.HOOK = root / "retention.hook"
+    recovery.MODULES = root / "live-modules"
+    retained = recovery.STATE / "modules/kernel/example.ko"
+    retained.parent.mkdir(parents=True)
+    retained.write_bytes(b"retained module bytes\x00\xff")
+    image = recovery.BOOT / "agent-recovery/test-release/vmlinuz"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"retained boot image")
+    entry = "/Agent recovery (test-release)\nprotocol: linux\npath: boot():/agent-recovery/test-release/vmlinuz\n"
+    recovery.CONFIG.write_text("default_entry: 1\n" + entry)
+    recovery.HOOK.write_text(recovery.hook_text())
+    manifest = {"schema": 1, "release": "test-release", "entry": entry,
+                "boot_selection": ["default_entry: 1"],
+                "boot_files": {"vmlinuz": {name: recovery.digest(image, name) for name in ("sha256", "blake2b")}},
+                "modules": recovery.inventory(recovery.STATE / "modules")}
+    (recovery.STATE / "manifest.json").write_text(json.dumps(manifest))
+    live = recovery.MODULES / "test-release/kernel/example.ko"
+
+    rejects(lambda: recovery.verify_checkpoint(manifest))
+    recovery.restore_modules()
+    assert live.read_bytes() == retained.read_bytes()
+    before = hashlib.sha256(live.read_bytes()).digest()
+    recovery.restore_modules()
+    assert hashlib.sha256(live.read_bytes()).digest() == before
+    print("retired_module_restore_and_replay=PASS")
+
+    package_marker = recovery.MODULES / "test-release/pkgbase"
+    package_marker.write_text("managed-kernel\n")
+    live.write_bytes(b"new managed module")
+    rejects(recovery.restore_modules)
+    assert live.read_bytes() == b"new managed module"
+    print("managed_module_overwrite_refused=PASS")
+
+    package_marker.unlink()
+    retained.write_bytes(b"corrupt checkpoint")
+    rejects(recovery.restore_modules)
+    assert live.read_bytes() == b"new managed module"
+    print("corrupt_checkpoint_restore_refused=PASS")
