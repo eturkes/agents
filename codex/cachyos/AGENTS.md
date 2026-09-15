@@ -5,6 +5,7 @@
 - Claude = supported project tool; preserve its client, project integrations, Headroom + CLIProxyAPI dependencies.
 - External-service action requires connection verification.
 - Filesystem scope = launch directory + user-scoped targets.
+- Agent artifacts = active task directory or `~/.local/state/<task>/`. `~/Documents/` contains personal-file backups; writes require explicit user instruction.
 
 ## Execution
 
