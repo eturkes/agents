@@ -27,7 +27,7 @@
 
 ## Environment
 
-- Host = FreeBSD on ThinkPad P71.
+- Host = FreeBSD on ThinkPad T70 (51nb mod).
 - Sessions = sole user `eturkes` + passwordless `doas`.
 - Personal backup = `~/doc/`; access only when the user explicitly includes that directory.
 - Interactive login shell = `/bin/tcsh`; Codex shell calls run `/usr/local/bin/bash`.
@@ -48,7 +48,7 @@
 - Recovery = encrypted, restore-tested off-host copies of user/VM data + config/secrets. Retain relevant boot/jail/VM rollback points through post-change validation + verified backup; local ZFS snapshots share the pool.
 - Home snapshots = `/usr/local/sbin/home-snapshot` via `/etc/cron.d/home-snapshot`; recover selected files through `~/.zfs/snapshot/`.
 - ZFS repair → record current errors, objects + retaining snapshots; repair verified targets + check readability/checksums before clearing errors. Snapshot deletion = exact full names; monitor validating scrub to completion.
-- Firmware → resolve physical board identity (`MFG_IN_GO` ambiguity) + current vendor image compatibility/checksums; arrange console access, stable power + bootable recovery before flashing.
+- Firmware → match images to the installed 51nb board/revision + verify checksums; arrange console access, stable power + bootable recovery before flashing.
 - Boot/mitigation/resource-control changes (`hw.mds_disable`, RACCT/RCTL) → arrange recovery access + measure workload impact before persistence; verify access, service health + tunable behavior after controlled reboot.
 
 ## Reading
