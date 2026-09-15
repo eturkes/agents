@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode=${1:-check}
+[[ $# -le 1 && ( "$mode" == check || "$mode" == apply ) ]] || {
+  echo 'Usage: lid-policy [check|apply]' >&2
+  exit 2
+}
+recipe_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+policy_source="$recipe_dir/logind-lid.conf"
+policy_target=/etc/systemd/logind.conf.d/80-lid-ignore.conf
+
+if [[ "$mode" == apply ]]; then
+  sudo -n install -D -o root -g root -m 0644 -- "$policy_source" "$policy_target"
+  # Reload preserves sessions and inhibitors; a restart is unnecessary.
+  sudo -n systemctl reload systemd-logind.service
+fi
+
+failed=0
+if cmp -s -- "$policy_source" "$policy_target"; then
+  printf 'OK persistent policy: %s\n' "$policy_target"
+else
+  printf 'FAIL persistent policy: missing or different: %s\n' "$policy_target" >&2
+  failed=1
+fi
+
+for property in HandleLidSwitch HandleLidSwitchExternalPower HandleLidSwitchDocked; do
+  actual=$(busctl get-property org.freedesktop.login1 /org/freedesktop/login1 \
+    org.freedesktop.login1.Manager "$property")
+  if [[ "$actual" == 's "ignore"' ]]; then
+    printf 'OK live %s=ignore\n' "$property"
+  else
+    printf 'FAIL live %s: expected=ignore actual=%s\n' "$property" "$actual" >&2
+    failed=1
+  fi
+done
+exit "$failed"

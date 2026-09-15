@@ -63,16 +63,19 @@ function parseArgs(argv) {
   return opts;
 }
 
-// pnpm globals move between store versions; scan newest first so package
-// upgrades keep resolving.
+// Isolated global groups → pnpm-reported paths; HOME → user-global pnpm + store.
+let globalPackages;
 function resolveGlobal(pkg) {
-  const globals = join(process.env.PNPM_HOME || join(homedir(), ".local/share/pnpm"), "global");
-  if (!existsSync(globals)) die(`pnpm global store missing at ${globals}`);
-  for (const dir of readdirSync(globals).sort((a, b) => Number(b) - Number(a))) {
-    const entry = join(globals, dir, "node_modules", pkg);
-    if (existsSync(entry)) return pathToFileURL(entry).href;
+  if (!globalPackages) {
+    const result = spawnSync("pnpm", ["--dir", homedir(), "list", "--global", "--depth", "0", "--json"], { encoding: "utf8" });
+    if (result.status !== 0) die(`cannot list pnpm globals: ${result.stderr?.trim() || result.error?.message || `pnpm exited ${result.status}`}`);
+    globalPackages = JSON.parse(result.stdout);
   }
-  die(`${pkg} missing from ${globals}; run upgrade`);
+  for (const group of globalPackages) {
+    const entry = group.dependencies?.[pkg]?.path;
+    if (entry && existsSync(entry)) return pathToFileURL(entry).href;
+  }
+  die(`${pkg} missing from pnpm globals; run upgrade`);
 }
 
 const opts = parseArgs(process.argv.slice(2));

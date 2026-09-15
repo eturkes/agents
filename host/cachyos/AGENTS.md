@@ -1,9 +1,9 @@
 # CachyOS host
 
 - Workflow → `MAINTENANCE.md`; one package-manager owner; preserve existing upgrade gates.
-- Recipes = `agent-desktop`, `normalize-dns`, `cache-retention`, `prune-desktop`, `kernel-recovery`.
+- Recipes = `agent-desktop`, `lid-policy`, `normalize-dns`, `cache-retention`, `prune-desktop`, `kernel-recovery`.
 - Package protection → `prune-desktop` policy; preserve project runtimes + user app data.
-- Host checks, cwd=this directory → `./agent-desktop check`, `sudo -n ./kernel-recovery check`, `python ./check-kernel-recovery`.
+- Host checks, cwd=this directory → `./agent-desktop check`, `./lid-policy check`, `sudo -n ./kernel-recovery check`, `python ./check-kernel-recovery`.
 - Guard regressions → `python ./check-prune-desktop`, `python ./check-kernel-recovery-regressions`.
 - Instruction checks, cwd=repo root → `codex/cachyos/check-instructions`, `codex/cachyos/deploy-instructions`.
 - Static checks: Bash → ShellCheck; Python → Ruff + syntax. Report failing checks with their causes.
