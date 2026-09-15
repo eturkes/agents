@@ -1,34 +1,48 @@
-# Silver icon overlay migration
+# Silver icon repair
 
-SonicDE renamed Breeze's base icons to Silver and removed Silver's separate icon generator.
-Old user-generated `silver` and `silver-dark` manifests can shadow the installed base manifests.
-Their obsolete inheritance hides action, application, device, and status icons.
+User Silver manifests override installed theme metadata. Missing directory declarations or obsolete inheritance can hide installed icons.
+The repair combines installed metadata with local-only size directories. Rerun it when the installed Silver manifest changes.
 
-## Repair
+## Commands
 
-Run `host/cachyos/sonic-icons/repair` to inspect the required changes.
-Run `host/cachyos/sonic-icons/repair --apply` to merge the installed metadata into both user overlays.
-The script retains local icon assets and local-only size directories.
-The installed theme supplies inheritance and shared directory metadata.
-Repeat the repair after a Silver base-theme upgrade changes its manifest.
+From the repository root, run:
 
-Run `host/cachyos/sonic-icons/check` to check the active native Qt icon theme.
-The check requires `g++`, `pkg-config`, and the installed Qt6 development files.
-It enumerates the installed theme's icon names and renders each at 16, 32, and 64 pixels.
-An absent-icon control checks fallback behavior.
-The check changes no desktop settings and uses an offscreen Qt platform.
+```sh
+cd host/cachyos/sonic-icons
+```
 
-[Upstream generator removal](https://github.com/Sonic-DE/sonic-silver/commit/216531f44d7af852d3b1a2c3ba8a59fb73a6aa7d).
+| Purpose | Command |
+| --- | --- |
+| Preview changes | `./repair` |
+| Apply changes | `./repair --apply` |
+| Check isolated repair cases | `./check-repair -q` |
+| Run the native icon gate | `./check` |
+| Inspect all icon lookups | `./inspect` |
 
-## Diagnose a failed check
+The native tools require `g++`, `pkg-config`, and Qt6 development files.
+Pass icon names to `inspect` for a narrower diagnostic.
+To exclude these user overlays, set `XDG_DATA_HOME` to an empty temporary directory for `inspect`.
 
-Run `host/cachyos/sonic-icons/inspect` to distinguish exact-name fallbacks from null pixmaps across the same installed inventory.
-Optional icon-name arguments restrict this diagnostic to those names.
-Its exit status reports execution, not a passing grade; `check` remains the unchanged grading command.
+## Results
 
-For stock-theme comparison, set `XDG_DATA_HOME` to a temporary empty directory when running `inspect`.
-This excludes user icon overlays without changing the desktop.
+The native gate checks exact-name lookup and non-null pixmaps at 16, 32, and 64 pixels.
+It stops checking an icon after that icon first fails.
+`inspect` reports null-pixmap counts independently. Its exit status reports execution success, not a passing gate.
+Exact-name fallback failures remain failures, even when Qt renders an icon.
 
-After the repair, send the standard `org.kde.KIconLoader.iconChanged(int32:0)` session-bus signal to reload live icons.
-If the shell retains stale images, restart only `plasma-plasmashell.service` and inspect the closed tray at native screenshot resolution.
-`refreshCurrentShell()` exits this build's `--no-respawn` shell and does not reliably restart its service.
+## Reload live icons
+
+After applying a repair, run:
+
+```sh
+dbus-send --session --type=signal /KIconLoader org.kde.KIconLoader.iconChanged int32:0
+```
+
+If images remain stale, restart only the shell service:
+
+```sh
+systemctl --user restart plasma-plasmashell.service
+```
+
+Inspect the closed panel and launcher at native screenshot resolution.
+With `--no-respawn`, `refreshCurrentShell()` can exit without restarting the shell service.

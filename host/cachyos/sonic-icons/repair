@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge installed Silver metadata into its generated user overlays."""
+"""Merge the installed Silver metadata into user icon overlays."""
 import argparse
 import configparser
 import io
@@ -17,18 +17,19 @@ def read(path):
 
 
 def merge(local_path, system_path):
+    if local_path.samefile(system_path) or local_path.resolve().is_relative_to(system_path.parent.parent.resolve()):
+        raise ValueError(f"user overlay aliases installed icons: {local_path}")
     local = read(local_path)
     system = read(system_path)
     metadata = system["Icon Theme"]
-    # The renamed base theme owns inheritance and its directory metadata.
-    # Retain local-only generated sizes; Qt searches user assets first.
-    extra = sorted(set(local.sections()) - set(system.sections()))
-    for section in extra:
+    extra = []
+    for section in sorted(set(local.sections()) - set(system.sections())):
         if section.startswith("/") or ".." in Path(section).parts:
             raise ValueError(f"unsafe icon directory: {section}")
-        if not (local_path.parent / section).is_dir():
-            raise ValueError(f"missing local icon directory: {section}")
-        system[section] = local[section]
+        # Copied base sections can outlive their installed directories.
+        if (local_path.parent / section).is_dir():
+            extra.append(section)
+            system[section] = local[section]
     for key, scaled in (("Directories", False), ("ScaledDirectories", True)):
         entries = [name for name in extra if (float(local[name].get("Scale", "1")) != 1) == scaled]
         entries += metadata.get(key, "").split(",")
@@ -55,7 +56,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Write the repaired manifests.")
     args = parser.parse_args()
-    data = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")).resolve()
+    data = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+    if not data.is_absolute():
+        parser.error("XDG_DATA_HOME must be an absolute path.")
+    data = data.resolve()
     changes = []
     for theme in ("silver", "silver-dark"):
         local = data / "icons" / theme / "index.theme"

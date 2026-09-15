@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+"""Check Silver metadata repair with isolated files and environment routing."""
+import configparser
+import contextlib
+import importlib.machinery
+import importlib.util
+import io
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+sys.dont_write_bytecode = True
+SOURCE = Path(__file__).with_name("repair")
+loader = importlib.machinery.SourceFileLoader("repair_under_test", str(SOURCE))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+REPAIR = importlib.util.module_from_spec(spec)
+loader.exec_module(REPAIR)
+
+
+def manifest(directories, inherits="hicolor"):
+    value = configparser.ConfigParser(interpolation=None)
+    value.optionxform = str
+    value["Icon Theme"] = {"Directories": ",".join(directories), "Inherits": inherits}
+    for directory in directories:
+        value[directory] = {"Size": "16", "Scale": "1", "Type": "Fixed"}
+    output = io.StringIO()
+    value.write(output, space_around_delimiters=False)
+    return output.getvalue().encode()
+
+
+class RepairChecks(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="sonic-repair-test-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.home_path = self.root / "home"
+        self.default_data = self.home_path / ".local/share"
+        self.cwd = self.root / "cwd"
+        self.cwd.mkdir()
+        self.system = self.root / "system-icons"
+        self.base = self.system / "silver/index.theme"
+        self.base.parent.mkdir(parents=True)
+        self.base.write_bytes(manifest(["actions/16"]))
+
+    def overlay(self, data):
+        root = data / "icons/silver"
+        (root / "16").mkdir(parents=True)
+        (root / "16/custom.svg").write_bytes(b"local artwork")
+        index = root / "index.theme"
+        index.write_bytes(manifest(["16"], "obsolete-base"))
+        return index
+
+    def main(self, data_home):
+        def fixture_path(value):
+            return self.system if value == "/usr/share/icons" else Path(value)
+
+        fixture_path.home = lambda: self.home_path
+        original_cwd = Path.cwd()
+        output = io.StringIO()
+        with (patch.object(REPAIR, "Path", fixture_path), patch.object(sys, "argv", ["repair", "--apply"]),
+              patch.dict(os.environ), contextlib.redirect_stdout(output), contextlib.redirect_stderr(output)):
+            if data_home is None:
+                os.environ.pop("XDG_DATA_HOME", None)
+            else:
+                os.environ["XDG_DATA_HOME"] = data_home
+            try:
+                os.chdir(self.cwd)
+                REPAIR.main()
+            finally:
+                os.chdir(original_cwd)
+        return output.getvalue()
+
+    def test_removed_base_directory_does_not_become_local_metadata(self):
+        local = self.overlay(self.default_data)
+        artwork = local.parent / "16/custom.svg"
+        local.write_bytes(REPAIR.merge(local, self.base))
+        self.base.write_bytes(manifest(["actions/22"]))
+        updated = REPAIR.merge(local, self.base)
+        local.write_bytes(updated)
+        parsed = REPAIR.read(local)
+        self.assertEqual(set(parsed.sections()), {"Icon Theme", "16", "actions/22"})
+        self.assertEqual(set(parsed["Icon Theme"]["Directories"].split(",")), {"16", "actions/22"})
+        self.assertEqual(parsed["Icon Theme"]["Inherits"], "hicolor")
+        self.assertEqual(artwork.read_bytes(), b"local artwork")
+        self.assertEqual(REPAIR.merge(local, self.base), updated)
+
+    def test_empty_data_home_uses_home_default(self):
+        local = self.overlay(self.default_data)
+        decoy = self.overlay(self.cwd)
+        before, decoy_before = local.read_bytes(), decoy.read_bytes()
+        self.main("")
+        self.assertNotEqual(local.read_bytes(), before)
+        self.assertEqual(decoy.read_bytes(), decoy_before)
+
+    def test_relative_data_home_is_rejected_before_writes(self):
+        local = self.overlay(self.cwd / "relative")
+        before = local.read_bytes()
+        with self.assertRaises(SystemExit) as error:
+            self.main("relative")
+        self.assertEqual(error.exception.code, 2)
+        self.assertEqual(local.read_bytes(), before)
+
+    def test_system_aliases_are_rejected(self):
+        symlink = self.root / "linked-theme"
+        symlink.symlink_to(self.base.parent, target_is_directory=True)
+        hardlink = self.root / "hardlinked-index.theme"
+        os.link(self.base, hardlink)
+        before = self.base.read_bytes()
+        for local in (self.base, symlink / "index.theme", hardlink):
+            with self.subTest(local=local):
+                with self.assertRaises(ValueError):
+                    REPAIR.merge(local, self.base)
+                self.assertEqual(self.base.read_bytes(), before)
+
+    def test_absent_unsafe_sections_still_fail_validation(self):
+        local = self.overlay(self.default_data)
+        for directory in ("../escape", "/absolute"):
+            with self.subTest(directory=directory):
+                local.write_bytes(manifest([directory]))
+                with self.assertRaises(ValueError):
+                    REPAIR.merge(local, self.base)
+
+    def test_unset_and_absolute_data_home_remain_supported(self):
+        for setting in (None, str(self.root / "absolute")):
+            with self.subTest(setting=setting):
+                local = self.overlay(self.default_data if setting is None else Path(setting))
+                before = local.read_bytes()
+                self.main(setting)
+                self.assertNotEqual(local.read_bytes(), before)
+                repaired = local.read_bytes()
+                self.main(setting)
+                self.assertEqual(local.read_bytes(), repaired)
+
+
+if __name__ == "__main__":
+    unittest.main()
