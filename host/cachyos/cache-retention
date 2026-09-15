@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+uv cache prune --offline
+sudo -n paccache -r -k 2 -c /var/cache/pacman/pkg
+aur_cache_args=()
+for directory in "$HOME"/.cache/paru/clone/*; do
+  [[ -d "$directory" ]] && aur_cache_args+=(-c "$directory")
+done
+if ((${#aur_cache_args[@]})); then
+  paccache -r -k 2 "${aur_cache_args[@]}"
+fi
