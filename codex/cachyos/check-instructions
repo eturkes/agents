@@ -1,0 +1,37 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["tomlkit==0.15.1"]
+# ///
+"""Exercise trust pruning at TOML grammar boundaries without touching live config."""
+import json
+import runpy
+import tempfile
+from pathlib import Path
+
+import tomllib
+
+prune = runpy.run_path(str(Path(__file__).with_name("deploy-instructions")))["prune"]
+with tempfile.TemporaryDirectory(prefix="instruction-check-") as directory:
+    existing = json.dumps(directory)
+    absent = json.dumps(str(Path(directory) / "absent"))
+    fixtures = [
+        f'[projects.{absent}]\ntrust_level="trusted"\n',
+        f'[projects.{absent}] # table comment\ntrust_level="trusted"\n',
+        f'[projects.{absent}]\ntrust_level="trusted"\n[tui] # unrelated\ntheme="keep"\n',
+        f'[projects.{existing}]\ntrust_level="trusted"\n[projects.{absent}]\ntrust_level="trusted"\n',
+        '[tui]\nnote="""\n[projects.fake]\n"""\n',
+    ]
+    for index, text in enumerate(fixtures):
+        expected = tomllib.loads(text)
+        projects = expected.get("projects", {})
+        missing = {key for key in projects if not Path(key).exists()}
+        for key in missing:
+            del projects[key]
+        if missing and not projects:
+            del expected["projects"]
+        result, count = prune(text)
+        assert tomllib.loads(result) == expected, f"case {index}: unrelated configuration changed"
+        assert count == len(missing), f"case {index}: wrong removed count"
+        assert prune(result) == (result, 0), f"case {index}: not idempotent"
+    print(f"trust_pruning_cases={len(fixtures)}: OK")
