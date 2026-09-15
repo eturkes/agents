@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Share resolved's stub. Physical links stay up; restarting Tailscale briefly interrupts overlay traffic.
+stub=/run/systemd/resolve/stub-resolv.conf
+for service in NetworkManager.service systemd-resolved.service; do
+  systemctl is-active --quiet "$service"
+done
+test -s "$stub"
+if [[ "$(readlink -f /etc/resolv.conf)" != "$stub" ]]; then
+  sudo -n ln -sfn "$stub" /etc/resolv.conf
+  sudo -n nmcli general reload dns-rc
+  # Tailscale selects the resolver integration at startup.
+  if systemctl is-active --quiet tailscaled.service; then
+    sudo -n systemctl restart tailscaled.service
+  fi
+fi
+test "$(readlink -f /etc/resolv.conf)" = "$stub"
+getent ahosts login.tailscale.com >/dev/null
+printf 'DNS stub + public resolution: OK\n'
