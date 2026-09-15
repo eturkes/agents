@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Merge installed Silver metadata into its generated user overlays."""
+import argparse
+import configparser
+import io
+import os
+import tempfile
+from pathlib import Path
+
+
+def read(path):
+    value = configparser.ConfigParser(interpolation=None)
+    value.optionxform = str
+    with path.open() as stream:
+        value.read_file(stream)
+    return value
+
+
+def merge(local_path, system_path):
+    local = read(local_path)
+    system = read(system_path)
+    metadata = system["Icon Theme"]
+    # The renamed base theme owns inheritance and its directory metadata.
+    # Retain local-only generated sizes; Qt searches user assets first.
+    extra = sorted(set(local.sections()) - set(system.sections()))
+    for section in extra:
+        if section.startswith("/") or ".." in Path(section).parts:
+            raise ValueError(f"unsafe icon directory: {section}")
+        if not (local_path.parent / section).is_dir():
+            raise ValueError(f"missing local icon directory: {section}")
+        system[section] = local[section]
+    for key, scaled in (("Directories", False), ("ScaledDirectories", True)):
+        entries = [name for name in extra if (float(local[name].get("Scale", "1")) != 1) == scaled]
+        entries += metadata.get(key, "").split(",")
+        metadata[key] = ",".join(dict.fromkeys(name for name in entries if name))
+    stream = io.StringIO()
+    system.write(stream, space_around_delimiters=False)
+    return stream.getvalue().encode()
+
+
+def replace(path, payload):
+    descriptor, temporary = tempfile.mkstemp(prefix=".index.theme-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, path.stat().st_mode & 0o777)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true", help="Write the repaired manifests.")
+    args = parser.parse_args()
+    data = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")).resolve()
+    changes = []
+    for theme in ("silver", "silver-dark"):
+        local = data / "icons" / theme / "index.theme"
+        if not local.is_file():
+            continue
+        output = merge(local, Path("/usr/share/icons") / theme / "index.theme")
+        if output != local.read_bytes():
+            changes.append((local, output))
+    for path, output in changes:
+        if args.apply:
+            replace(path, output)
+        print(f"{'updated' if args.apply else 'would update'}={path}")
+    print(f"manifests_changed={len(changes)} applied={args.apply}")
+
+
+if __name__ == "__main__":
+    main()
