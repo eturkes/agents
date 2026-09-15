@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Upgrade run for the Debian container on Aeon; counterpart = host/cachyos/upgrade.
-#
-# Every toolchain here arrived through its own installer → this script drives
-# that list of self-updaters (rustup, uv, corepack, elan, moon, ...) to their
-# latest upstream release. apt packages upgrade out of band by hand.
+# Aeon Debian: latest user toolchains; host counterpart = host/cachyos/upgrade.
+# apt upgrades = manual.
 
-# Make pnpm globals reachable when this script runs outside an interactive shell.
+# Noninteractive callers need global bins on PATH.
 export PNPM_HOME="${PNPM_HOME:-$HOME/.local/share/pnpm}"
 case ":$PATH:" in
-  *":$PNPM_HOME:"*) ;;
-  *) export PATH="$PNPM_HOME:$PATH" ;;
+  *":$PNPM_HOME/bin:"*) ;;
+  *) export PATH="$PNPM_HOME/bin:$PATH" ;;
 esac
 
 # --- Rust: rustup, toolchains, and cargo-installed CLIs ---
@@ -35,12 +32,13 @@ PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 # forever. Cap the wait + skip the prune to keep the run moving.
 timeout 30 uv cache prune || echo "uv cache in use (resident uvx tool); prune skipped"
 
-# --- Node: Corepack and pnpm globals ---
-# pnpm is Corepack-managed; stay on latest v10 while this container uses Node 20.
-corepack install -g pnpm@latest-10
+# --- Node: pnpm + globals ---
+# Native pnpm = Node-independent.
+# Project pins govern -g too → use HOME for user-global updates.
+pnpm --dir "$HOME" self-update
 
 # npm lives as a pnpm global, so upgrade it explicitly.
-pnpm add -g npm@latest
+pnpm --dir "$HOME" add -g npm@latest
 
 # --- ChromiumFish ---
 # Upgrade the pnpm globals, then fetch the browser build the upgraded package
@@ -50,7 +48,7 @@ pnpm add -g npm@latest
 # launch. Repair the cache in place from Chrome for Testing: same
 # MAJOR.MINOR.BUILD = the crashpad revision this browser expects. The cache
 # persists → one download per browser-version bump.
-pnpm add -g chromiumfish@latest playwright-core@latest
+pnpm --dir "$HOME" add -g chromiumfish@latest playwright-core@latest
 chromiumfish fetch
 chromiumfish_dir="$(dirname "$(chromiumfish path)")"
 if [[ ! -x "$chromiumfish_dir/chrome_crashpad_handler" ]]; then
@@ -81,7 +79,7 @@ if [[ ! -s "$chromiumfish_dir/chrome_crashpad_handler" ]] ||
 fi
 
 # Drop unreachable package-store files after global updates.
-pnpm store prune
+pnpm --dir "$HOME" store prune
 
 # --- Lean: elan and stable toolchain ---
 # Update elan itself, then ensure stable is installed/current.
