@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Check launcher preservation with mocked desktop files and mutations."""
+import configparser
+import contextlib
+import io
+import os
+import runpy
+import shutil
+from pathlib import Path
+from unittest.mock import patch
+
+
+def probe(command):
+    removed = []
+
+    def read_entry(parser, path):
+        parser.read_string("[Desktop Entry]\nType=Application\nExec=" + command + "\n")
+        return [str(path)]
+
+    with (
+        patch.dict(os.environ, {"PATH": ""}),
+        patch.object(Path, "home", return_value=Path("/prune-check-home")),
+        patch.object(Path, "is_file", lambda path: path.name == "google-chrome.desktop"),
+        patch.object(Path, "unlink", lambda path: removed.append(path.name)),
+        patch.object(configparser.ConfigParser, "read", read_entry),
+        patch("subprocess.run"),
+        contextlib.redirect_stdout(io.StringIO()),
+    ):
+        remove_dead_launchers()
+    return removed
+
+
+remove_dead_launchers = runpy.run_path(str(Path(__file__).with_name("prune-desktop")))["remove_dead_launchers"]
+program = Path(shutil.which("true")).resolve()
+missing = str(program) + ".prune-check-missing"
+assert shutil.which(program.name, path=str(program.parent)) == str(program)
+assert shutil.which(program.name, path="") is None
+assert shutil.which(missing) is None
+fixtures = (
+    ("env-path", f"env PATH={program.parent} {program.name}", []),
+    ("working-command", str(program), []),
+    ("missing-command", missing, ["google-chrome.desktop"]),
+)
+failures = 0
+for name, command, expected in fixtures:
+    actual = probe(command)
+    failed = actual != expected
+    failures += failed
+    print(f"{'FAIL' if failed else 'OK'} {name}: removed={actual} expected={expected}")
+print(f"prune_launcher_cases={len(fixtures)} failures={failures}")
+raise SystemExit(bool(failures))
