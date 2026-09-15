@@ -47,22 +47,25 @@ def write(path, content):
         Path(temporary).unlink(missing_ok=True)
 
 
+def render_home(here):
+    template = (here / "AGENTS.merged.md").read_text()
+    routing, marker, _ = template.partition("# Alignment\n")
+    if not marker:
+        raise ValueError("home instruction template requires an Alignment section")
+    return routing + (here.parent / "AGENTS.project.md").read_text()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Write the instruction files and prune stale trust entries.")
     args = parser.parse_args()
     here = Path(__file__).resolve().parent
     home = Path.home().resolve()
-    routing = (
-        "# Runtime routing\n\n"
-        "- Native Codex → runtime + machine instructions = `~/.codex/AGENTS.md`.\n"
-        "- Codexify only → also read `~/.local/app/agents/codex/cachyos/AGENTS.merged.md`.\n\n"
-    )
     config = home / ".codex/config.toml"
     cleaned, missing = prune(config.read_text())
     outputs = {
         home / ".codex/AGENTS.md": (here / "AGENTS.md").read_text(),
-        home / "AGENTS.md": routing + (here.parent / "AGENTS.project.md").read_text(),
+        home / "AGENTS.md": render_home(here),
         config: cleaned,
     }
     changed = 0

@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["tomlkit==0.15.1"]
 # ///
-"""Check trust pruning and replay in temporary directories."""
+"""Check trust pruning, home routing, and instruction replay."""
 import json
 import runpy
 import tempfile
@@ -11,7 +11,9 @@ from pathlib import Path
 
 import tomllib
 
-prune = runpy.run_path(str(Path(__file__).with_name("deploy-instructions")))["prune"]
+here = Path(__file__).resolve().parent
+deployment = runpy.run_path(str(here / "deploy-instructions"))
+prune = deployment["prune"]
 with tempfile.TemporaryDirectory(prefix="instruction-check-") as directory:
     existing = json.dumps(directory)
     absent = json.dumps(str(Path(directory) / "absent"))
@@ -35,3 +37,34 @@ with tempfile.TemporaryDirectory(prefix="instruction-check-") as directory:
         assert count == len(missing), f"case {index}: wrong removed count"
         assert prune(result) == (result, 0), f"case {index}: not idempotent"
     print(f"trust_pruning_cases={len(fixtures)}: OK")
+
+merged = (here / "AGENTS.merged.md").read_text()
+header = merged.split("# Alignment\n", 1)[0]
+assert "`~/.local/app/emachine/`" in header, "Codexify default target is missing"
+assert "`~/.codex/AGENTS.md`" in header, "native runtime routing changed"
+assert "`~/.local/app/agents/codex/cachyos/AGENTS.codexify.md`" in header
+assert "AGENTS.merged.md" not in header, "home instructions route back to themselves"
+runtime = (here / "AGENTS.codexify.md").read_text()
+assert runtime.startswith("# Codexify\n") and "# Alignment\n" not in runtime
+render_home = deployment["render_home"]
+assert render_home(here) == merged, "home template differs from shared alignment"
+with tempfile.TemporaryDirectory(prefix="routing-check-") as directory:
+    parent = Path(directory)
+    target = parent / "cachyos"
+    target.mkdir()
+    (target / "AGENTS.merged.md").write_text(header + "# Alignment\nold\n")
+    shared = parent / "AGENTS.project.md"
+    for alignment in ["# Alignment\nfirst\n", "# Alignment\nsecond\n"]:
+        shared.write_text(alignment)
+        expected = header + alignment
+        assert render_home(target) == expected, "deployment lost routing or shared changes"
+        (target / "AGENTS.merged.md").write_text(expected)
+        assert render_home(target) == expected, "instruction replay is not idempotent"
+    (target / "AGENTS.merged.md").write_text(header)
+    try:
+        render_home(target)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("incomplete instruction template was accepted")
+print("home_routing_and_replay: OK")
