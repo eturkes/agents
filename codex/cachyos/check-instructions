@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["tomlkit==0.15.1"]
 # ///
-"""Exercise trust pruning at TOML grammar boundaries without touching live config."""
+"""Check trust pruning and replay in temporary directories."""
 import json
 import runpy
 import tempfile

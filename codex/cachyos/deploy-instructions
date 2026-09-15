@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["tomlkit==0.15.1"]
 # ///
-"""Deploy runtime-scoped instructions and prune absent Codex project trust entries."""
+"""Check instruction files and stale project trust. Use --apply to update them."""
 import argparse
 import copy
 import os
@@ -49,7 +49,7 @@ def write(path, content):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--apply", action="store_true", help="Write the instruction files and prune stale trust entries.")
     args = parser.parse_args()
     here = Path(__file__).resolve().parent
     home = Path.home().resolve()

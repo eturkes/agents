@@ -1,8 +1,10 @@
 # CachyOS host
 
-- Maintenance entry = `MAINTENANCE.md`; package operations have one owner. Preserve existing upgrade gates.
-- Runtime configuration recipes = `agent-desktop`, `normalize-dns`, `cache-retention`, `prune-desktop`, `kernel-recovery`.
-- Retained tools = Claude/Headroom/CLIProxyAPI, Thunderbird, RStudio/R, BrowserOS, document tooling + direct build tools.
-- Direct checks = `agent-desktop check`, `kernel-recovery check --capture-prefix` (sudo), `check-kernel-recovery`; instruction deployment checks = `../../codex/cachyos/check-instructions` + `deploy-instructions`.
-- Static checks = ShellCheck for Bash; Ruff + Python parse for Python. Keep original failing checks visible with their specific cause.
-- Icon migration + diagnostics = `sonic-icons/AGENTS.md`; selected-theme assets remain intact.
+- Workflow → `MAINTENANCE.md`; one package-manager owner; preserve existing upgrade gates.
+- Recipes = `agent-desktop`, `normalize-dns`, `cache-retention`, `prune-desktop`, `kernel-recovery`.
+- Package protection → `prune-desktop` policy; preserve project runtimes + user app data.
+- Host checks, cwd=this directory → `./agent-desktop check`, `sudo -n ./kernel-recovery check`, `python ./check-kernel-recovery`.
+- Guard regressions → `python ./check-prune-desktop`, `python ./check-kernel-recovery-regressions`.
+- Instruction checks, cwd=repo root → `codex/cachyos/check-instructions`, `codex/cachyos/deploy-instructions`.
+- Static checks: Bash → ShellCheck; Python → Ruff + syntax. Report failing checks with their causes.
+- Icon rules + checks → `sonic-icons/AGENTS.md`.
