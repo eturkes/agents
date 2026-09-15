@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode=${1:-check}
+[[ "$mode" == check || "$mode" == apply ]] || { echo 'Usage: agent-desktop [check|apply]' >&2; exit 2; }
+task_home=$(readlink -f -- "$HOME")
+trash="$task_home/.local/share/Trash"
+
+if [[ "$mode" == apply ]]; then
+  for key in Autolock LockOnResume LockOnStart; do
+    kwriteconfig6 --file kscreenlockerrc --group Daemon --key "$key" --type bool false
+  done
+  for profile in AC Battery LowBattery; do
+    kwriteconfig6 --file powerdevilrc --group "$profile" --group SuspendAndShutdown --key AutoSuspendAction 0
+  done
+  kwriteconfig6 --file ktrashrc --group "$trash" --key UseTimeLimit --type bool true
+  kwriteconfig6 --file ktrashrc --group "$trash" --key Days 30
+  # Native Trash cleanup runs during trash operations; preserve its existing size policy.
+  busctl --user call org.kde.Solid.PowerManagement /org/kde/Solid/PowerManagement org.kde.Solid.PowerManagement refreshStatus
+  busctl --user call org.freedesktop.ScreenSaver /ScreenSaver org.kde.screensaver configure
+fi
+
+failed=0
+check() {
+  local expected=$1 actual
+  shift
+  actual=$(kreadconfig6 "$@" --default '<unset>')
+  if [[ "$actual" == "$expected" ]]; then
+    printf 'OK %s\n' "$*"
+  else
+    printf 'FAIL %s: expected=%s actual=%s\n' "$*" "$expected" "$actual"
+    failed=1
+  fi
+}
+for key in Autolock LockOnResume LockOnStart; do
+  check false --file kscreenlockerrc --group Daemon --key "$key"
+done
+for profile in AC Battery LowBattery; do
+  check 0 --file powerdevilrc --group "$profile" --group SuspendAndShutdown --key AutoSuspendAction
+done
+check true --file ktrashrc --group "$trash" --key UseTimeLimit
+check 30 --file ktrashrc --group "$trash" --key Days
+exit "$failed"

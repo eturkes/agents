@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""Remove retired desktop front ends; retain project tools and application data."""
+import argparse
+import configparser
+import shlex
+import shutil
+import subprocess
+from pathlib import Path
+
+REMOVE = {
+    "spotify", "pcsx2-latest-bin", "kmail", "kdeconnect", "caprine-bin",
+    "electron29-bin", "signal-desktop", "simplenote-electron-bin",
+    "wasistlos-appimage", "nordvpn-gui",
+    "firefox", "google-chrome", "profile-sync-daemon",
+}
+KEEP = {
+    "thunderbird", "rstudio-desktop-bin", "r", "browseros-bin", "openai-codex-bin",
+    "tailscale", "nordvpn-bin", "qt6-base", "kwallet", "kwallet-pam",
+    "libreoffice-fresh", "inkscape", "ffmpeg", "poppler", "python", "uv", "pnpm",
+}
+
+
+def output(*args):
+    return subprocess.check_output(args, text=True).splitlines()
+
+
+def live_consumers(closure):
+    paths = set(output("pacman", "-Qlq", *sorted(closure)))
+    processes = output("sudo", "-n", "ps", "-eo", "pid=,exe=")
+    return [row.strip() for row in processes if len(parts := row.split(maxsplit=1)) == 2
+            and parts[1].removesuffix(" (deleted)") in paths]
+
+
+def remove_dead_launchers():
+    removed = False
+    for name in ("google-chrome.desktop", "simplenote.desktop"):
+        path = Path.home() / ".local/share/applications" / name
+        if not path.is_file():
+            continue
+        entry = configparser.ConfigParser(interpolation=None)
+        entry.read(path)
+        command = shlex.split(entry.get("Desktop Entry", "Exec", fallback=""))
+        if command and Path(command[0]).name == "env":
+            command = command[1:]
+            while command and "=" in command[0] and not command[0].startswith("-"):
+                command = command[1:]
+        # Preserve unsupported launch syntax or a still-working custom replacement.
+        if command and not command[0].startswith(("-", "%")) and not shutil.which(command[0]):
+            path.unlink()
+            removed = True
+            print("removed_dead_launcher=" + str(path))
+    if removed:
+        subprocess.run(["kbuildsycoca6", "--noincremental"], check=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true")
+    args = parser.parse_args()
+    installed = set(output("pacman", "-Qq"))
+    selected = sorted(REMOVE & installed)
+    if not selected:
+        if args.apply:
+            remove_dead_launchers()
+        print("retired_packages_remaining=0")
+        return
+    closure = set(output("pacman", "-Rs", "--print", "--print-format", "%n", *selected))
+    protected = KEEP | {name for name in installed if any(
+        part in name for part in ("sonic", "silver", "nvidia", "mesa", "portal", "claude")
+    )}
+    conflicts = sorted(closure & protected)
+    if conflicts:
+        raise SystemExit("protected dependency conflict: " + ", ".join(conflicts))
+    print("requested=" + ",".join(selected), flush=True)
+    print("dependency_closure=" + ",".join(sorted(closure)), flush=True)
+    if args.apply:
+        if ({"firefox", "google-chrome"} & set(selected)
+                and output("xdg-settings", "get", "default-web-browser") != ["browseros.desktop"]):
+            raise SystemExit("preserve the configured default browser before removal")
+        if "profile-sync-daemon" in selected:
+            subprocess.run(["systemctl", "--user", "disable", "--now", "psd.service"], check=True)
+        for unit in ("app-org.kde.kalendarac@autostart.service", "app-org.kde.kdeconnect.daemon@autostart.service"):
+            if output("systemctl", "--user", "show", unit, "-p", "LoadState", "--value") == ["loaded"]:
+                subprocess.run(["systemctl", "--user", "stop", unit], check=True)
+        if "kmail" in selected:
+            subprocess.run(["akonadictl", "--wait", "stop"], check=True, timeout=60)
+        if consumers := live_consumers(closure):
+            raise SystemExit("retired package executables still running: " + "; ".join(consumers))
+        subprocess.run(["sudo", "-n", "pacman", "-Rs", "--noconfirm", *selected], check=True)
+        after = set(output("pacman", "-Qq"))
+        if REMOVE & after or (protected & installed) - after:
+            raise SystemExit("post-removal package contract failed")
+        remove_dead_launchers()
+        print("retired_packages_remaining=0; protected_packages_retained=true")
+
+
+if __name__ == "__main__":
+    main()
