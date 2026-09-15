@@ -27,8 +27,9 @@
 
 ## Environment
 
-- Host = FreeBSD.
+- Host = FreeBSD on ThinkPad P71.
 - Sessions = sole user `eturkes` + passwordless `doas`.
+- Personal backup = `~/doc/`; access only when the user explicitly includes that directory.
 - Interactive login shell = `/bin/tcsh`; Codex shell calls run `/usr/local/bin/bash`.
 - Before the first absolute-path call, resolve user paths: expand `~` from active `$HOME`; existing path → `readlink -f`; derive home paths from resolved result.
 - Repo stack: discover + preserve from tracked manifests, lockfiles, scripts, CI + working commands. New language/package/tool surfaces require task need; unspecified stack → installed system tools.
@@ -39,6 +40,16 @@
 - `pgrep -f`/`pkill -f` can self-match Codex `bash -c` wrapper → one bracketed pattern (`index[.]js`) + `|| echo none`; kill/relaunch calls separate.
 - Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index`.
 - Shell rc: capture + label immediately (`cmd; rc=$?`) before `printf`, substitution, or another command; every command overwrites `$?`. EMPTY-output findings (zero matches/processes/modifications) → report rc + run a positive control. Missing command (127), mistyped path + unmatched glob emit the same bytes as a true negative.
+
+## Machine maintenance
+
+- Access = SSH TCP `9993`, public-key authentication; preserve existing accounts/keys + browser credentials. PF public ingress = host SSH + Caddy HTTP/HTTPS; VM SSH = LAN-only.
+- System maintenance → inspect `zpool status -v` + `/var/log/{daily,weekly,monthly}.log`. Package updates → refresh signed indexes/audits + review exact transactions/reverse dependencies. Stage one host/guest at a time; verify SSH, Caddy/jail/VM + backend health between stages.
+- Recovery = encrypted, restore-tested off-host copies of user/VM data + config/secrets. Retain relevant boot/jail/VM rollback points through post-change validation + verified backup; local ZFS snapshots share the pool.
+- Home snapshots = `/usr/local/sbin/home-snapshot` via `/etc/cron.d/home-snapshot`; recover selected files through `~/.zfs/snapshot/`.
+- ZFS repair → record current errors, objects + retaining snapshots; repair verified targets + check readability/checksums before clearing errors. Snapshot deletion = exact full names; monitor validating scrub to completion.
+- Firmware → resolve physical board identity (`MFG_IN_GO` ambiguity) + current vendor image compatibility/checksums; arrange console access, stable power + bootable recovery before flashing.
+- Boot/mitigation/resource-control changes (`hw.mds_disable`, RACCT/RCTL) → arrange recovery access + measure workload impact before persistence; verify access, service health + tunable behavior after controlled reboot.
 
 ## Reading
 
