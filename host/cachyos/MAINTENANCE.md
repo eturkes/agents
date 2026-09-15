@@ -53,6 +53,17 @@ The checkpoint shares the current root filesystem and user-space packages; revie
 
 ## Helper checks
 
+### Closed-lid operation
+
+- `host/cachyos/lid-policy apply` installs `logind-lid.conf` as `/etc/systemd/logind.conf.d/80-lid-ignore.conf` and reloads logind.
+- `host/cachyos/lid-policy check` checks installed bytes + live lid actions; `bash -n host/cachyos/lid-policy` + `shellcheck host/cachyos/lid-policy` check the recipe.
+- logind ignores the lid on battery, external power and docks, including startup + KDE teardown. PowerDevil releases its lid inhibitor during logout.
+- KDE policy remains in `powerdevilrc`: `LidAction=0` for `AC`, `Battery`, `LowBattery`. Manual sleep + critical-battery actions remain independent.
+- Closed-lid reboot validation is separate; the recipe preserves the active session.
+- Policy semantics → [systemd logind.conf](https://github.com/systemd/systemd/blob/v261/man/logind.conf.xml).
+
+### Kernel recovery
+
 Use `sudo -n host/cachyos/kernel-recovery check --capture-prefix` for initial-capture validation.
 After package updates, use the general `check`; current-kernel images and menu entries may change.
 
