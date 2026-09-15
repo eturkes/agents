@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""Check selection, path and capture-publication invariants in temporary trees."""
+
+import contextlib
+import errno
+import importlib.machinery
+import importlib.util
+import io
+import os
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+sys.dont_write_bytecode = True
+loader = importlib.machinery.SourceFileLoader("kernel_recovery_regressions", str(Path(__file__).with_name("kernel-recovery")))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+recovery = importlib.util.module_from_spec(spec)
+loader.exec_module(recovery)
+RELEASE = "test-release"
+
+
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
+def rejected(action):
+    try:
+        action()
+    except (OSError, RuntimeError):
+        return
+    raise AssertionError("operation accepted")
+
+
+@contextlib.contextmanager
+def fixture(captured=True, controls="default_entry: 1\n"):
+    with tempfile.TemporaryDirectory(prefix="kernel-recovery-regressions-") as directory:
+        root = Path(directory)
+        boot, state, modules = root / "boot", root / "state", root / "modules"
+        hook = root / "hooks/retention.hook"
+        source = modules / RELEASE
+        for path in (boot, hook.parent, source / "kernel", source / "updates", root / "efivars"):
+            path.mkdir(parents=True)
+        kernel = boot / "current-kernel"
+        kernel.write_bytes(b"kernel bytes")
+        (source / "vmlinuz").write_bytes(kernel.read_bytes())
+        (source / "pkgbase").write_text("managed-kernel\n")
+        (source / "kernel/example.ko").write_bytes(b"retained core module")
+        (source / "updates/extra.ko").write_bytes(b"retained extra module")
+        initramfs = boot / "current-initramfs"
+        initramfs.write_bytes(b"initramfs bytes")
+        original = (controls + f"/Current kernel\ncomment: Kernel version: {RELEASE}\nprotocol: linux\n"
+                    f"path: boot():/current-kernel#{recovery.digest(kernel, 'blake2b')}\n"
+                    f"module_path: boot():/current-initramfs#{recovery.digest(initramfs, 'blake2b')}\ncmdline: root=fixture\n").encode()
+        config = boot / "limine.conf"
+        config.write_bytes(original)
+        defaults, enrollment = root / "limine-defaults", root / "enrollment-hook"
+        defaults.write_text("")
+        enrollment.touch()
+        redirects = {"/var/lib/pacman/db.lck": root / "package-lock",
+                     "/sys/firmware/efi/efivars": root / "efivars",
+                     "/etc/default/limine": defaults,
+                     "/etc/boot/hooks/post.d/90-limine-enroll-config": enrollment}
+        paths = {"STATE": state, "BOOT": boot, "CONFIG": config, "MODULES": modules, "HOOK": hook}
+        with patch.multiple(recovery, **paths), \
+                patch.object(recovery, "Path", lambda value: redirects.get(str(value), Path(value))), \
+                patch.object(Path, "is_mount", lambda value: value == boot), \
+                patch.object(recovery.os, "uname", lambda: SimpleNamespace(release=RELEASE)):
+            item = SimpleNamespace(root=root, original=original, destination=source,
+                                   retained_boot=boot / "agent-recovery" / RELEASE, **paths)
+            if captured:
+                recovery.capture()
+            yield item
+
+
+def selection_mutation(extra):
+    with fixture() as item:
+        item.CONFIG.write_bytes(extra.encode() + item.CONFIG.read_bytes())
+        rejected(lambda: recovery.verify_checkpoint(recovery.load_manifest()))
+
+
+def uppercase_capture():
+    with fixture(controls="DEFAULT_ENTRY: 1\n"):
+        require(recovery.load_manifest()["boot_selection"] == ["DEFAULT_ENTRY: 1"], "uppercase control not retained")
+
+
+def duplicate_title():
+    with fixture() as item:
+        item.CONFIG.write_bytes(item.CONFIG.read_bytes() +
+                                f"/Agent recovery ({RELEASE})\nprotocol: linux\npath: boot():/different\n".encode())
+        rejected(lambda: recovery.verify_checkpoint(recovery.load_manifest()))
+
+
+def destination_escape(ancestor=False):
+    with fixture() as item:
+        shutil.rmtree(item.destination)
+        outside = item.root / "outside"
+        outside.mkdir()
+        if ancestor:
+            (item.destination / "kernel").mkdir(parents=True)
+            local = item.destination / "kernel/example.ko"
+            local.write_bytes(b"existing local bytes")
+            target = outside / "extra.ko"
+            (item.destination / "updates").symlink_to(outside, target_is_directory=True)
+        else:
+            (outside / "kernel").mkdir()
+            target = outside / "kernel/example.ko"
+            item.destination.symlink_to(outside, target_is_directory=True)
+            local = None
+        target.write_bytes(b"outside bytes")
+        rejected(recovery.restore_modules)
+        require(target.read_bytes() == b"outside bytes", "outside destination changed")
+        if local:
+            require(local.read_bytes() == b"existing local bytes", "restoration wrote before validating all destinations")
+
+
+def inode(path):
+    metadata = path.stat()
+    return metadata.st_dev, metadata.st_ino
+
+
+def capture_flush_order():
+    with fixture(captured=False) as item:
+        events, missing = [], []
+        real_sync, real_replace = os.fsync, os.replace
+
+        def sync(descriptor):
+            metadata = os.fstat(descriptor)
+            events.append(("sync", (metadata.st_dev, metadata.st_ino)))
+            return real_sync(descriptor)
+
+        def replace(source, destination):
+            if Path(destination) == item.CONFIG:
+                required = [item.STATE, item.STATE.parent, item.retained_boot.parent, item.HOOK, item.HOOK.parent]
+                required += list(item.STATE.rglob("*")) + [item.retained_boot] + list(item.retained_boot.rglob("*"))
+                synced = {value for kind, value in events if kind == "sync"}
+                missing.extend(str(path.relative_to(item.root)) for path in required if inode(path) not in synced)
+                events.append(("publish", inode(item.BOOT)))
+            return real_replace(source, destination)
+
+        with patch.object(recovery.os, "fsync", sync), patch.object(recovery.os, "replace", replace):
+            recovery.capture()
+        require(not missing, "checkpoint data/directories not flushed before config publication: " + ", ".join(missing))
+        publication = next(index for index, event in enumerate(events) if event[0] == "publish")
+        require(("sync", inode(item.BOOT)) in events[publication + 1:], "config directory not flushed after replacement")
+
+
+def late_write_failure(target_name):
+    with fixture(captured=False) as item:
+        real_write = recovery.atomic_write
+        fired = False
+
+        def write(path, data, mode=0o600):
+            nonlocal fired
+            real_write(path, data, mode)
+            if path == getattr(item, target_name) and not fired:
+                fired = True
+                raise OSError(errno.EIO, "simulated directory fsync failure after replacement")
+
+        with patch.object(recovery, "atomic_write", write):
+            rejected(recovery.capture)
+        require(fired, "late write fault not injected")
+        require(item.CONFIG.read_bytes() == item.original, "original config not restored")
+        require(not item.HOOK.exists(), "new hook remained after rollback")
+        require(not item.STATE.exists() and not item.retained_boot.exists(), "checkpoint remained after rollback")
+
+
+cases = {
+    "conflicting_selection": lambda: selection_mutation("default_entry: 2\n"),
+    "case_insensitive_selection": lambda: selection_mutation("DEFAULT_ENTRY: 2\n"),
+    "added_selection": lambda: selection_mutation("remember_last_entry: yes\n"),
+    "uppercase_capture": uppercase_capture,
+    "duplicate_title": duplicate_title,
+    "destination_symlink": destination_escape,
+    "ancestor_symlink_preflight": lambda: destination_escape(ancestor=True),
+    "capture_flush_order": capture_flush_order,
+    "late_hook_failure_rollback": lambda: late_write_failure("HOOK"),
+    "late_config_failure_rollback": lambda: late_write_failure("CONFIG"),
+}
+failures = 0
+for name, case in cases.items():
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            case()
+    except (AssertionError, OSError, RuntimeError, ValueError, KeyError) as error:
+        failures += 1
+        print(f"{name}=FAIL: {error}")
+    else:
+        print(f"{name}=PASS")
+sys.exit(bool(failures))

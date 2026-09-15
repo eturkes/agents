@@ -20,6 +20,7 @@ MODULES = Path("/usr/lib/modules")
 HOOK = Path("/etc/pacman.d/hooks/95-agent-kernel-recovery.hook")
 MARKER = "# agent-kernel-recovery: pinned local checkpoint"
 SKIP = {"build", "source", "pkgbase", "vmlinuz"}
+CONTROL_KEYS = {"default_entry", "remember_last_entry", "timeout"}
 
 
 def require(condition, message):
@@ -32,6 +33,25 @@ def digest(path, algorithm="sha256"):
         return hashlib.file_digest(stream, algorithm).hexdigest()
 
 
+def sync_directory(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def sync_tree(root):
+    paths = [root, *root.rglob("*")]
+    for path in paths:
+        if path.is_file() and not path.is_symlink():
+            with path.open("rb") as stream:
+                os.fsync(stream.fileno())
+    for path in sorted(paths, key=lambda item: len(item.parts), reverse=True):
+        if path.is_dir() and not path.is_symlink():
+            sync_directory(path)
+
+
 def atomic_write(path, data, mode=0o600):
     with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".agent-recovery-", delete=False) as stream:
         temporary = Path(stream.name)
@@ -41,6 +61,7 @@ def atomic_write(path, data, mode=0o600):
             os.fsync(stream.fileno())
             os.chmod(temporary, mode)
             os.replace(temporary, path)
+            sync_directory(path.parent)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -95,6 +116,7 @@ def load_manifest():
 
 def entry_properties(config, title):
     # Limine updates may re-indent comments; boot fields + module order own the contract.
+    require(sum(line.strip() == title for line in config.splitlines()) == 1, "recovery entry title must be unique")
     selected = False
     result = {}
     for line in config.splitlines():
@@ -111,6 +133,13 @@ def entry_properties(config, title):
     return result
 
 
+def selection_lines(config):
+    rows = [line for line in config.splitlines() if line.partition(":")[0].strip().lower() in CONTROL_KEYS]
+    keys = [line.partition(":")[0].strip().lower() for line in rows]
+    require(len(keys) == len(set(keys)), "boot selection keys must be unique")
+    return rows
+
+
 def verify_checkpoint(manifest, capture_prefix=False, live=True):
     require(HOOK.is_file() and HOOK.read_text() == hook_text(), "recovery package hook changed or missing")
     config = CONFIG.read_bytes()
@@ -119,6 +148,7 @@ def verify_checkpoint(manifest, capture_prefix=False, live=True):
             "pinned recovery boot fields changed")
     for line in manifest["boot_selection"]:
         require(config.splitlines().count(line.encode()) == 1, f"boot selection changed: {line}")
+    require(len(selection_lines(config.decode())) == len(manifest["boot_selection"]), "boot selection controls changed")
     if capture_prefix:
         require(config.startswith((STATE / "limine.before.conf").read_bytes()), "original Limine prefix changed")
     for name, expected in manifest["boot_files"].items():
@@ -186,14 +216,13 @@ def capture():
             copies.append((source, name))
             value = f"boot():/agent-recovery/{release}/{name}#{match[2]}"
         rewritten.append(f"{key}: {value}")
-    entry = f"\n{MARKER}\n/Agent recovery ({release})\ncomment: Pinned local kernel; boot execution untested\n" + "\n".join(rewritten) + "\n"
+    entry = f"\n{MARKER}\n/Agent recovery ({release})\ncomment: Pinned local kernel; uses the current root filesystem\n" + "\n".join(rewritten) + "\n"
     with tempfile.TemporaryDirectory(dir=STATE.parent, prefix=".agent-kernel-recovery-") as temporary:
         staging = Path(temporary)
         shutil.copytree(source_modules, staging / "modules", symlinks=True,
                         ignore=lambda path, names: SKIP.intersection(names) if Path(path) == source_modules else set())
         manifest = {"schema": 1, "release": release, "entry": entry, "boot_files": boot_files,
-                    "boot_selection": [line for line in original.decode().splitlines()
-                                       if re.match(r"^(default_entry|remember_last_entry|timeout):", line)],
+                    "boot_selection": selection_lines(original.decode()),
                     "modules": inventory(staging / "modules")}
         verify_files(source_modules, manifest["modules"])
         (staging / "limine.before.conf").write_bytes(original)
@@ -205,34 +234,47 @@ def capture():
             for source, name in copies:
                 shutil.copyfile(source, destination / name)
                 require(digest(destination / name) == boot_files[name]["sha256"], "boot copy changed")
+            # Publish the entry only after checkpoint data and directory entries are durable.
+            sync_tree(destination)
+            sync_directory(destination.parent)
+            sync_directory(BOOT)
             STATE.mkdir(mode=0o700)
             created_state = True
             for child in staging.iterdir():
                 child.rename(STATE / child.name)
-            atomic_write(HOOK, hook_text().encode(), 0o644)
+            sync_tree(STATE)
+            sync_directory(STATE.parent)
             created_hook = True
+            atomic_write(HOOK, hook_text().encode(), 0o644)
             require(CONFIG.read_bytes() == original, "Limine config changed during capture")
-            atomic_write(CONFIG, original + entry.encode(), stat.S_IMODE(CONFIG.stat().st_mode))
             changed_config = True
+            atomic_write(CONFIG, original + entry.encode(), stat.S_IMODE(CONFIG.stat().st_mode))
             verify_checkpoint(manifest, capture_prefix=True)
         except BaseException:
             if changed_config:
                 atomic_write(CONFIG, original, stat.S_IMODE(CONFIG.stat().st_mode))
             if created_hook:
-                HOOK.unlink()
+                HOOK.unlink(missing_ok=True)
             if created_state:
                 shutil.rmtree(STATE)
             if created_boot:
                 shutil.rmtree(destination)
             raise
-    print(f"recovery: captured {release}; original Limine prefix retained; boot execution untested")
+    print(f"recovery: captured {release}; original Limine prefix retained; boot validation is separate")
 
 
 def restore_modules():
     manifest = load_manifest()
     verify_checkpoint(manifest, live=False)
     destination = MODULES / manifest["release"]
-    # A same-release DKMS update may need newer user-space drivers. Never overwrite its managed tree.
+    # Validate every destination before restoring any file; ancestor links can redirect writes.
+    require(not destination.is_symlink(), "recovery destination must be a real directory")
+    for name in manifest["modules"]:
+        for parent in (destination / name).parents:
+            require(not parent.is_symlink(), f"module ancestor must be a real directory: {parent}")
+            if parent == MODULES:
+                break
+    # pkgbase protects a managed release from same-version DKMS rollback.
     if (destination / "pkgbase").exists():
         verify_files(destination, manifest["modules"])
         print("recovery: managed kernel modules match; unchanged")
@@ -261,7 +303,7 @@ def main():
     if args.action == "check":
         manifest = load_manifest()
         verify_checkpoint(manifest, capture_prefix=args.capture_prefix)
-        print(f"recovery: hashes, modules, hook + entry match ({manifest['release']}); boot execution untested")
+        print(f"recovery: hashes, modules, hook + entry match ({manifest['release']}); integrity checked, boot validation is separate")
     elif args.action == "capture":
         with Path("/run/lock/boot-partition.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
