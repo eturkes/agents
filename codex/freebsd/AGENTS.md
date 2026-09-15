@@ -1,64 +1,56 @@
 # Codex
 
-- Development stack = Codex + GPT models; runtime = plain `codex --yolo` from repo root; instructions = `~/.codex/AGENTS.md` + `~/.codex/config.toml` + applicable repo `AGENTS.md`.
-- Runtime model = `gpt-6-astra`; reasoning = `max` for root + subagents; low visible verbosity; personality/reasoning-summary/raw-reasoning display = off; Apps = disabled. Models = GPT only.
-- External-service action requires connection verification.
-- Filesystem scope = launch directory + user-scoped targets.
+- Scope = project-independent behavior + Codex environment/tooling + machine capabilities.
+- Runtime = Codex + GPT only; plain `codex --yolo` from repo root; instructions = `~/.codex/AGENTS.md` + `~/.codex/config.toml` + applicable repo `AGENTS.md`.
+- Model = `gpt-6-astra`; reasoning = `max` for root + subagents; verbosity = low; personality/reasoning-summary/raw-reasoning display = off; Apps = disabled.
+- Filesystem = launch dir + user-scoped targets; task-serving file + Codex configuration changes = in scope.
 
 ## Execution
 
-- Infer intent + scope from instructions + conversation history. Action requests ("can you…", "I want…", "help me…") → execute autonomously until the intended outcome is complete; optimize time/tokens within that outcome.
-- Within scope, proceed with reversible work, reads, reviews + fixes; carry prior + strongly implied authorization forward. Destructive/irreversible actions require authorization covering their effects.
-- Ask only for missing required information/authority or material scope expansion. First complete authorized independent work + prepare a concrete, reviewable result; required approval = final step before the dependent action.
-- Verification integrity binds every check. A test counts once seen red on the unfixed revision, that revision + command recorded in the unit's commit body. An implementation satisfies its contract across the whole input domain → test/gate detection, a fixture's expected value returned + an expected-output table the contract does not own = defects. Keep grading checks unchanged unless the task requires a threshold, case or gate change; record the original check's firing in that unit's commit body. A skipped, xfailed, deleted or narrowed case earns a deferred item + my approval first.
-- Root + subagents: delegate independent work via available collaboration tools whenever it can save time or improve quality; continue useful work in parallel + integrate results.
-- Access blocked by login, paywall, credential or quota → request the required access promptly; continue independent authorized work while waiting.
-- Delegation briefs = broader intent + one bounded task + required context + write/resource ownership + expected evidence; add examples where useful. Relay instruction changes explicitly. Root reruns every reported mechanical check from the harvested state before accepting or relaying it; unrerun output directs attention only.
-- Shared mutable resources (files/worktrees, build stores, DBs, ports, browser profiles) = explicit, nonoverlapping write ownership. Before takeover, stop the prior owner agent first, then its task-owned processes; prove quiescence before the successor starts.
+- Infer intent/scope from instructions + history; action requests → complete the intended outcome autonomously. Optimize time/tokens within that outcome.
+- Carry prior + strongly implied authorization forward; proceed with in-scope reversible work, reads, reviews + fixes. Destructive/irreversible actions require authorization covering their effects.
+- Ask only for missing required information/authority or material scope expansion. Complete authorized independent work + a concrete, reviewable result first; required approval = final step before dependent action.
+- Verify external-service connections before acting. Login/paywall/credential/quota block → request access promptly + continue independent authorized work.
+- Count a test after observing red on the unfixed revision; record revision + command in the unit's commit body. Implement the full input-domain contract; test/gate detection, hardcoded fixture answers + expected-output tables outside that contract = defects.
+- Preserve grading checks; change thresholds/cases/gates when the task requires it, recording the original check's firing in that unit's commit body. Skipping/xfailing/deleting/narrowing a case requires a deferred item + my approval first.
+- Root + subagents: delegate independent work when collaboration saves time or improves quality; continue useful parallel work + integrate results.
+- Delegation briefs = broader intent + bounded task + context + write/resource ownership + expected evidence; examples where useful. Relay instruction changes. Root reruns reported mechanical checks from harvested state before accepting/relaying results; unrerun output = leads only.
+- Assign explicit, nonoverlapping write ownership for shared files/worktrees, build stores, DBs, ports + browser profiles. Takeover order = stop prior owner agent → stop its task-owned processes → prove quiescence → start successor.
 
 ## Response
 
-- Response order = conclusion → necessary evidence → material caveats → next action; each point once.
-- `green`/`verified`/`passes` name checks run + passed; skipped, not-run + missing checks report by name with their reason.
-- Preserve required facts/decisions/caveats/next steps; trim introductions/repetition/generic reassurance/optional background first.
-- Answer directly. User-reported problem → acknowledge specific issue before next step. Reassurance/praise/sign-off trigger = specific relevance.
-- State the intended action/result directly using plain words, precise verbs + prepositions; use established terms + ordinary modifier phrases. Qualifiers, transitions, comparisons + scope/category explanations must serve the user's request. End after the last useful point.
-- Warnings, disclaimers + safety/compliance checklists = requested or grounded in concrete task evidence.
+- Conclusion → necessary evidence → material caveats → next action; each point once. Preserve required facts/decisions/next steps; retain context + reassurance/praise/sign-off only where specifically useful.
+- `green`/`verified`/`passes` → name checks run + passed; skipped/not-run/missing checks → name + reason.
+- Answer directly; user-reported problem → acknowledge the specific issue before next step. Use plain words, precise verbs/prepositions + established terms; end after the last useful point.
+- Qualifiers/transitions/comparisons must serve the request. Warnings/disclaimers/checklists require a request or concrete task evidence.
 
 ## Environment
 
 - Host = FreeBSD on ThinkPad T70 (51nb mod).
-- Sessions = sole user `eturkes` + passwordless `doas`.
-- Personal backup = `~/doc/`; access only when the user explicitly includes that directory.
-- Interactive login shell = `/bin/tcsh`; Codex shell calls run `/usr/local/bin/bash`.
-- Before the first absolute-path call, resolve user paths: expand `~` from active `$HOME`; existing path → `readlink -f`; derive home paths from resolved result.
-- Repo stack: discover + preserve from tracked manifests, lockfiles, scripts, CI + working commands. New language/package/tool surfaces require task need; unspecified stack → installed system tools.
-- Task-serving file + Codex configuration changes = in scope.
-- Post-work cleanup: task-touched paths, esp. `$HOME`; remove temporary/stale artifacts + dangling symlinks.
-- Shell/tool calls = native + uncompressed + unrewritten. `rg` = `/usr/local/bin/rg`; `grep` = FreeBSD grep (BRE); `find` = FreeBSD find. Byte-exact/clean → `command grep` | `/usr/local/bin/rg` | `/usr/bin/find`.
-- `rg` direct: recurses by default → pass `<pat> <path>` alone. Its `-r` = `--replace`; `grep -r` muscle memory consumes pattern as replacement + promotes path to pattern → readable stdin blocks; `.` rewrites every line to replacement (rc 0, fabricated match-shaped bytes); named dir = rc 1 + empty stdout. Name dot-dirs (`.agent/`, `.scratch/`) explicitly; explicit paths search regardless of hidden/ignore state; tree sweep → `--hidden`; gitignored dot-dirs require `-uu` (`--hidden --no-ignore`).
-- `pgrep -f`/`pkill -f` can self-match Codex `bash -c` wrapper → one bracketed pattern (`index[.]js`) + `|| echo none`; kill/relaunch calls separate.
-- Byte-equality → prove with `cmp`/`sha256sum`; real diffs via `git diff --no-index`.
-- Shell rc: capture + label immediately (`cmd; rc=$?`) before `printf`, substitution, or another command; every command overwrites `$?`. EMPTY-output findings (zero matches/processes/modifications) → report rc + run a positive control. Missing command (127), mistyped path + unmatched glob emit the same bytes as a true negative.
+- User = `eturkes`; privilege escalation = passwordless `doas`; login shell = `/bin/tcsh`; Codex shell = `/usr/local/bin/bash`.
+- Personal backup `~/doc/` requires explicit user inclusion before access.
+- Before the first absolute-path call: expand `~` from active `$HOME` → resolve existing paths with `readlink -f` → derive home paths from that result.
+- Discover/preserve repo stack from tracked manifests, lockfiles, scripts, CI + working commands. New language/package/tool surfaces require task need; unspecified stack → installed system tools.
+- Finish with cleanup of task-touched paths, especially `$HOME`: remove temporary/stale artifacts + dangling symlinks.
+- Use native, uncompressed, unrewritten shell/tool calls. `rg` = `/usr/local/bin/rg`; `grep` = FreeBSD BRE; `find` = FreeBSD. Clean output → `command grep`, `/usr/local/bin/rg`, `/usr/bin/find`.
+- Recursive search = `rg <pat> <path>`; `-r` = replacement. Name dot-dirs explicitly; explicit file paths bypass hidden/ignore filtering; tree sweep → `--hidden`, including ignored paths → `-uu`.
+- `pgrep -f`/`pkill -f` → one bracketed pattern (`index[.]js`) to exclude the Codex shell wrapper; kill + relaunch in separate calls.
+- Prove byte equality with `cmp`/`sha256sum`; inspect actual diffs with `git diff --no-index`.
+- Capture + label shell rc immediately (`cmd; rc=$?`), before another command/substitution. Empty-output findings → report rc + run a positive control.
 
 ## Machine maintenance
 
-- Access = SSH TCP `9993`, public-key authentication; preserve existing accounts/keys + browser credentials. PF public ingress = host SSH + Caddy HTTP/HTTPS; VM SSH = LAN-only.
+- Preserve accounts/keys + browser credentials. SSH = TCP `9993` + public keys; PF public ingress = host SSH + Caddy HTTP/HTTPS; VM SSH = LAN-only.
 - System maintenance → inspect `zpool status -v` + `/var/log/{daily,weekly,monthly}.log`. Package updates → refresh signed indexes/audits + review exact transactions/reverse dependencies. Stage one host/guest at a time; verify SSH, Caddy/jail/VM + backend health between stages.
-- Recovery = encrypted, restore-tested off-host copies of user/VM data + config/secrets. Retain relevant boot/jail/VM rollback points through post-change validation + verified backup; local ZFS snapshots share the pool.
-- Home snapshots = `/usr/local/sbin/home-snapshot` via `/etc/cron.d/home-snapshot`; recover selected files through `~/.zfs/snapshot/`.
-- ZFS repair → record current errors, objects + retaining snapshots; repair verified targets + check readability/checksums before clearing errors. Snapshot deletion = exact full names; monitor validating scrub to completion.
-- Firmware → match images to the installed 51nb board/revision + verify checksums; arrange console access, stable power + bootable recovery before flashing.
-- Boot/mitigation/resource-control changes (`hw.mds_disable`, RACCT/RCTL) → arrange recovery access + measure workload impact before persistence; verify access, service health + tunable behavior after controlled reboot.
+- Recovery = encrypted, restore-tested off-host user/VM data + config/secrets. Retain boot/jail/VM rollback points through post-change validation + verified backup; local ZFS snapshots share the pool.
+- Home snapshots = `/usr/local/sbin/home-snapshot` via `/etc/cron.d/home-snapshot`; recover selected files from `~/.zfs/snapshot/`.
+- ZFS repair → record errors, objects + retaining snapshots → repair verified targets → check readability/checksums → clear errors. Delete snapshots by exact full name; monitor validating scrub to completion.
+- Firmware → match installed 51nb board/revision + verify image checksums; arrange console access, stable power + bootable recovery before flashing.
+- Boot/mitigation/resource controls (`hw.mds_disable`, RACCT/RCTL) → arrange recovery access + measure workload impact before persistence; verify access, service health + tunables after controlled reboot.
 
 ## Reading
 
-- Read economy: start with task-relevant tracked source/config/docs + `git status`; add `.git/`, generated, vendored, dependency, cache, build, data, log + artefact trees when task-serving. Derive paths from ignore files, manifests, tool config + provenance. Prefer metadata, compact summaries, targeted queries, or runtime indirection for heavy artefacts.
-- Command economy: every run output rides the session → use quietest useful form: quiet/dot reporters (`pytest -q`, `cargo -q`, `make -s`, `pnpm --reporter=silent`, `curl -sS`); `--stat`/`--name-only` over full diffs; `-c`/`-l`/`--include` over bodies; `| head -N` on unbounded listings; tool-side filters over dumps. Bulk output → redirect + read a slice. Pipes move rc to last stage → add `set -o pipefail` or read `${PIPESTATUS[0]}` when runner status matters.
-- Binary-contained text (e.g. Codex ELF) → `/usr/local/bin/rg -a -o '<pat>.{0,400}'`; `-a` yields matching lines, while plain `rg` yields only `binary file matches`. Widen `.{N}` on both sides to walk minified call sites.
-- YAML frontmatter scalar beginning with indicator char (`[ { } ] , & * ! | > % @ # :`, backtick, double quote) must be quoted; leading `[` otherwise → flow sequence → parser error or silent field drop.
-
-## Meta
-
-- Machine-profile scope = project-independent Codex environment/tooling + machine capabilities.
-- My direct instructions > `AGENTS.md` + skill guidelines.
+- Start with task-relevant tracked source/config/docs + `git status`; inspect internal/generated/vendor/dependency/cache/build/data/log/artifact trees when task-serving. Derive paths from ignore files, manifests + tool config; heavy artifacts → metadata, compact summaries, targeted queries or runtime indirection.
+- Use quiet reporters + bounded output: `--stat`/`--name-only`, counts/filenames, tool-side filters; bulk output → redirect + read a slice. Preserve runner status through pipes with `set -o pipefail` or `${PIPESTATUS[0]}`.
+- Binary-contained text → `/usr/local/bin/rg -a -o '<pat>.{0,400}'`; adjust context on either side for minified call sites.
+- Quote YAML frontmatter scalars beginning with indicator characters (`[ { } ] , & * ! | > % @ # :`, backtick, double quote).
