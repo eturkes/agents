@@ -40,6 +40,7 @@
 
 ## Machine maintenance
 
+- Recurring corruption remains unresolved. For related failures, consult `/var/log/corruption-events.md`; append dated symptoms, evidence paths, checks/results, repair + validation. Preserve evidence before repair; separate observations from hypotheses and service recovery from root-cause resolution.
 - Preserve accounts/keys + browser credentials. SSH = TCP `9993` + public keys; PF public ingress = host SSH + Caddy HTTP/HTTPS; VM SSH = LAN-only.
 - System maintenance → inspect `zpool status -v` + `/var/log/{daily,weekly,monthly}.log`. Package updates → refresh signed indexes/audits + review exact transactions/reverse dependencies. Stage one host/guest at a time; verify SSH, Caddy/jail/VM + backend health between stages.
 - Recovery = encrypted, restore-tested off-host user/VM data + config/secrets. Retain boot/jail/VM rollback points through post-change validation + verified backup; local ZFS snapshots share the pool.
