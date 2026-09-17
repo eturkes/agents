@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Long-lived `uv run` processes hold shared cache locks for their whole lifetime.
+# `uv run` lifetime = shared cache lock.
 if uv_output="$(UV_LOCK_TIMEOUT=0 uv cache prune --offline --color never 2>&1)"; then
   printf '%s\n' "$uv_output"
 else
   uv_status=$?
-  # uv shares exit 2 between lock timeouts and real filesystem/config errors.
+  # Exit 2 also covers I/O/config errors → match the timeout diagnostic.
   if [[ $uv_status -eq 2 &&
         $'\n'$uv_output == *$'\nerror: Timeout (0s) when waiting for lock on `'* ]]; then
     echo 'uv cache is in use; skipping uv cleanup.'
