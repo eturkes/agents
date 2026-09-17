@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(dirname -- "$(readlink -f -- "$0")")
+task_home=$(readlink -f -- "$HOME")
+state="${XDG_STATE_HOME:-$task_home/.local/state}/sonic-restart"
+mkdir -p -- "$state"
+while IFS='=' read -r key value; do
+  case "$key" in
+    DISPLAY|XAUTHORITY|XDG_SESSION_TYPE|XDG_CURRENT_DESKTOP) export "$key=$value" ;;
+  esac
+done < <(systemctl --user show-environment)
+dbus-run-session --config-file="$root/session-bus.conf" -- bash -s -- "${1:-$root/launch}" "${2:-$state/restart-preview.png}" <<'ISOLATED'
+set -euo pipefail
+export PLASMA_SESSION_GUI_TEST=1 DBUS_SYSTEM_BUS_ADDRESS=unix:path=/nonexistent/sonic-restart-system-bus
+"$1" &
+greeter=$!
+cleanup() {
+  kill "$greeter" 2>/dev/null || true
+  for ((attempt=0; attempt<20; attempt++)); do
+    if ! kill -0 "$greeter" 2>/dev/null; then
+      wait "$greeter" 2>/dev/null || true
+      return
+    fi
+    sleep 0.1
+  done
+  kill -KILL "$greeter" 2>/dev/null || true
+}
+trap cleanup EXIT
+ready=false
+for ((attempt=0; attempt<100; attempt++)); do
+  if [[ $(busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus NameHasOwner s org.kde.LogoutPrompt) == 'b true' ]]; then
+    ready=true
+    break
+  fi
+  sleep 0.05
+done
+[[ "$ready" == true ]]
+[[ $(busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus GetConnectionUnixProcessID s org.kde.LogoutPrompt) == "u $greeter" ]]
+busctl --user call org.kde.LogoutPrompt /LogoutPrompt org.kde.LogoutPrompt promptReboot
+sleep 3
+size=$(LC_ALL=C xrandr --current | sed -n 's/^Screen [0-9]*:.*current \([0-9]*\) x \([0-9]*\),.*/\1x\2/p')
+[[ "$size" =~ ^[0-9]+x[0-9]+$ ]]
+ffmpeg -hide_banner -loglevel error -f x11grab -draw_mouse 0 -video_size "$size" -i "$DISPLAY" -frames:v 1 -update 1 -y "$2"
+printf 'Capture: %s\n' "$2"
+ISOLATED

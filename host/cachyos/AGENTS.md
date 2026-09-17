@@ -8,3 +8,4 @@
 - Instruction checks, cwd=repo root → `codex/cachyos/check-instructions`, `codex/cachyos/deploy-instructions`.
 - Static checks: Bash → ShellCheck; Python → Ruff + syntax. Report failing checks with their causes.
 - Icon rules + checks → `sonic-icons/AGENTS.md`.
+- Closed-lid VNC restart activation + safe GUI check → `sonic-restart/README.md`.

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(dirname -- "$(readlink -f -- "$0")")
+task_home=$(readlink -f -- "$HOME")
+state="${XDG_STATE_HOME:-$task_home/.local/state}/sonic-restart"
+mkdir -p -- "$state"
+build=$(mktemp -d "$state/check.XXXXXX")
+trap 'rm -rf -- "$build"' EXIT
+while IFS='=' read -r key value; do
+  case "$key" in
+    DISPLAY|XAUTHORITY|XDG_SESSION_TYPE|XDG_CURRENT_DESKTOP) export "$key=$value" ;;
+  esac
+done < <(systemctl --user show-environment)
+read -r -a flags <<<"$(pkg-config --cflags --libs Qt6Gui Qt6DBus x11)"
+c++ -fPIC -std=c++20 -Wall -Wextra "$root/check.cpp" -o "$build/check" "${flags[@]}"
+dbus-run-session --config-file="$root/session-bus.conf" -- "$build/check" "${1:-$root/launch}" "${2:-}"

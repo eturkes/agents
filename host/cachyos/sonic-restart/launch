@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# With no active RandR monitor, Qt exposes 0×0; the greeter needs VNC's root framebuffer.
+if [[ $(LC_ALL=C xrandr --listactivemonitors) == 'Monitors: 0' ]]; then
+  export QT_XCB_NO_XRANDR=1
+  # Headless presentation + QML timers need a render loop independent of display refresh.
+  export QSG_NO_VSYNC=1
+  export QSG_RENDER_LOOP=basic
+fi
+exec /usr/lib/ksmserver-logout-greeter "$@"
