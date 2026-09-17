@@ -25,6 +25,7 @@ dkms status
 sudo -n host/cachyos/kernel-recovery check
 systemctl --failed --no-pager
 systemctl --user --failed --no-pager
+host/cachyos/agent-crash-policy check
 nvidia-smi --query-gpu=name,driver_version,memory.used,display_active --format=csv
 codex --version
 codexify doctor
@@ -53,6 +54,18 @@ Integrity checks cover checkpoint files and metadata. Bootability requires a sep
 The checkpoint shares the current root filesystem and user-space packages; review bcachefs-format and driver compatibility before rollout.
 
 ## Helper checks
+
+### Agent crash diagnostics
+
+- `host/cachyos/agent-crash-policy apply` masks all installed DrKonqi user units + its system processor template, stops loaded instances and clears their failures.
+- `sonicde-meta` requires `sonic-dr-robotnik`; retain that dormant package to preserve desktop dependencies.
+- `KCRASH_DUMP_ONLY=1` + `KCRASH_NO_METADATA=1` persist in `~/.config/environment.d/90-agent-crash.conf`; activation environments receive the same values.
+- Future user-manager/D-Bus launches inherit dump-only mode; existing processes + direct descendants retain their environment. Unit masks act immediately. Preserve existing crash data.
+- Native `systemd-coredump`, `coredumpctl`, journal + GDB remain available; use these agent diagnostics instead of interactive crash reporting.
+- `agent-crash-policy check` checks masks, inactive/clear service state, persistent/live settings, native collector routing + diagnostic executables.
+- Static checks = `bash -n host/cachyos/agent-crash-policy` + `shellcheck host/cachyos/agent-crash-policy`; repeat apply must preserve mask targets + configuration bytes.
+- Pickup timeout cause = journal end leaves its watcher active; no report → `RuntimeMaxSec=30 minutes` expires. [Processor](https://github.com/Sonic-DE/sonic-dr-robotnik/blob/6.7.5/src/coredump/processor/main.cpp), [watcher](https://github.com/Sonic-DE/sonic-dr-robotnik/blob/6.7.5/src/coredump/coredumpwatcher.cpp).
+- KCrash switches → [KF6](https://github.com/KDE/kcrash/blob/v6.30.0/src/kcrash.cpp), [KF5](https://github.com/KDE/kcrash/blob/v5.116.0/src/kcrash.cpp).
 
 ### Closed-lid operation
 

@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+mode=${1:-check}
+[[ "$mode" == check || "$mode" == apply ]] || { echo 'Usage: agent-crash-policy [check|apply]' >&2; exit 2; }
+task_home=$(readlink -f -- "$HOME")
+config="${XDG_CONFIG_HOME:-$task_home/.config}/environment.d/90-agent-crash.conf"
+settings=(KCRASH_DUMP_ONLY=1 KCRASH_NO_METADATA=1)
+definition() { printf '%s\n' "${settings[@]}"; }
+
+unit_files=$(systemctl --user list-unit-files 'drkonqi-*' --no-legend --no-pager)
+user_units=()
+while read -r unit rest; do
+  [[ -z "$unit" ]] || user_units+=("$unit")
+done <<< "$unit_files"
+system_unit=drkonqi-coredump-processor@.service
+
+stop_loaded() {
+  local scope=$1 unit rest listing
+  local -a units=()
+  listing=$(systemctl "$scope" list-units 'drkonqi-*' --all --plain --no-legend --no-pager)
+  while read -r unit rest; do
+    [[ -z "$unit" ]] || units+=("$unit")
+  done <<< "$listing"
+  if ((${#units[@]})); then
+    if [[ "$scope" == --user ]]; then
+      systemctl --user reset-failed "${units[@]}"
+      systemctl --user stop "${units[@]}"
+    else
+      sudo -n systemctl reset-failed "${units[@]}"
+      sudo -n systemctl stop "${units[@]}"
+    fi
+  fi
+}
+
+if [[ "$mode" == apply ]]; then
+  if [[ -e "$config" || -L "$config" ]]; then
+    if [[ ! -f "$config" || -L "$config" ]] || ! cmp -s "$config" <(definition); then
+      echo "Conflicting crash-policy file: $config" >&2; exit 1
+    fi
+  fi
+  # Vendor wants/upholds links survive disable; masks also block socket/path activation.
+  if ((${#user_units[@]})); then systemctl --user mask "${user_units[@]}"; fi
+  sudo -n systemctl mask "$system_unit"
+  stop_loaded --user
+  stop_loaded --system
+  mkdir -p -- "$(dirname -- "$config")"
+  definition > "$config"
+  dbus-update-activation-environment --systemd "${settings[@]}"
+fi
+
+failed=0
+expect() {
+  local label=$1 expected=$2 actual=$3
+  if [[ "$actual" == "$expected" ]]; then
+    printf 'PASS %s\n' "$label"
+  else
+    printf 'FAIL %s: expected=%s actual=%s\n' "$label" "$expected" "$actual"
+    failed=1
+  fi
+}
+for unit in "${user_units[@]}"; do
+  expect "$unit masked" masked "$(systemctl --user is-enabled "$unit" || true)"
+done
+expect "$system_unit masked" masked "$(systemctl is-enabled "$system_unit" || true)"
+for scope in --user --system; do
+  listing=$(systemctl "$scope" list-units 'drkonqi-*' --state=active,activating,deactivating,failed --plain --no-legend --no-pager)
+  expect "$scope DrKonqi active/failed units absent" '' "$listing"
+done
+if [[ -f "$config" && ! -L "$config" ]] && cmp -s "$config" <(definition); then
+  printf 'PASS persistent KCrash dump-only configuration\n'
+else
+  printf 'FAIL persistent KCrash dump-only configuration\n'; failed=1
+fi
+manager_environment=$(systemctl --user show-environment)
+for setting in "${settings[@]}"; do
+  if command grep -Fxq -- "$setting" <<< "$manager_environment"; then
+    printf 'PASS user-manager %s\n' "$setting"
+  else
+    printf 'FAIL user-manager %s\n' "$setting"; failed=1
+  fi
+done
+# DrKonqi observes systemd's dumps; the native collector and agent tools stay independent.
+expect 'native coredump socket loaded' loaded "$(systemctl show systemd-coredump.socket -p LoadState --value)"
+expect 'native coredump socket active' active "$(systemctl show systemd-coredump.socket -p ActiveState --value)"
+if [[ $(cat /proc/sys/kernel/core_pattern) == '|/usr/lib/systemd/systemd-coredump '* ]]; then
+  printf 'PASS kernel native coredump routing\n'
+else
+  printf 'FAIL kernel native coredump routing\n'; failed=1
+fi
+for tool in coredumpctl journalctl gdb; do
+  if command -v "$tool" >/dev/null; then printf 'PASS %s available\n' "$tool";
+  else printf 'FAIL %s unavailable\n' "$tool"; failed=1; fi
+done
+exit "$failed"
