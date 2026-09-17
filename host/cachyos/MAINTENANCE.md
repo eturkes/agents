@@ -14,6 +14,7 @@
 
 Crashpad gate = nonzero handler + successful `--help`.
 After updater stages, `cache-retention` runs offline uv pruning + two-version system/AUR archive retention.
+It uses `UV_LOCK_TIMEOUT=0` to skip a busy uv cache without interrupting its users; other errors stop cleanup.
 `paccache.timer` owns weekly system archives; native KDE Trash policy owns age cleanup on KIO Trash operations.
 
 ## Postflight

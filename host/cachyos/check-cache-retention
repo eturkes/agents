@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Exercise real uv locks in disposable caches; replace package-cache commands."""
+
+import fcntl
+import json
+import os
+import signal
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+class CacheRetention(unittest.TestCase):
+    def setUp(self):
+        self.script = Path(__file__).resolve().with_name("cache-retention")
+        directory = tempfile.TemporaryDirectory(prefix="cache-retention-check-", dir=self.script.parent)
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.cache = self.root / "cache with spaces"
+        self.payload = self.cache / "archive-v0/unused/payload"
+        self.payload.parent.mkdir(parents=True)
+        self.payload.write_text("retained while locked\n")
+        self.log = self.root / "packages.jsonl"
+        binaries = self.root / "bin"
+        binaries.mkdir()
+        scripts = {
+            "sudo": '#!/bin/sh\n[ "$1" = -n ] && [ "$2" = paccache ] || exit 95\nshift\nexec "$@"\n',
+            "paccache": (
+                f"#!{sys.executable}\n"
+                "import json, os, sys\n"
+                'with open(os.environ["RETENTION_LOG"], "a") as log:\n'
+                '    log.write(json.dumps(sys.argv[1:]) + "\\n")\n'
+                'sys.exit(int(os.environ.get("RETENTION_PACKAGE_STATUS", "0")))\n'
+            ),
+        }
+        for name, source in scripts.items():
+            executable = binaries / name
+            executable.write_text(source)
+            executable.chmod(0o755)
+        self.environment = {key: value for key, value in os.environ.items() if not key.startswith("UV_")}
+        self.environment.update(
+            PATH=str(binaries) + os.pathsep + os.environ["PATH"],
+            UV_CACHE_DIR=str(self.cache),
+            UV_NO_CONFIG="1",
+            UV_LOCK_TIMEOUT="60",
+            RETENTION_LOG=str(self.log),
+            RETENTION_PACKAGE_STATUS="0",
+        )
+
+    def run_retention(self):
+        with subprocess.Popen(
+            ["bash", str(self.script)], env=self.environment, cwd=self.root,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True,
+        ) as process:
+            try:
+                output, _ = process.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                output, _ = process.communicate()
+                self.fail("cache-retention blocked for 3s: " + output)
+        calls = [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
+        return process.returncode, output, calls
+
+    def require_packages(self, calls):
+        self.assertTrue(calls, "package-cache cleanup did not run")
+        self.assertEqual(calls[0], ["-r", "-k", "2", "-c", "/var/cache/pacman/pkg"])
+        for call in calls:
+            self.assertEqual(call[:3], ["-r", "-k", "2"])
+
+    def busy_cache(self, mode):
+        with (self.cache / ".lock").open("a") as lock:
+            fcntl.flock(lock, mode)
+            status, output, calls = self.run_retention()
+            self.assertEqual(status, 0, output)
+            self.assertIn("skipping uv cleanup", output)
+            self.assertEqual(self.payload.read_text(), "retained while locked\n")
+            self.assertEqual(os.fstat(lock.fileno()).st_ino, (self.cache / ".lock").stat().st_ino)
+            with (self.cache / ".lock").open("a") as probe, self.assertRaises(BlockingIOError):
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.require_packages(calls)
+
+    def test_busy_shared_lock(self):
+        self.busy_cache(fcntl.LOCK_SH)
+
+    def test_busy_exclusive_lock(self):
+        self.busy_cache(fcntl.LOCK_EX)
+
+    def test_unlocked_cache_pruned(self):
+        status, output, calls = self.run_retention()
+        self.assertEqual(status, 0, output)
+        self.assertFalse(self.payload.exists())
+        self.assertNotIn("skipping uv cleanup", output)
+        self.require_packages(calls)
+
+    def test_unusable_lock_is_error(self):
+        (self.cache / ".lock").mkdir()
+        self.require_uv_error()
+
+    def test_invalid_cache_is_error(self):
+        self.environment["UV_CACHE_DIR"] = str(self.payload)
+        self.require_uv_error()
+
+    def require_uv_error(self):
+        status, output, calls = self.run_retention()
+        self.assertEqual(status, 2, output)
+        self.assertIn("error:", output)
+        self.assertNotIn("skipping uv cleanup", output)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.payload.read_text(), "retained while locked\n")
+
+    def test_package_error_propagated(self):
+        self.environment["RETENTION_PACKAGE_STATUS"] = "7"
+        status, output, calls = self.run_retention()
+        self.assertEqual(status, 7, output)
+        self.assertEqual(len(calls), 1)
+        self.require_packages(calls)
+
+
+if __name__ == "__main__":
+    unittest.main()
