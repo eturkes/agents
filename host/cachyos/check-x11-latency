@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""Check X-server responsiveness; physical display latency is outside this probe."""
+
+import ctypes
+import json
+import os
+import statistics
+import subprocess
+import time
+
+
+def main():
+    session = subprocess.check_output(
+        ["systemctl", "--user", "show-environment"], text=True
+    )
+    for line in session.splitlines():
+        key, _, value = line.partition("=")
+        if key in {"DISPLAY", "XAUTHORITY", "XDG_SESSION_TYPE", "XDG_CURRENT_DESKTOP"}:
+            os.environ[key] = value
+
+    x11 = ctypes.CDLL("libX11.so.6")
+    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    x11.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    display = x11.XOpenDisplay(None)
+    if not display:
+        raise SystemExit("Cannot open the desktop X display.")
+
+    samples = []
+    deadline = time.monotonic() + 10
+    try:
+        while time.monotonic() < deadline:
+            start = time.perf_counter_ns()
+            x11.XSync(display, 0)
+            samples.append((time.perf_counter_ns() - start) / 1e6)
+            time.sleep(0.005)
+    finally:
+        x11.XCloseDisplay(display)
+
+    # A 100 ms round-trip ceiling catches visible server stalls, not panel delay.
+    failures = sum(sample > 100 for sample in samples)
+    print(json.dumps({
+        "samples": len(samples),
+        "median_ms": round(statistics.median(samples), 3),
+        "max_ms": round(max(samples), 3),
+        "over_100ms": failures,
+    }))
+    return int(failures > 0)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

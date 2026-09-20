@@ -11,3 +11,4 @@
 - Icon rules + checks → `sonic-icons/AGENTS.md`.
 - Closed-lid VNC restart activation + safe GUI check → `sonic-restart/README.md`.
 - NVIDIA desktop → `./nvidia-prime-policy check` + `./nvidia-prime-policy live`; activation/rollback → `MAINTENANCE.md`.
+- X11 stalls → `./check-x11-latency`; portal polling + measurement boundary → `MAINTENANCE.md`.

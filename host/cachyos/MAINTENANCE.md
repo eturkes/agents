@@ -116,6 +116,30 @@ Fixed review = 6 rows, 6 adjudicated. Runtime checks remain the commands above.
 | Renderer evidence | Pass | Default GLX + active compositor + output providers; per-process offload cannot satisfy the gate alone. |
 | Failure + claim scope | Pass | Errors propagate. Exact layout + synchronization require separate `xrandr --prop` inspection; disconnected state is outside `live`. |
 
+### X11 responsiveness
+
+`xdg-desktop-portal-sonicde` 6.7.5 performs full RandR hardware detection every second.
+On the T480 HDMI path, Intel connector probing blocks Xorg for roughly 650 ms per scan.
+Fixed release = 6.7.5.1; cached RandR queries + output-change events replace periodic output scans.
+[Upstream fix](https://github.com/Sonic-DE/xdg-desktop-portal-sonicde/commit/631816b754eefdfe13c2f283865fd5c364c396f6).
+
+Upgrade the signed portal package through the configured SonicDE repository.
+Before activation, inspect `busctl --user tree org.freedesktop.portal.Desktop` for active request/session objects.
+When no portal requests or sessions are active, restart only `plasma-xdg-desktop-portal-kde.service`.
+Preserve GPU routing, compositing, PRIME synchronization and the desktop session.
+
+```bash
+systemctl --user restart plasma-xdg-desktop-portal-kde.service
+host/cachyos/check-x11-latency
+ruff check host/cachyos/check-x11-latency
+```
+
+`check-x11-latency` = live X11 `XSync` round trips, 10-second sampling window, 5 ms sample spacing; any round trip >100 ms fails.
+An outstanding X request can extend the sampling window; automated callers can bound execution with `timeout 20s`.
+The probe imports only the four desktop environment keys and never changes the display.
+Scope = X-server stalls; physical panel latency, rendered-frame timing, hotplug and active screencast latency require separate checks.
+On-demand capture can still query hardware; this fix removes the unconditional polling path.
+
 ### Kernel recovery
 
 Use `sudo -n host/cachyos/kernel-recovery check --capture-prefix` for initial-capture validation.
