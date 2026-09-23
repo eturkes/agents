@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Suspend once per confirmed AC outage; uncertainty preserves remote access."""
+
+import fcntl
+import json
+import math
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+GRACE = 900
+MAX_GAP = 45
+STATE = Path("/run/ac-loss-suspend/state.json")
+
+
+def optional(path):
+    try:
+        return path.read_text().strip()
+    except FileNotFoundError:
+        return None
+
+
+def power_state(root=Path("/sys/class/power_supply")):
+    external, batteries = [], []
+    try:
+        for supply in root.iterdir():
+            scope = optional(supply / "scope")
+            if scope == "Device":
+                continue
+            if scope not in (None, "System"):
+                return "unknown"
+            kind = (supply / "type").read_text().strip()
+            if not kind:
+                return "unknown"
+            if kind == "Battery":
+                present = optional(supply / "present")
+                if present == "0":
+                    continue
+                if present not in (None, "1"):
+                    return "unknown"
+                batteries.append((supply / "status").read_text().strip())
+            else:
+                online = (supply / "online").read_text().strip()
+                if online not in ("0", "1"):
+                    return "unknown"
+                external.append(online)
+    except (OSError, UnicodeError):
+        return "unknown"
+    if "1" in external:
+        return "ac"
+    # Dual batteries can alternate discharge; a charging/unknown peer is contradictory.
+    if (external and "Discharging" in batteries
+            and all(status in ("Discharging", "Full", "Not charging") for status in batteries)):
+        return "battery"
+    return "unknown"
+
+
+def finite(value):
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+
+def empty(latched=False):
+    return {"since": None, "last": None, "latched": latched}
+
+
+def valid(state):
+    return (isinstance(state, dict) and set(state) == {"since", "last", "latched"}
+            and type(state.get("latched")) is bool
+            and all(state.get(key) is None or finite(state[key]) for key in ("since", "last"))
+            and (state.get("since") is None
+                 or (state.get("last") is not None and state["since"] <= state["last"])))
+
+
+def advance(state, now, power):
+    state = empty() if state is None else dict(state) if valid(state) else empty(latched=True)
+    latched = state["latched"]
+    if not finite(now) or power not in ("ac", "battery"):
+        return empty(latched), False
+    if power == "ac":
+        return empty(), False
+    if latched:
+        return empty(latched=True), False
+    since, last = state["since"], state["last"]
+    # CLOCK_BOOTTIME includes sleep. Missed polls, resumes and clock resets earn no grace credit.
+    if since is None or last is None or not 0 <= now - last <= MAX_GAP:
+        since = now
+    return {"since": since, "last": now, "latched": False}, now - since >= GRACE
+
+
+def load_state(path):
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        # Corruption must not discard a successful suspend latch before confirmed AC returns.
+        return empty(latched=True)
+
+
+def save_state(path, state):
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, allow_nan=False) + "\n")
+    temporary.replace(path)
+
+
+def request_suspend():
+    result = subprocess.run(
+        ["/usr/bin/systemctl", "--check-inhibitors=yes", "--no-ask-password", "suspend"],
+        check=False, timeout=30,
+    )
+    # A transport failure can follow an accepted request; retain the latch on any nonzero result.
+    result.check_returncode()
+    return True
+
+
+def run_once(path, now, observe, suspend):
+    previous = load_state(path)
+    # A failed reset write must not leave old grace credit for the next poll.
+    # Keep a prior latch durable; losing it could repeat a successful suspend.
+    if previous is None or (valid(previous) and not previous["latched"]):
+        path.unlink(missing_ok=True)
+
+    def sample(state):
+        power = observe()
+        timestamp = now() if callable(now) else now
+        return advance(state, timestamp, power)
+
+    state, due = sample(previous)
+    if due:
+        # Confirm power + observation gap immediately before requesting sleep.
+        state, due = sample(state)
+    if not due:
+        save_state(path, state)
+        return "awake"
+    state["latched"] = True
+    save_state(path, state)
+    if suspend():
+        return "suspend-requested"
+    # A definite rejection may retry normally. An exception leaves disposition uncertain and latched.
+    state["latched"] = False
+    save_state(path, state)
+    return "suspend-rejected"
+
+
+def main():
+    mode = sys.argv[1:] or ["status"]
+    if mode == ["status"]:
+        print(json.dumps({"power": power_state(), "grace_seconds": GRACE, "state": load_state(STATE)}))
+        return 0
+    if mode != ["run"] or os.geteuid() != 0:
+        print("Usage: ac-loss-suspend status | run (root)", file=sys.stderr)
+        return 2
+    os.umask(0o077)
+    with STATE.with_name("lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        result = run_once(STATE, lambda: time.clock_gettime(time.CLOCK_BOOTTIME), power_state, request_suspend)
+    if result != "awake":
+        print(result)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f"AC-loss monitor kept its conservative state: {error}", file=sys.stderr)
+        sys.exit(1)

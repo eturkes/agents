@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode=${1:-check}
+[[ $# -le 1 && ( "$mode" == apply || "$mode" == check || "$mode" == rollback ) ]] || {
+  echo 'Usage: ac-loss-policy [apply|check|rollback]' >&2
+  exit 2
+}
+recipe_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+sources=(ac-loss-suspend ac-loss-suspend.service ac-loss-suspend.timer upower-critical.conf)
+targets=(/usr/local/libexec/ac-loss-suspend /etc/systemd/system/ac-loss-suspend.service /etc/systemd/system/ac-loss-suspend.timer /etc/UPower/UPower.conf.d/90-remote-workstation.conf)
+modes=(755 644 644 644)
+
+if [[ "$mode" != check ]]; then
+  for i in "${!sources[@]}"; do
+    target=${targets[$i]}
+    if [[ -e "$target" || -L "$target" ]]; then
+      if [[ ! -f "$target" || -L "$target" ]] || ! cmp -s -- "$recipe_dir/${sources[$i]}" "$target"; then
+        printf 'Refusing a different deployment: %s\n' "$target" >&2
+        exit 1
+      fi
+    fi
+  done
+fi
+
+if [[ "$mode" == rollback ]]; then
+  sudo -n systemctl disable --now ac-loss-suspend.timer
+  sudo -n systemctl stop ac-loss-suspend.service
+  for target in "${targets[@]}"; do
+    sudo -n rm -f -- "$target"
+  done
+  sudo -n systemctl daemon-reload
+  sudo -n systemctl restart upower.service
+  exit 0
+fi
+
+if [[ "$mode" == apply ]]; then
+  for i in "${!sources[@]}"; do
+    sudo -n install -D -o root -g root -m "${modes[$i]}" -- "$recipe_dir/${sources[$i]}" "${targets[$i]}"
+  done
+  sudo -n systemctl daemon-reload
+  sudo -n systemctl restart upower.service
+  sudo -n systemctl enable --now ac-loss-suspend.timer
+  sudo -n systemctl start ac-loss-suspend.service
+fi
+
+failed=0
+for i in "${!sources[@]}"; do
+  target=${targets[$i]}
+  if [[ -f "$target" && ! -L "$target" ]] && cmp -s -- "$recipe_dir/${sources[$i]}" "$target" \
+      && [[ $(stat -c '%a:%u:%g' -- "$target") == "${modes[$i]}:0:0" ]]; then
+    printf 'OK deployment: %s\n' "$target"
+  else
+    printf 'FAIL deployment bytes or metadata: %s\n' "$target" >&2
+    failed=1
+  fi
+done
+for state in is-enabled is-active; do
+  if systemctl "$state" --quiet ac-loss-suspend.timer; then
+    printf 'OK timer %s\n' "$state"
+  else
+    printf 'FAIL timer %s\n' "$state" >&2
+    failed=1
+  fi
+done
+for unit in ac-loss-suspend.service ac-loss-suspend.timer; do
+  fragment=$(systemctl show "$unit" -p FragmentPath --value)
+  overrides=$(systemctl show "$unit" -p DropInPaths --value)
+  reload=$(systemctl show "$unit" -p NeedDaemonReload --value)
+  if [[ "$fragment" == "/etc/systemd/system/$unit" && -z "$overrides" && "$reload" == no ]]; then
+    printf 'OK effective unit: %s\n' "$unit"
+  else
+    printf 'FAIL overridden or stale unit: %s\n' "$unit" >&2
+    failed=1
+  fi
+done
+observation=$(systemctl show ac-loss-suspend.service -p ActiveState -p Result -p ExecMainStatus \
+  -p ExecMainStartTimestampMonotonic -p ExecMainExitTimestampMonotonic)
+declare -A monitor=()
+while IFS='=' read -r key value; do monitor["$key"]=$value; done <<< "$observation"
+started=${monitor[ExecMainStartTimestampMonotonic]:-0}
+exited=${monitor[ExecMainExitTimestampMonotonic]:-0}
+if [[ ${monitor[ActiveState]:-} == inactive && ${monitor[Result]:-} == success && ${monitor[ExecMainStatus]:-} == 0 \
+    && "$started" =~ ^[1-9][0-9]*$ && "$exited" =~ ^[1-9][0-9]*$ ]] && ((exited >= started)); then
+  echo 'OK AC monitor completed successfully'
+else
+  printf 'FAIL AC monitor completion: %s\n' "$observation" >&2
+  failed=1
+fi
+critical=$(busctl call org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower GetCriticalAction)
+if [[ "$critical" == 's "PowerOff"' ]]; then
+  echo 'OK emergency critical-battery action: PowerOff'
+else
+  printf 'FAIL emergency critical-battery action: %s\n' "$critical" >&2
+  failed=1
+fi
+exit "$failed"

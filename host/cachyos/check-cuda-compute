@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Check Pascal-compatible CUDA execution without a toolkit or persistent state."""
+
+import ctypes as c
+import os
+import sys
+from contextlib import ExitStack
+
+PTX = b"""
+.version 6.0
+.target sm_61
+.address_size 64
+.visible .entry arithmetic(.param .u64 buffer) {
+    .reg .u64 address, offset;
+    .reg .u32 index;
+    .reg .s32 value;
+    ld.param.u64 address, [buffer];
+    cvta.to.global.u64 address, address;
+    mov.u32 index, %tid.x;
+    mul.wide.u32 offset, index, 4;
+    add.u64 address, address, offset;
+    ld.global.s32 value, [address];
+    mad.lo.s32 value, value, 3, 7;
+    st.global.s32 [address], value;
+    ret;
+}
+"""
+
+
+def main():
+    os.environ["CUDA_CACHE_DISABLE"] = "1"  # Process-local: keep PTX JIT off disk.
+    cuda = c.CDLL("libcuda.so.1")
+    p, u, i, d = c.c_void_p, c.c_uint, c.c_int, c.c_uint64
+    signatures = {
+        "cuInit": [u],
+        "cuGetErrorName": [i, c.POINTER(c.c_char_p)],
+        "cuDeviceGet": [c.POINTER(i), i],
+        "cuDeviceGetName": [p, i, i],
+        "cuCtxCreate_v2": [c.POINTER(p), u, i],
+        "cuCtxDestroy_v2": [p],
+        "cuModuleLoadData": [c.POINTER(p), c.c_char_p],
+        "cuModuleUnload": [p],
+        "cuModuleGetFunction": [c.POINTER(p), p, c.c_char_p],
+        "cuMemAlloc_v2": [c.POINTER(d), c.c_size_t],
+        "cuMemFree_v2": [d],
+        "cuMemcpyHtoD_v2": [d, p, c.c_size_t],
+        "cuMemcpyDtoH_v2": [p, d, c.c_size_t],
+        "cuLaunchKernel": [p] + [u] * 7 + [p, c.POINTER(p), c.POINTER(p)],
+        "cuCtxSynchronize": [],
+    }
+    for name, arguments in signatures.items():
+        function = getattr(cuda, name)
+        function.argtypes, function.restype = arguments, i
+
+    def call(name, *arguments):
+        result = getattr(cuda, name)(*arguments)
+        if result:
+            error = c.c_char_p()
+            cuda.cuGetErrorName(result, c.byref(error))
+            detail = error.value.decode() if error.value else str(result)
+            raise RuntimeError(f"{name}: {detail}")
+
+    call("cuInit", 0)
+    device, name = i(), c.create_string_buffer(128)
+    call("cuDeviceGet", c.byref(device), 0)
+    call("cuDeviceGetName", name, len(name), device)
+    values = list(range(-32, 32))
+    expected = [3 * value + 7 for value in values]
+    buffer = (c.c_int32 * len(values))(*values)
+    context, module, kernel, memory = p(), p(), p(), d()
+    with ExitStack() as cleanup:
+        call("cuCtxCreate_v2", c.byref(context), 0, device)
+        cleanup.callback(call, "cuCtxDestroy_v2", context)
+        call("cuModuleLoadData", c.byref(module), PTX)
+        cleanup.callback(call, "cuModuleUnload", module)
+        call("cuModuleGetFunction", c.byref(kernel), module, b"arithmetic")
+        call("cuMemAlloc_v2", c.byref(memory), c.sizeof(buffer))
+        cleanup.callback(call, "cuMemFree_v2", memory)
+        call("cuMemcpyHtoD_v2", memory, buffer, c.sizeof(buffer))
+        parameters = (p * 1)(c.cast(c.byref(memory), p))
+        call("cuLaunchKernel", kernel, 1, 1, 1, len(values), 1, 1, 0, None, parameters, None)
+        call("cuCtxSynchronize")
+        call("cuMemcpyDtoH_v2", buffer, memory, c.sizeof(buffer))
+        if list(buffer) != expected:
+            raise RuntimeError(f"CUDA arithmetic mismatch: {list(buffer)} != {expected}")
+    print(f"CUDA compute: PASS; {name.value.decode()}; {len(values)} integer results match")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, AttributeError, RuntimeError) as error:
+        print(f"CUDA compute: FAIL; {error}", file=sys.stderr)
+        sys.exit(1)

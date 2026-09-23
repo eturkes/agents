@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Keep interruption, observation and uncertain-request failures awake."""
+
+import contextlib
+import importlib.machinery
+import importlib.util
+import io
+import json
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+SOURCE = Path(__file__).resolve().with_name("ac-loss-suspend")
+SPEC = importlib.util.spec_from_loader("ac_loss", importlib.machinery.SourceFileLoader("ac_loss", str(SOURCE)))
+POLICY = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(POLICY)
+
+
+class FailureRegressions(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="ac-loss-regression-", dir=SOURCE.parent)
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.state = self.root / "state.json"
+
+    def seed(self, latched=False):
+        self.state.write_text(json.dumps({"since": 100, "last": 985, "latched": latched}))
+
+    def test_failed_interruption_save_discards_old_grace(self):
+        for power in ("ac", "unknown"):
+            with self.subTest(power=power):
+                self.seed()
+                request = Mock(return_value=True)
+                with patch.object(POLICY, "save_state", side_effect=OSError("write failed")), self.assertRaises(OSError):
+                    POLICY.run_once(self.state, 1000, lambda power=power: power, request)
+                POLICY.run_once(self.state, 1015, lambda: "battery", request)
+                request.assert_not_called()
+                self.assertEqual(json.loads(self.state.read_text())["since"], 1015)
+
+    def test_failed_invalidation_precedes_observation(self):
+        self.seed()
+        observe, request = Mock(return_value="battery"), Mock(return_value=True)
+        with patch.object(Path, "unlink", side_effect=OSError("read-only")), self.assertRaises(OSError):
+            POLICY.run_once(self.state, 1000, observe, request)
+        observe.assert_not_called()
+        request.assert_not_called()
+
+    def test_latched_state_survives_failed_reset_save(self):
+        self.seed(latched=True)
+        with patch.object(POLICY, "save_state", side_effect=OSError("write failed")), self.assertRaises(OSError):
+            POLICY.run_once(self.state, 1000, lambda: "ac", Mock())
+        self.assertTrue(json.loads(self.state.read_text())["latched"])
+
+    def test_nonzero_command_result_keeps_uncertain_latch(self):
+        self.seed()
+        result = subprocess.CompletedProcess(["systemctl"], 1)
+        with patch.object(POLICY.subprocess, "run", return_value=result) as command:
+            with self.assertRaises(subprocess.SubprocessError):
+                POLICY.run_once(self.state, 1000, lambda: "battery", POLICY.request_suspend)
+            POLICY.run_once(self.state, 1015, lambda: "battery", POLICY.request_suspend)
+            self.assertEqual(command.call_count, 1)
+        self.assertTrue(json.loads(self.state.read_text())["latched"])
+
+    def run_main(self, observe, clock):
+        with patch.object(POLICY, "STATE", self.state), patch.object(POLICY.sys, "argv", [str(SOURCE), "run"]), \
+                patch.object(POLICY.os, "geteuid", return_value=0), \
+                patch.object(POLICY, "power_state", side_effect=observe), \
+                patch.object(POLICY.time, "clock_gettime", side_effect=clock), \
+                patch.object(POLICY, "request_suspend", return_value=True) as request, \
+                contextlib.redirect_stdout(io.StringIO()):
+            POLICY.main()
+            return request.call_count
+
+    def test_grace_starts_after_power_observation(self):
+        now = [1000]
+
+        def observe():
+            now[0] += 5
+            return "battery"
+
+        self.assertEqual(self.run_main(observe, lambda _: now[0]), 0)
+        self.assertEqual(json.loads(self.state.read_text())["since"], 1005)
+
+    def test_delayed_confirmation_restarts_grace(self):
+        self.seed()
+        now, reads = [1000], [0]
+
+        def observe():
+            reads[0] += 1
+            if reads[0] == 2:
+                now[0] += 50
+            return "battery"
+
+        self.assertEqual(self.run_main(observe, lambda _: now[0]), 0)
+        self.assertEqual(json.loads(self.state.read_text())["since"], 1050)
+
+    def test_unknown_scope_cannot_supply_discharge_evidence(self):
+        for name, fields in {
+            "AC": {"type": "Mains", "online": "0"},
+            "battery": {"type": "Battery", "status": "Not charging"},
+            "unknown": {"type": "Battery", "status": "Discharging", "scope": "Unknown"},
+        }.items():
+            path = self.root / name
+            path.mkdir()
+            for field, value in fields.items():
+                (path / field).write_text(value)
+        for scope in ("Unknown", "", "garbage"):
+            (self.root / "unknown/scope").write_text(scope)
+            self.assertEqual(POLICY.power_state(self.root), "unknown")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode=${1:-check}
+[[ $# -le 1 && ( "$mode" == apply || "$mode" == check || "$mode" == live || "$mode" == rollback ) ]] || {
+  echo 'Usage: intel-graphics-policy [apply|check|live|rollback]' >&2
+  exit 2
+}
+recipe_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+sources=(intel-graphics-display intel-graphics-xorg.conf intel-graphics-sddm.conf)
+targets=(/usr/local/libexec/intel-graphics-display /etc/X11/xorg.conf.d/90-intel-graphics.conf /etc/sddm.conf.d/90-intel-graphics.conf)
+legacy_sources=(nvidia-prime-display nvidia-prime-xorg.conf nvidia-prime-sddm.conf)
+legacy_targets=(/usr/local/libexec/nvidia-prime-display /etc/X11/xorg.conf.d/90-nvidia-prime.conf /etc/sddm.conf.d/90-nvidia-prime.conf)
+modes=(755 644 644)
+
+check_files() {
+  local index target failed=0
+  for index in "${!sources[@]}"; do
+    target=${targets[index]}
+    if [[ ! -L "$target" ]] && cmp -s -- "$recipe_dir/${sources[index]}" "$target" &&
+      [[ $(stat -c '%a:%u:%g' -- "$target") == "${modes[index]}:0:0" ]]; then
+      printf 'OK installed: %s\n' "$target"
+    else
+      printf 'FAIL bytes or metadata: %s\n' "$target" >&2
+      failed=1
+    fi
+  done
+  for target in "${legacy_targets[@]}"; do
+    if [[ -e "$target" || -L "$target" ]]; then
+      printf 'FAIL NVIDIA desktop policy remains: %s\n' "$target" >&2
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
+case "$mode" in
+  apply|rollback)
+    # Preflight both policies before writes; preserve foreign files and symlinks.
+    for index in "${!sources[@]}"; do
+      for policy in intel legacy; do
+        if [[ "$policy" == intel ]]; then
+          target=${targets[index]}
+          source=${sources[index]}
+        else
+          target=${legacy_targets[index]}
+          source=${legacy_sources[index]}
+        fi
+        if [[ -L "$target" ]] || { [[ -e "$target" ]] && ! cmp -s -- "$recipe_dir/$source" "$target"; }; then
+          printf 'Refusing different existing file: %s\n' "$target" >&2
+          exit 1
+        fi
+      done
+    done
+    if [[ "$mode" == rollback ]]; then
+      for target in "${targets[@]}"; do sudo -n rm -f -- "$target"; done
+      "$recipe_dir/nvidia-prime-policy" apply
+      exit
+    fi
+    for index in "${!sources[@]}"; do
+      sudo -n install -D -o root -g root -m "${modes[index]}" -- "$recipe_dir/${sources[index]}" "${targets[index]}"
+    done
+    "$recipe_dir/nvidia-prime-policy" rollback
+    check_files
+    echo 'Intel graphics configured; NVIDIA compute remains available. Restart SDDM to activate.'
+    ;;
+  check)
+    check_files
+    ;;
+  live)
+    desktop_environment=$(systemctl --user show-environment)
+    while IFS='=' read -r key value; do
+      case "$key" in
+        DISPLAY|XAUTHORITY|XDG_SESSION_TYPE|XDG_CURRENT_DESKTOP) export "$key=$value" ;;
+      esac
+    done <<< "$desktop_environment"
+    failed=0
+    renderer=$(env -u __NV_PRIME_RENDER_OFFLOAD -u __NV_PRIME_RENDER_OFFLOAD_PROVIDER -u __GLX_VENDOR_LIBRARY_NAME -u DRI_PRIME glxinfo -B)
+    if [[ "$renderer" == *'OpenGL renderer string: Mesa Intel'* ]]; then
+      echo 'OK default renderer: Intel'
+    else
+      echo 'FAIL default renderer is not Intel' >&2
+      failed=1
+    fi
+    compositor=$(qdbus6 org.kde.KWin /KWin org.kde.KWin.supportInformation)
+    if [[ "$compositor" == *'Compositing is active'* && "$compositor" == *'OpenGL renderer string: Mesa Intel'* ]]; then
+      echo 'OK active desktop compositor: Intel'
+    else
+      echo 'FAIL active desktop compositor is not Intel' >&2
+      failed=1
+    fi
+    providers=$(xrandr --listproviders)
+    if awk '/^Providers: number : 1$/ {one=1} /Source Output/ && /name:modesetting$/ {intel=1} END {exit !(one && intel)}' <<< "$providers"; then
+      echo 'OK Xorg provider: Intel modesetting only'
+    else
+      echo 'FAIL Xorg providers are not Intel-only' >&2
+      failed=1
+    fi
+    # Check display state after KDE has applied its saved layout, not only Xsetup.
+    if python - <<'PY'
+import re
+import subprocess
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+outputs = subprocess.check_output(["xrandr", "--current"], text=True)
+connected = [line.split() for line in outputs.splitlines() if " connected" in line]
+active = [parts[0] for parts in connected
+          if any(re.fullmatch(r"\d+x\d+\+\d+\+\d+", part) for part in parts)]
+hdmi = [parts[0] for parts in connected if parts[0].startswith("HDMI-")]
+states = [p.read_text().split()[-1] for p in Path("/proc/acpi/button/lid").glob("*/state")]
+if not states or any(state not in {"open", "closed"} for state in states):
+    raise SystemExit("FAIL lid state unavailable")
+closed = "closed" in states
+if hdmi and hdmi[0] not in active:
+    raise SystemExit("FAIL connected HDMI is inactive")
+if (hdmi or closed) and any(name.startswith("eDP-") for name in active):
+    raise SystemExit("FAIL internal panel active with HDMI or closed lid")
+size = re.search(r"^Screen 0:.* current (\d+) x (\d+),", outputs, re.MULTILINE)
+if not size or min(map(int, size.groups())) <= 0:
+    raise SystemExit("FAIL X framebuffer unavailable")
+if not active and (not closed or int(size[1]) < 1920 or int(size[2]) < 1080):
+    raise SystemExit("FAIL no active output or usable headless framebuffer")
+xset = subprocess.check_output(["xset", "q"], text=True)
+if "DPMS is Disabled" not in xset or not re.search(r"timeout:\s+0\s+cycle:", xset):
+    raise SystemExit("FAIL X idle blanking or DPMS remains enabled")
+print(f"OK display: active={active}, lid={'closed' if closed else 'open'}, "
+      f"framebuffer={size[1]}x{size[2]}, idle blanking disabled")
+
+root = ET.fromstring(subprocess.check_output(["nvidia-smi", "-q", "-x"], text=True))
+gpus = root.findall("gpu")
+if not gpus:
+    raise SystemExit("FAIL NVIDIA driver reports no GPU")
+for gpu in gpus:
+    processes = gpu.find("processes")
+    if processes is None or (processes.text or "").strip():
+        raise SystemExit("FAIL NVIDIA process accounting unavailable")
+    for process in processes:
+        kind = process.findtext("type", "").strip()
+        if process.tag != "process_info" or kind not in {"C", "M", "G", "C+G", "M+G"}:
+            raise SystemExit("FAIL unknown NVIDIA process accounting")
+        if "G" in kind:
+            raise SystemExit(f"FAIL NVIDIA graphics client: pid={process.findtext('pid')}, type={kind}")
+print("OK NVIDIA driver available; no graphics clients")
+PY
+    then :; else failed=1; fi
+    exit "$failed"
+    ;;
+esac

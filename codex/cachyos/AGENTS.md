@@ -35,7 +35,7 @@
 - Desktop = live X11 session + authenticated GUI apps.
 - GUI from TTY → child env overrides = `DISPLAY`, `XAUTHORITY`, `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP` from `systemctl --user show-environment`; expose only these keys.
 - Repo stack: discover + preserve from tracked manifests, lockfiles, scripts, CI + working commands. New language/package/tool surfaces require task need. Defaults: Python → `uv`; Node.js → `pnpm`; visual QA/web scraping → `chromiumfish`.
-- Compute + desktop rendering → dGPU; physical display output + video decoding → iGPU.
+- LLMs/scientific compute → NVIDIA dGPU; desktop/browser rendering + display/video → Intel iGPU. Preserve NVIDIA compute access + VRAM.
 - Task-serving environment + Codex changes (skills/plugins/software) = in scope.
 - Host maintenance → `~/.local/app/agents/host/cachyos/MAINTENANCE.md`.
 - Authenticated web = BrowserOS (`http://127.0.0.1:9000/mcp`), sole configured MCP; signed-in PDF/PNG/DOM captures → `webcap --user-data-dir ~/.config/browser-os`; `chromiumfish` = isolated visual QA.

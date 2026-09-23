@@ -12,6 +12,10 @@ if [[ "$mode" == apply ]]; then
   done
   for profile in AC Battery LowBattery; do
     kwriteconfig6 --file powerdevilrc --group "$profile" --group SuspendAndShutdown --key AutoSuspendAction 0
+    kwriteconfig6 --file powerdevilrc --group "$profile" --group SuspendAndShutdown --key LidAction 0
+    for key in DimDisplayWhenIdle TurnOffDisplayWhenIdle; do
+      kwriteconfig6 --file powerdevilrc --group "$profile" --group Display --key "$key" --type bool false
+    done
   done
   kwriteconfig6 --file ktrashrc --group "$trash" --key UseTimeLimit --type bool true
   kwriteconfig6 --file ktrashrc --group "$trash" --key Days 30
@@ -37,6 +41,10 @@ for key in Autolock LockOnResume LockOnStart; do
 done
 for profile in AC Battery LowBattery; do
   check 0 --file powerdevilrc --group "$profile" --group SuspendAndShutdown --key AutoSuspendAction
+  check 0 --file powerdevilrc --group "$profile" --group SuspendAndShutdown --key LidAction
+  for key in DimDisplayWhenIdle TurnOffDisplayWhenIdle; do
+    check false --file powerdevilrc --group "$profile" --group Display --key "$key"
+  done
 done
 check true --file ktrashrc --group "$trash" --key UseTimeLimit
 check 30 --file ktrashrc --group "$trash" --key Days

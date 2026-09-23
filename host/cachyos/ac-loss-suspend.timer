@@ -1,0 +1,11 @@
+[Unit]
+Description=Observe AC power independently of the desktop
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=ac-loss-suspend.service
+
+[Install]
+WantedBy=timers.target

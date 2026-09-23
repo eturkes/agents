@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+/usr/share/sddm/scripts/Xsetup "$@"
+xset s off
+xset -dpms
+outputs=$(xrandr --query)
+hdmi=$(awk '$1 ~ /^HDMI-/ && $2 == "connected" {print $1; exit}' <<< "$outputs")
+if [[ -n "$hdmi" ]]; then
+  # Disable the panel only after the external output activates successfully.
+  xrandr --output "$hdmi" --auto --primary
+  while read -r panel; do
+    xrandr --output "$panel" --off
+  done < <(awk '$1 ~ /^eDP-/ {print $1}' <<< "$outputs")
+else
+  xrandr --auto
+  # Headless console = framebuffer without lighting the closed internal panel.
+  if grep -qs 'state:[[:space:]]*closed' /proc/acpi/button/lid/*/state; then
+    while read -r panel; do
+      xrandr --output "$panel" --off
+    done < <(awk '$1 ~ /^eDP-/ {print $1}' <<< "$outputs")
+    current=$(xrandr --current)
+    if ! awk '$2 == "connected" && /[0-9]+x[0-9]+\+[0-9]+\+[0-9]+/ {active=1} END {exit !active}' <<< "$current"; then
+      xrandr --fb 1920x1080
+    fi
+  fi
+fi

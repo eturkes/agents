@@ -1,0 +1,18 @@
+[Unit]
+Description=Suspend once after a confirmed 15-minute AC outage
+After=systemd-logind.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/ac-loss-suspend run
+RuntimeDirectory=ac-loss-suspend
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+UMask=0077
+TimeoutStartSec=40s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX

@@ -76,45 +76,15 @@ The checkpoint shares the current root filesystem and user-space packages; revie
 - Closed-lid reboot validation is separate; the recipe preserves the active session.
 - Policy semantics → [systemd logind.conf](https://github.com/systemd/systemd/blob/v261/man/logind.conf.xml).
 
-### NVIDIA desktop rendering
+### Intel graphics + NVIDIA compute
 
-T480 = MX150 `PCI:1:0:0` renders the X screen; Intel `PCI:0:2:0` sends HDMI.
-`nvidia-prime-policy apply` installs explicit NVIDIA-primary Xorg configuration + an SDDM display hook.
-The hook retains packaged `Xsetup`, links Intel's output sink, activates connected HDMI and disables eDP.
-No HDMI → normal connected-output activation. KDE owns the subsequent session layout.
+`intel-graphics-policy` owns Intel-only Xorg + SDDM output setup; NVIDIA remains available for compute.
+Desktop/browser rendering = Intel. HDMI connected → active primary + eDP off; closed-lid headless → VNC framebuffer.
+`agent-desktop apply` disables desktop idle sleep + dimming/display-off; `lid-policy` covers login/logout and startup.
+`ac-loss-policy` owns the independent AC-loss grace; retain emergency critical-battery protection.
 
-```bash
-bash -n host/cachyos/nvidia-prime-policy host/cachyos/nvidia-prime-display
-shellcheck host/cachyos/nvidia-prime-policy host/cachyos/nvidia-prime-display
-nvidia-xconfig --tree --xconfig host/cachyos/nvidia-prime-xorg.conf
-host/cachyos/nvidia-prime-policy apply
-host/cachyos/nvidia-prime-policy check
-stat -c '%a %U:%G %n' /usr/local/libexec/nvidia-prime-display /etc/X11/xorg.conf.d/90-nvidia-prime.conf /etc/sddm.conf.d/90-nvidia-prime.conf
-```
-
-Activation = `sudo -n systemctl restart sddm.service`; ends the desktop session. Keep an independent terminal available.
-`host/cachyos/nvidia-prime-policy live` checks default GLX rendering, active SonicWin rendering, PRIME providers and active HDMI.
-It refreshes only the four desktop environment keys from the user manager and removes per-process GPU selection overrides.
-Desktop terminal: `xrandr --prop` shows HDMI `PRIME Synchronization`; `nvidia-smi` shows graphics clients.
-`check` = installed bytes only; metadata = root:root, hook `755`, configuration `644`.
-`live` requires the HDMI-connected desktop and does not certify future boots or disconnected layouts.
-NVIDIA rendering applies to the whole X screen, including the internal panel when used; HDMI scanout remains Intel.
-
-Rollback = `host/cachyos/nvidia-prime-policy rollback`, then restart SDDM.
-Apply/rollback reject different existing files; rollback removes only the recipe's three deployment paths.
-No package-owned configuration changes; no render-offload environment variables required.
-Driver contract → `/usr/share/doc/nvidia/README`, “Offloading Graphics Display with RandR 1.4”.
-
-Fixed review = 6 rows, 6 adjudicated. Runtime checks remain the commands above.
-
-| Check | Ruling | Evidence / boundary |
-|---|---|---|
-| GPU roles | Pass | NVIDIA primary screen + Intel modesetting sink; explicit T480 PCI IDs. |
-| Display startup | Pass | SDDM invokes the owned executable; packaged setup precedes provider linking. |
-| Layout | Pass | HDMI preferred mode = requested 1080p60; hook disables eDP. KDE can subsequently change layout; no-HDMI fallback remains unexercised. |
-| Ownership + rollback | Pass | Conflict/symlink preflight; root-owned installation; matching-file-only removal. Byte checks + separate metadata inspection; live rollback remains unexercised. |
-| Renderer evidence | Pass | Default GLX + active compositor + output providers; per-process offload cannot satisfy the gate alone. |
-| Failure + claim scope | Pass | Errors propagate. Exact layout + synchronization require separate `xrandr --prop` inspection; disconnected state is outside `live`. |
+Activation, rollback timer, checks + boot/snapshot boundaries → [REMOTE-REBOOT.md](REMOTE-REBOOT.md).
+Legacy `nvidia-prime-*` sources remain exclusively as the configuration rollback target.
 
 ### X11 responsiveness
 

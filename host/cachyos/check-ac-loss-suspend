@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""Exercise AC-loss policy with synthetic supplies, clocks and suspend requests."""
+
+import importlib.machinery
+import importlib.util
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+SOURCE = Path(__file__).resolve().with_name("ac-loss-suspend")
+SPEC = importlib.util.spec_from_loader("ac_loss", importlib.machinery.SourceFileLoader("ac_loss", str(SOURCE)))
+POLICY = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(POLICY)
+
+
+class TemporalPolicy(unittest.TestCase):
+    def advance(self, state=None, start=100, end=1000, power="battery"):
+        due = False
+        for now in range(start, end + 1, 15):
+            state, due = POLICY.advance(state, now, power)
+        return state, due
+
+    def test_full_grace_and_deadline(self):
+        state, due = self.advance(end=985)
+        self.assertFalse(due)
+        state, due = POLICY.advance(state, 999.999, "battery")
+        self.assertFalse(due)
+        self.assertTrue(POLICY.advance(state, 1000, "battery")[1])
+
+    def test_battery_boot_starts_full_grace(self):
+        state, due = POLICY.advance(None, 100000, "battery")
+        self.assertFalse(due)
+        self.assertEqual(state["since"], 100000)
+
+    def test_ac_never_due(self):
+        self.assertFalse(self.advance(end=10000, power="ac")[1])
+
+    def test_ac_restoration_restarts_grace(self):
+        state, _ = self.advance(end=985)
+        state, due = POLICY.advance(state, 990, "ac")
+        self.assertFalse(due)
+        state, due = POLICY.advance(state, 1000, "battery")
+        self.assertFalse(due)
+        self.assertEqual(state["since"], 1000)
+
+    def test_unknown_restarts_grace(self):
+        state, _ = self.advance(end=985)
+        state, due = POLICY.advance(state, 990, "unknown")
+        self.assertFalse(due)
+        state, due = POLICY.advance(state, 1000, "battery")
+        self.assertFalse(due)
+        self.assertEqual(state["since"], 1000)
+
+    def test_unobserved_gap_and_reversed_clock_reset_grace(self):
+        state, _ = self.advance(end=985)
+        for now in (984, 1040, 100000):
+            with self.subTest(now=now):
+                result, due = POLICY.advance(state, now, "battery")
+                self.assertFalse(due)
+                self.assertEqual(result["since"], now)
+
+    def test_invalid_clock_and_state_cannot_trigger(self):
+        state, _ = self.advance()
+        for now in (float("nan"), float("inf"), -1):
+            self.assertFalse(POLICY.advance(state, now, "battery")[1])
+        for broken in ({}, {"since": -1, "last": 990, "latched": False},
+                       {"since": "0", "last": 990, "latched": False},
+                       {"since": 0, "last": float("nan"), "latched": False}):
+            self.assertFalse(POLICY.advance(broken, 1000, "battery")[1])
+
+    def test_resume_latch_survives_unknown_and_clears_only_on_ac(self):
+        state = {"since": 100, "last": 1000, "latched": True}
+        for now, power in [(2000, "battery"), (2015, "unknown"), (2030, "battery")]:
+            state, due = POLICY.advance(state, now, power)
+            self.assertFalse(due)
+            self.assertTrue(state["latched"])
+        state, due = POLICY.advance(state, 2045, "ac")
+        self.assertFalse(due)
+        self.assertFalse(state["latched"])
+
+
+class SupplyEvidence(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="ac-loss-supplies-", dir=SOURCE.parent)
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.supply("AC", type="Mains", online="0")
+        self.supply("USB", type="USB", scope="System", online="0")
+        self.supply("BAT0", type="Battery", present="1", status="Discharging")
+        self.supply("BAT1", type="Battery", present="1", status="Not charging")
+
+    def supply(self, name, **values):
+        path = self.root / name
+        path.mkdir(exist_ok=True)
+        for key, value in values.items():
+            (path / key).write_text(value + "\n")
+
+    def test_affirmative_battery_and_all_external_offline(self):
+        self.assertEqual(POLICY.power_state(self.root), "battery")
+
+    def test_each_external_online_prevents_sleep(self):
+        for name in ("AC", "USB"):
+            with self.subTest(name=name):
+                self.supply(name, online="1")
+                self.assertEqual(POLICY.power_state(self.root), "ac")
+                self.supply(name, online="0")
+
+    def test_new_supply_type_cannot_hide_online_power(self):
+        self.supply("future", type="NewPowerSource", online="1")
+        self.assertEqual(POLICY.power_state(self.root), "ac")
+
+    def test_peripheral_battery_is_not_host_evidence(self):
+        self.supply("mouse", type="Battery", scope="Device", status="Discharging")
+        self.supply("BAT0", status="Not charging")
+        self.assertEqual(POLICY.power_state(self.root), "unknown")
+
+    def test_absent_battery_is_not_evidence(self):
+        self.supply("BAT0", present="0")
+        self.assertEqual(POLICY.power_state(self.root), "unknown")
+
+    def test_missing_empty_malformed_or_unreadable_evidence(self):
+        target = self.root / "AC/online"
+        for value in ("", "unknown", "2", "-1"):
+            target.write_text(value)
+            self.assertEqual(POLICY.power_state(self.root), "unknown")
+        target.unlink()
+        self.assertEqual(POLICY.power_state(self.root), "unknown")
+        self.supply("AC", online="0")
+        with patch.object(Path, "read_text", side_effect=PermissionError("denied")):
+            self.assertEqual(POLICY.power_state(self.root), "unknown")
+        self.assertEqual(POLICY.power_state(self.root / "missing"), "unknown")
+
+    def test_unknown_battery_or_contradictory_charging_prevents_sleep(self):
+        for value in ("Unknown", "Charging", "garbage"):
+            self.supply("BAT1", status=value)
+            self.assertEqual(POLICY.power_state(self.root), "unknown")
+
+    def test_no_external_evidence_prevents_sleep(self):
+        for name in ("AC", "USB"):
+            for child in (self.root / name).iterdir():
+                child.unlink()
+            (self.root / name).rmdir()
+        self.assertEqual(POLICY.power_state(self.root), "unknown")
+
+
+class RequestBoundary(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="ac-loss-state-", dir=SOURCE.parent)
+        self.addCleanup(directory.cleanup)
+        self.state = Path(directory.name) / "state.json"
+        self.state.write_text(json.dumps({"since": 100, "last": 985, "latched": False}))
+
+    def test_persist_latch_before_request_and_do_not_repeat(self):
+        def suspend():
+            self.assertTrue(json.loads(self.state.read_text())["latched"])
+            return True
+        request = Mock(side_effect=suspend)
+        POLICY.run_once(self.state, 1000, lambda: "battery", request)
+        POLICY.run_once(self.state, 3000, lambda: "battery", request)
+        self.assertEqual(request.call_count, 1)
+
+    def test_rejected_suspend_can_retry_without_ignoring_inhibitors(self):
+        request = Mock(side_effect=[False, True])
+        POLICY.run_once(self.state, 1000, lambda: "battery", request)
+        self.assertFalse(json.loads(self.state.read_text())["latched"])
+        POLICY.run_once(self.state, 1015, lambda: "battery", request)
+        self.assertEqual(request.call_count, 2)
+
+    def test_uncertain_request_failure_preserves_latch(self):
+        request = Mock(side_effect=TimeoutError("unknown disposition"))
+        with self.assertRaises(TimeoutError):
+            POLICY.run_once(self.state, 1000, lambda: "battery", request)
+        self.assertTrue(json.loads(self.state.read_text())["latched"])
+
+    def test_ac_or_unknown_before_request_cancels(self):
+        for final in ("ac", "unknown"):
+            with self.subTest(final=final):
+                self.setUp()
+                request = Mock()
+                POLICY.run_once(self.state, 1000, Mock(side_effect=["battery", final]), request)
+                request.assert_not_called()
+                self.assertIsNone(json.loads(self.state.read_text())["since"])
+
+    def test_state_write_failure_never_requests_suspend(self):
+        request = Mock()
+        with patch.object(POLICY, "save_state", side_effect=OSError("disk failure")), self.assertRaises(OSError):
+            POLICY.run_once(self.state, 1000, lambda: "battery", request)
+        request.assert_not_called()
+
+    def test_malformed_state_never_credits_elapsed_time(self):
+        self.state.write_text("broken")
+        request = Mock()
+        POLICY.run_once(self.state, 1000, lambda: "battery", request)
+        request.assert_not_called()
+
+    def test_request_command_respects_inhibitors(self):
+        with patch.object(POLICY.subprocess, "run", return_value=Mock(returncode=0)) as run:
+            self.assertTrue(POLICY.request_suspend())
+        self.assertEqual(run.call_args.args[0],
+                         ["/usr/bin/systemctl", "--check-inhibitors=yes", "--no-ask-password", "suspend"])
+
+
+if __name__ == "__main__":
+    unittest.main()
