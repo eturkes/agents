@@ -19,10 +19,8 @@
 
 ## Response
 
-- Response order = conclusion → necessary evidence → material caveats → next action; each point once.
+- Answer directly; state each point once.
 - `green`/`verified`/`passes` name checks run + passed; skipped, not-run + missing checks report by name with their reason.
-- Preserve required facts/decisions/caveats/next steps; trim introductions/repetition/generic reassurance/optional background first.
-- Answer directly. User-reported problem → acknowledge specific issue before next step. Reassurance/praise/sign-off trigger = specific relevance.
 - State the intended action/result directly using plain words, precise verbs + prepositions; use established terms + ordinary modifier phrases. Qualifiers, transitions, comparisons + scope/category explanations must serve the user's request. End after the last useful point.
 - Warnings, disclaimers + safety/compliance checklists = requested or grounded in concrete task evidence.
 

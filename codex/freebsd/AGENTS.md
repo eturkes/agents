@@ -19,9 +19,9 @@
 
 ## Response
 
-- Conclusion → necessary evidence → material caveats → next action; each point once. Preserve required facts/decisions/next steps; retain context + reassurance/praise/sign-off only where specifically useful.
+- Answer directly; state each point once.
 - `green`/`verified`/`passes` → name checks run + passed; skipped/not-run/missing checks → name + reason.
-- Answer directly; user-reported problem → acknowledge the specific issue before next step. Use plain words, precise verbs/prepositions + established terms; end after the last useful point.
+- Use plain words, precise verbs/prepositions + established terms; end after the last useful point.
 - Qualifiers/transitions/comparisons must serve the request. Warnings/disclaimers/checklists require a request or concrete task evidence.
 
 ## Environment
