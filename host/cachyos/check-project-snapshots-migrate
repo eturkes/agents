@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Exercise migration boundaries on disposable native bcachefs trees."""
+
+import importlib.machinery
+import importlib.util
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+SCRIPT = Path(__file__).with_name("project-snapshots-migrate")
+loader = importlib.machinery.SourceFileLoader("migration", str(SCRIPT))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+migration = importlib.util.module_from_spec(spec)
+loader.exec_module(migration)
+
+
+class Migration(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(
+            prefix="migration-check-", dir=Path.home() / ".local/state/project-snapshots"
+        )
+        self.base = Path(self.temp.name)
+        self.source = self.base / "Projects with spaces"
+        self.source.mkdir()
+        self.state = self.base / "state"
+
+    def tearDown(self):
+        subprocess.run(
+            ["bcachefs", "subvolume", "delete", str(self.base / "snapshot")],
+            capture_output=True, check=False,
+        )
+        for path in sorted(migration.subvolumes(self.base), key=lambda p: len(p.parts), reverse=True):
+            subprocess.run(["bcachefs", "subvolume", "delete", str(path)], check=True)
+        self.temp.cleanup()
+
+    def test_native_migration_preserves_data_and_excludes_cache(self):
+        project = self.source / "project"
+        project.mkdir()
+        data = project / "uncommitted file"
+        data.write_bytes(os.urandom(16384))
+        data.chmod(0o640)
+        os.link(data, project / "hardlink")
+        (project / "symlink").symlink_to("uncommitted file")
+        cache = project / "cache"
+        cache.mkdir()
+        (cache / "payload").write_bytes(b"cache\n")
+        before = migration.archive_hash(self.source)
+        migration.migrate(self.source, self.state, ["project/cache"])
+        self.assertEqual(migration.archive_hash(self.source), before)
+        self.assertTrue(migration.is_subvolume(self.source))
+        self.assertTrue(migration.is_subvolume(cache))
+        options = migration.run("bcachefs", "get-file-option", "--effective", str(cache / "payload"))
+        self.assertIn("nocow\t1", options)
+        self.assertEqual(data.stat().st_ino, (project / "hardlink").stat().st_ino)
+        subprocess.run(
+            ["bcachefs", "subvolume", "snapshot", "-r", str(self.source), str(self.base / "snapshot")],
+            check=True,
+        )
+        self.assertFalse((self.base / "snapshot/project/cache/payload").exists())
+        self.assertEqual((self.base / "snapshot/project/uncommitted file").read_bytes(), data.read_bytes())
+        migration.migrate(self.source, self.state, ["project/cache"])
+
+    def test_open_file_blocks_activation_and_preserves_original(self):
+        data = self.source / "data"
+        data.write_text("original\n")
+        inode = self.source.stat().st_ino
+        with data.open(), self.assertRaisesRegex(RuntimeError, "open"):
+            migration.migrate(self.source, self.state, [])
+        self.assertEqual(self.source.stat().st_ino, inode)
+        self.assertEqual(data.read_text(), "original\n")
+
+    def test_exclusion_cannot_escape_through_symlink(self):
+        outside = self.base / "outside"
+        outside.mkdir()
+        (self.source / "link").symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            migration.validate_exclusions(self.source, ["link/cache"])
+        for invalid in ("../outside", "/outside", "."):
+            with self.assertRaises(ValueError):
+                migration.validate_exclusions(self.source, [invalid])
+
+    def test_existing_nested_subvolume_requires_preservation_plan(self):
+        subprocess.run(["bcachefs", "subvolume", "create", str(self.source / "nested")], check=True)
+        with self.assertRaisesRegex(RuntimeError, "nested"):
+            migration.migrate(self.source, self.state, [])
+
+    def test_archive_hash_detects_same_size_content_change(self):
+        data = self.source / "data"
+        data.write_text("before\n")
+        before = migration.archive_hash(self.source)
+        times = data.stat()
+        data.write_text("after!\n")
+        os.utime(data, ns=(times.st_atime_ns, times.st_mtime_ns))
+        self.assertNotEqual(migration.archive_hash(self.source), before)
+
+
+if __name__ == "__main__":
+    unittest.main()

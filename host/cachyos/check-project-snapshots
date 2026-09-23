@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""Exercise hook scope, pairing, recovery, boundary guards and storage reporting."""
+
+import contextlib
+import copy
+import importlib.machinery
+import importlib.util
+import io
+import json
+import tempfile
+import threading
+import unittest
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+
+class Backend:
+    def __init__(self, root):
+        self.root = root
+        self.config = {
+            "SUBVOLUME": str(root), "FSTYPE": "bcachefs", "UNIQUE_NUMBERS": "yes",
+            "TIMELINE_CREATE": "no", "TIMELINE_CLEANUP": "no",
+            "NUMBER_CLEANUP": "no", "EMPTY_PRE_POST_CLEANUP": "no",
+            "BACKGROUND_COMPARISON": "no",
+        }
+        self.rows = []
+        self.calls = []
+        self.subvolumes = {root}
+        self.next_number = 1
+        self.fail_create = False
+        self.lose_create_reply = False
+        self.lock = threading.Lock()
+
+    def __call__(self, command):
+        with self.lock:
+            self.calls.append(command)
+            if command[0] == "bcachefs":
+                target = Path(command[-1])
+                actual = target if target in self.subvolumes else self.root.parent
+                nodes = [{"id": 100, "path": str(actual), "sectors": 8, "subvol": 1}]
+                nodes += [
+                    {"id": row["number"], "path": str(self.root / ".snapshots" / str(row["number"]) / "snapshot"),
+                     "sectors": row["number"] * 2, "subvol": row["number"] + 1}
+                    for row in self.rows
+                ]
+                nodes.append({"id": 99, "sectors": 16})
+                return json.dumps({"query_root": {"path": str(actual), "snapshot": 100, "subvol": 1}, "nodes": nodes})
+            if "get-config" in command:
+                return json.dumps(self.config)
+            if "list" in command:
+                return json.dumps({"projects": [{"number": 0, "type": "single", "userdata": None}, *self.rows]})
+            if "create" not in command:
+                raise AssertionError(command)
+            if self.fail_create:
+                raise RuntimeError("snapshot creation failed")
+            option = lambda name: command[command.index(name) + 1]
+            row = {
+                "number": self.next_number, "type": option("--type"),
+                "pre-number": int(option("--pre-number")) if "--pre-number" in command else None,
+                "description": option("--description"), "date": "2026-09-24 12:30:00",
+                "userdata": dict(item.split("=", 1) for item in option("--userdata").split(",")),
+            }
+            self.rows.append(row)
+            self.next_number += 1
+            if self.lose_create_reply:
+                self.lose_create_reply = False
+                raise RuntimeError("reply lost after create")
+            return str(row["number"]) + "\n"
+
+
+class ProjectSnapshots(unittest.TestCase):
+    def setUp(self):
+        source = Path(__file__).resolve().with_name("project-snapshots")
+        loader = importlib.machinery.SourceFileLoader("project_snapshots", str(source))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        self.module = importlib.util.module_from_spec(spec)
+        loader.exec_module(self.module)
+        directory = tempfile.TemporaryDirectory(prefix="project-snapshots-check-", dir=source.parent)
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.projects = self.root / "Projects"
+        self.projects.mkdir()
+        self.child = self.projects / "project with spaces"
+        self.child.mkdir()
+        self.state = self.root / "state"
+        self.state.mkdir()
+        (self.state / "excludes").write_text("")
+        self.backend = Backend(self.projects)
+        self.manager = self.module.ProjectSnapshots(self.projects, self.state, run=self.backend)
+
+    def event(self, event="SessionStart", session="session-a", cwd=None, source="startup"):
+        return {"hook_event_name": event, "session_id": session, "cwd": str(cwd or self.child), "source": source}
+
+    def hook(self, **options):
+        self.manager.hook(self.event(**options))
+
+    def report(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.manager.report()
+        return output.getvalue()
+
+    def test_pair_survives_working_directory_change(self):
+        self.hook()
+        self.hook(event="SessionEnd", cwd=self.root)
+        self.assertEqual([(row["type"], row["pre-number"]) for row in self.backend.rows], [("pre", None), ("post", 1)])
+        creates = [call for call in self.backend.calls if "create" in call]
+        self.assertTrue(all("--read-only" in call for call in creates))
+        self.assertTrue(all("--cleanup-algorithm" not in call for call in creates))
+        self.assertEqual(self.backend.rows[0]["userdata"], self.backend.rows[1]["userdata"])
+        self.hook(event="SessionEnd")
+        self.assertEqual(len(self.backend.rows), 2)
+
+    def test_scope_uses_real_paths_and_ignores_compaction(self):
+        sibling = self.root / "Projects-other"
+        sibling.mkdir()
+        escape = self.projects / "escape"
+        escape.symlink_to(sibling, target_is_directory=True)
+        for cwd in (self.root, sibling, escape, self.projects / ".snapshots/1/snapshot"):
+            if cwd.name == "snapshot":
+                cwd.mkdir(parents=True)
+            self.hook(cwd=cwd)
+        self.hook(source="compact")
+        self.assertEqual(self.backend.calls, [])
+        self.hook(cwd=self.projects)
+        self.assertEqual(len(self.backend.rows), 1)
+
+    def test_launch_resume_clear_fork_each_create_pairs(self):
+        for source in ("startup", "resume", "clear", "fork"):
+            self.hook(source=source)
+            self.hook(event="SessionEnd")
+        self.assertEqual([row["pre-number"] for row in self.backend.rows if row["type"] == "post"], [1, 3, 5, 7])
+        self.assertEqual(len({row["userdata"]["claude_run"] for row in self.backend.rows}), 4)
+
+    def test_overlapping_sessions_pair_independently(self):
+        def launch(number):
+            manager = self.module.ProjectSnapshots(self.projects, self.state, run=self.backend)
+            manager.hook(self.event(session=f"session-{number}"))
+            manager.hook(self.event(event="SessionEnd", session=f"session-{number}", cwd=self.root))
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(launch, range(8)))
+        by_number = {row["number"]: row for row in self.backend.rows}
+        self.assertEqual(len(self.backend.rows), 16)
+        for post in (row for row in self.backend.rows if row["type"] == "post"):
+            self.assertEqual(post["userdata"], by_number[post["pre-number"]]["userdata"])
+
+    def test_ordinary_directory_and_wrong_config_fail_before_create(self):
+        for change in ("ordinary", "wrong-config", "automatic-cleanup"):
+            with self.subTest(change=change):
+                config = copy.deepcopy(self.backend.config)
+                if change == "ordinary":
+                    self.backend.subvolumes.clear()
+                elif change == "wrong-config":
+                    self.backend.config["SUBVOLUME"] = str(self.root)
+                else:
+                    self.backend.config["NUMBER_CLEANUP"] = "yes"
+                with self.assertRaises(self.module.SnapshotError):
+                    self.hook()
+                self.backend.config = config
+                self.backend.subvolumes = {self.projects}
+        self.assertEqual(self.backend.rows, [])
+        self.assertIn("ERROR", self.report())
+
+    def test_recreated_exclusion_fails_closed(self):
+        cache = self.child / ".cache"
+        (self.state / "excludes").write_text("# Native boundaries\nproject with spaces/.cache\n")
+        self.hook()
+        self.hook(event="SessionEnd")
+        cache.mkdir()
+        with self.assertRaisesRegex(self.module.SnapshotError, "exclusion"):
+            self.hook()
+        self.backend.subvolumes.add(cache)
+        self.hook()
+        self.assertEqual(len(self.backend.rows), 3)
+
+    def test_invalid_exclusion_path_fails_closed(self):
+        for name in ("../outside", "/tmp/outside", ".", ".snapshots/cache"):
+            with self.subTest(name=name):
+                (self.state / "excludes").write_text(name + "\n")
+                with self.assertRaises(self.module.SnapshotError):
+                    self.hook()
+        self.assertEqual(self.backend.rows, [])
+
+    def test_malformed_input_is_reported_without_snapshot(self):
+        invalid = [None, [], {}, self.event(session="../bad"), self.event(cwd="relative/path")]
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(self.module.SnapshotError):
+                self.manager.hook(value)
+        self.assertEqual(self.backend.rows, [])
+        self.assertIn("ERROR", self.report())
+
+    def test_post_failure_preserves_pre_and_retry_recovers(self):
+        self.hook()
+        self.backend.fail_create = True
+        with self.assertRaises(self.module.SnapshotError):
+            self.hook(event="SessionEnd")
+        self.assertEqual([row["type"] for row in self.backend.rows], ["pre"])
+        self.assertIn("without a post", self.report())
+        self.backend.fail_create = False
+        self.hook(event="SessionEnd")
+        self.assertEqual([row["type"] for row in self.backend.rows], ["pre", "post"])
+
+    def test_lost_pre_reply_recovers_from_snapshot_metadata(self):
+        self.backend.lose_create_reply = True
+        with self.assertRaises(self.module.SnapshotError):
+            self.hook()
+        self.hook(event="SessionEnd")
+        self.assertEqual([(row["type"], row["pre-number"]) for row in self.backend.rows], [("pre", None), ("post", 1)])
+
+    def test_lost_post_reply_does_not_duplicate_post(self):
+        self.hook()
+        self.backend.lose_create_reply = True
+        with self.assertRaises(self.module.SnapshotError):
+            self.hook(event="SessionEnd")
+        self.hook(event="SessionEnd")
+        self.assertEqual(len(self.backend.rows), 2)
+
+    def test_abandoned_pre_stays_visible_after_resume(self):
+        self.hook()
+        self.hook(source="resume")
+        self.hook(event="SessionEnd")
+        self.assertEqual([row["pre-number"] for row in self.backend.rows if row["type"] == "post"], [2])
+        self.assertIn("without a post: 1", self.report())
+
+    def test_manually_deleted_pre_is_not_replaced(self):
+        self.hook()
+        self.backend.rows.clear()
+        with self.assertRaises(self.module.SnapshotError):
+            self.hook(event="SessionEnd")
+        self.assertEqual(self.backend.rows, [])
+
+    def test_report_is_read_only_and_separates_shared_history(self):
+        self.hook()
+        self.hook(event="SessionEnd")
+        before = {str(path): path.read_bytes() for path in self.state.rglob("*") if path.is_file()}
+        self.backend.calls.clear()
+        report = self.report()
+        self.assertIn("Snapshot leaf data", report)
+        self.assertIn("3.0 KiB", report)
+        self.assertIn("Shared history", report)
+        self.assertIn("8.0 KiB", report)
+        self.assertIn("not deletion savings", report)
+        self.assertIn("snapper -c projects delete", report)
+        self.assertFalse(any("create" in call or "delete" in call for call in self.backend.calls))
+        after = {str(path): path.read_bytes() for path in self.state.rglob("*") if path.is_file()}
+        self.assertEqual(before, after)
+
+    def test_malformed_backend_metadata_is_a_clear_error(self):
+        self.hook()
+        self.hook(event="SessionEnd")
+        original = self.manager.runner
+        for mutation in ("path", "userdata", "pre-number"):
+            def malformed(command, mutation=mutation):
+                data = json.loads(original(command))
+                if mutation == "path" and command[0] == "bcachefs":
+                    data["nodes"][0]["path"] = 7
+                elif mutation != "path" and "list" in command:
+                    data["projects"][-1][mutation] = []
+                return json.dumps(data)
+            self.manager.runner = malformed
+            with self.subTest(mutation=mutation), self.assertRaises(self.module.SnapshotError):
+                self.report()
+        self.manager.runner = original
+
+    def test_templates_have_both_bounded_hooks(self):
+        root = Path(__file__).resolve().parents[2]
+        for name in ("opus", "fable"):
+            settings = json.loads((root / "claude/cachyos" / f"settings.{name}.json").read_text())
+            for event in ("SessionStart", "SessionEnd"):
+                groups = settings["hooks"].get(event, [])
+                hooks = [hook for group in groups for hook in group["hooks"] if "project-snapshots" in hook.get("command", "")]
+                self.assertEqual(len(hooks), 1, (name, event))
+                self.assertEqual(hooks[0]["command"], '"$HOME/.local/bin/project-snapshots" hook')
+                self.assertEqual(hooks[0]["timeout"], 60)
+
+    def test_hook_installation_preserves_settings_and_is_idempotent(self):
+        settings = self.root / "settings.json"
+        document = {"env": {"KEEP": "value"}, "hooks": {"SessionStart": [{"hooks": [
+            {"type": "command", "command": "keep-this-hook"},
+        ]}]}, "permissions": {"defaultMode": "bypassPermissions"}}
+        settings.write_text(json.dumps(document))
+        self.manager.install_hooks(settings)
+        first = settings.read_bytes()
+        self.manager.install_hooks(settings)
+        self.assertEqual(settings.read_bytes(), first)
+        result = json.loads(first)
+        self.assertEqual(result["env"], document["env"])
+        self.assertEqual(result["permissions"], document["permissions"])
+        hooks = [hook for group in result["hooks"]["SessionStart"] for hook in group["hooks"]]
+        self.assertEqual([hook["command"] for hook in hooks], ["keep-this-hook", self.module.COMMAND])
+
+
+if __name__ == "__main__":
+    unittest.main()

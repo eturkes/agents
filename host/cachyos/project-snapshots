@@ -1,0 +1,408 @@
+#!/usr/bin/env python3
+"""Native Projects snapshots: Claude session pairs and manual-retention reports."""
+
+import argparse
+import contextlib
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+CONFIG = "projects"
+COMMAND = '"$HOME/.local/bin/project-snapshots" hook'
+POLICY = {
+    "FSTYPE": "bcachefs", "UNIQUE_NUMBERS": "yes", "BACKGROUND_COMPARISON": "no",
+    "TIMELINE_CREATE": "no", "TIMELINE_CLEANUP": "no", "NUMBER_CLEANUP": "no",
+    "EMPTY_PRE_POST_CLEANUP": "no",
+}
+
+
+class SnapshotError(RuntimeError):
+    pass
+
+
+def clean(value):
+    return "".join(character if character.isprintable() else " " for character in str(value))
+
+
+def size(value):
+    value = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB", "PiB"):
+        if value < 1024 or unit == "PiB":
+            return f"{value:.1f} {unit}" if unit != "B" else f"{value:.0f} B"
+        value /= 1024
+
+
+def atomic_json(path, value, indent=None):
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, prefix=".write-", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(value, stream, ensure_ascii=False, indent=indent)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def hook_group(event):
+    group = {"hooks": [{"type": "command", "command": COMMAND, "timeout": 60}]}
+    if event == "SessionStart":
+        group["matcher"] = "startup|resume|clear|fork"
+    return group
+
+
+class ProjectSnapshots:
+    def __init__(self, root=None, state=None, run=None):
+        home = Path.home().resolve()
+        self.root = Path(root) if root is not None else home / "Projects"
+        self.state = Path(state) if state is not None else home / ".local/state/project-snapshots"
+        self.runner = run
+        self.deadline = None
+
+    def command(self, arguments):
+        timeout = 30 if self.deadline is None else min(30, self.deadline - time.monotonic())
+        if timeout <= 0:
+            raise SnapshotError("Snapshot hook exceeded its 50-second work budget.")
+        try:
+            if self.runner is not None:
+                return self.runner(arguments)
+            result = subprocess.run(arguments, capture_output=True, text=True, timeout=timeout, check=False)
+            if result.returncode:
+                detail = clean(result.stderr.strip() or result.stdout.strip())[:500]
+                raise SnapshotError(f"{arguments[0]} exited {result.returncode}: {detail}")
+            return result.stdout
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+            raise SnapshotError(str(error)) from error
+
+    def query(self, arguments):
+        try:
+            return json.loads(self.command(arguments))
+        except (ValueError, TypeError) as error:
+            raise SnapshotError(f"Invalid JSON from {arguments[0]}: {error}") from error
+
+    def native_tree(self, path):
+        tree = self.query(["bcachefs", "subvolume", "list-snapshots", "--json", str(path)])
+        if not isinstance(tree, dict) or not isinstance(tree.get("query_root"), dict):
+            raise SnapshotError("bcachefs returned an invalid snapshot tree.")
+        actual = tree["query_root"].get("path")
+        if not isinstance(actual, str) or Path(actual).resolve() != path:
+            raise SnapshotError(f"{path} must be a native subvolume root; bcachefs reports {actual!r}.")
+        if not isinstance(tree.get("nodes"), list):
+            raise SnapshotError("bcachefs returned an invalid snapshot node list.")
+        return tree
+
+    def exclusions(self):
+        path = self.state / "excludes"
+        if not path.is_file():
+            raise SnapshotError(f"Missing exclusion policy: {path}")
+        entries = []
+        for line in path.read_text().splitlines():
+            name = line.strip()
+            if not name or name.startswith("#"):
+                continue
+            relative = Path(name)
+            if relative.is_absolute() or not relative.parts or ".." in relative.parts or relative.parts[0] == ".snapshots":
+                raise SnapshotError(f"Invalid exclusion path: {name!r}")
+            target = self.root / relative
+            if target.is_symlink() or target.resolve() != target:
+                raise SnapshotError(f"The exclusion must have a direct path: {target}")
+            if target.exists():
+                if not target.is_dir():
+                    raise SnapshotError(f"The exclusion must be a directory: {target}")
+                try:
+                    self.native_tree(target)
+                except SnapshotError as error:
+                    raise SnapshotError(f"Snapshot exclusion lost its native boundary: {target}. {error}") from error
+            entries.append(target)
+        return entries
+
+    def validate(self):
+        if not self.root.is_dir() or self.root.resolve() != self.root:
+            raise SnapshotError(f"The Projects source must be a direct directory: {self.root}")
+        config = self.query(["snapper", "--jsonout", "-c", CONFIG, "get-config"])
+        if not isinstance(config, dict):
+            raise SnapshotError("Snapper returned an invalid configuration.")
+        subvolume = config.get("SUBVOLUME")
+        if not isinstance(subvolume, str) or Path(subvolume).resolve() != self.root:
+            raise SnapshotError(f"Snapper {CONFIG} must target {self.root}; SUBVOLUME={subvolume!r}.")
+        wrong = [f"{key}={value}" for key, value in POLICY.items() if config.get(key) != value]
+        if wrong:
+            raise SnapshotError("Snapper manual-retention policy requires " + ", ".join(wrong) + ".")
+        tree = self.native_tree(self.root)
+        exclusions = self.exclusions()
+        return tree, exclusions
+
+    def snapshots(self):
+        result = self.query([
+            "snapper", "--jsonout", "--iso", "-c", CONFIG, "list", "--columns",
+            "number,type,pre-number,date,description,userdata",
+        ])
+        rows = result.get(CONFIG) if isinstance(result, dict) else None
+        if not isinstance(rows, list):
+            raise SnapshotError("Snapper returned an invalid snapshot list.")
+        for row in rows:
+            if not isinstance(row, dict) or type(row.get("number")) is not int or row["number"] < 0:
+                raise SnapshotError("Snapper returned an invalid snapshot number.")
+            if (row.get("type") not in ("single", "pre", "post")
+                    or (row.get("userdata") is not None and not isinstance(row["userdata"], dict))):
+                raise SnapshotError("Snapper returned invalid snapshot metadata.")
+            if row["type"] == "post" and (type(row.get("pre-number")) is not int or row["pre-number"] <= 0):
+                raise SnapshotError("Snapper returned an invalid pre snapshot reference.")
+        return [row for row in rows if row["number"]]
+
+    @contextlib.contextmanager
+    def locked(self):
+        self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
+        descriptor = os.open(self.state / "lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            end = time.monotonic() + 20
+            while True:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= end:
+                        raise SnapshotError("Another snapshot hook held the lock for more than 20 seconds.")
+                    time.sleep(0.05)
+            yield
+        finally:
+            os.close(descriptor)
+
+    def record_error(self, error):
+        try:
+            self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
+            line = json.dumps({"time": datetime.now(timezone.utc).isoformat(timespec="seconds"), "error": clean(error)}) + "\n"
+            descriptor = os.open(self.state / "errors.jsonl", os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            try:
+                os.write(descriptor, line.encode())
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        except OSError as failure:
+            print(f"project-snapshots: cannot save the error: {failure}", file=sys.stderr)
+
+    def state_path(self, session):
+        return self.state / (hashlib.sha256(session.encode()).hexdigest() + ".json")
+
+    def load_session(self, path, session):
+        try:
+            data = json.loads(path.read_text())
+            if (not isinstance(data, dict) or data.get("session") != session
+                    or not re.fullmatch(r"[a-f0-9]{32}", str(data.get("run")))
+                    or not isinstance(data.get("cwd"), str)):
+                raise ValueError("invalid session record")
+            return data
+        except (OSError, ValueError, TypeError) as error:
+            raise SnapshotError(f"Cannot read the pending session: {path}: {error}") from error
+
+    def create(self, kind, record, pre=None):
+        relative = Path(record["cwd"]).relative_to(self.root)
+        command = [
+            "snapper", "-c", CONFIG, "create", "--type", kind, "--read-only", "--print-number",
+            "--description", f"Claude {kind}: {clean(relative)}"[:180],
+            "--userdata", f"claude_session={record['session']},claude_run={record['run']}",
+        ]
+        if pre is not None:
+            command += ["--pre-number", str(pre)]
+        number = self.command(command).strip()
+        if not number.isdecimal() or int(number) <= 0:
+            raise SnapshotError(f"Snapper returned an invalid created snapshot number: {number!r}")
+        return int(number)
+
+    def hook(self, data):
+        self.deadline = time.monotonic() + 50
+        try:
+            self.handle_hook(data)
+        except (OSError, ValueError, RuntimeError) as error:
+            self.record_error(error)
+            raise SnapshotError(str(error)) from error
+        finally:
+            self.deadline = None
+
+    def handle_hook(self, data):
+        if not isinstance(data, dict) or not isinstance(data.get("hook_event_name"), str):
+            raise SnapshotError("Hook input must contain hook_event_name.")
+        event = data["hook_event_name"]
+        if event not in ("SessionStart", "SessionEnd") or (event == "SessionStart" and data.get("source") == "compact"):
+            return
+        session = data.get("session_id")
+        if not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session):
+            raise SnapshotError("Hook input must contain a valid session_id.")
+        path = self.state_path(session)
+        if event == "SessionStart":
+            if data.get("source") not in ("startup", "resume", "clear", "fork"):
+                raise SnapshotError("SessionStart source must be startup, resume, clear, or fork.")
+            cwd = data.get("cwd")
+            if not isinstance(cwd, str) or not Path(cwd).is_absolute():
+                raise SnapshotError("SessionStart cwd must be an absolute directory.")
+            cwd = Path(cwd).resolve(strict=True)
+            if not cwd.is_dir():
+                raise SnapshotError("SessionStart cwd must be a directory.")
+            if not cwd.is_relative_to(self.root) or cwd.is_relative_to(self.root / ".snapshots"):
+                return
+        elif not path.exists():
+            return
+        with self.locked():
+            self.validate()
+            if event == "SessionStart":
+                record = {"session": session, "run": uuid.uuid4().hex, "cwd": str(cwd), "source": data["source"]}
+                # Persist identity first: a lost Snapper reply can be recovered from snapshot userdata.
+                atomic_json(path, record)
+                record["pre"] = self.create("pre", record)
+                atomic_json(path, record)
+                return
+            if not path.exists():
+                return
+            record = self.load_session(path, session)
+            matches = [row for row in self.snapshots() if (row.get("userdata") or {}).get("claude_run") == record["run"]]
+            before = [row for row in matches if row["type"] == "pre"]
+            if len(before) != 1:
+                raise SnapshotError(f"Session {session} has no unique pre snapshot; preserve its pending state for inspection.")
+            number = before[0]["number"]
+            after = [row for row in matches if row["type"] == "post" and row.get("pre-number") == number]
+            if not after:
+                self.create("post", record, number)
+            path.unlink()
+
+    def report(self):
+        tree, exclusions = self.validate()
+        rows = self.snapshots()
+        nodes = tree["nodes"]
+        for node in nodes:
+            if not isinstance(node, dict) or type(node.get("sectors")) is not int or node["sectors"] < 0:
+                raise SnapshotError("bcachefs returned invalid data attribution.")
+            if node.get("path") is not None and not isinstance(node["path"], str):
+                raise SnapshotError("bcachefs returned an invalid snapshot path.")
+        by_path = {str(Path(node["path"]).resolve()): node["sectors"] * 512 for node in nodes if node.get("path")}
+        usage = [by_path.get(str(self.root / ".snapshots" / str(row["number"]) / "snapshot")) for row in rows]
+        snapshot_data = sum(value for value in usage if value is not None)
+        shared = sum(node["sectors"] * 512 for node in nodes if not node.get("path"))
+        free = shutil.disk_usage(self.root)
+        existing = sum(path.exists() for path in exclusions)
+        print(f"Projects snapshots — {self.root}")
+        print(f"Retention: manual. {len(rows)} snapshots; automatic cleanup is off.")
+        print(f"Exclusions: {existing} native boundaries; {len(exclusions) - existing} configured paths are absent.")
+        print(f"Filesystem: {size(free.free)} free of {size(free.total)}.")
+        missing = f" ({usage.count(None)} sizes unavailable)" if None in usage else ""
+        print(f"Snapshot leaf data: {size(snapshot_data)}{missing}")
+        print(f"Shared history: {size(shared)}")
+        print(f"Live branch data: {size(by_path.get(str(self.root), 0))}")
+        print("Leaf data belongs to individual snapshot branches.")
+        print("Shared history can serve the live directory, snapshots, or both.")
+        print("These figures are data attribution, not deletion savings or full disk usage.")
+        print("Metadata and reflink accounting can make physical disk use differ.")
+        if rows:
+            print("\n    ID  Type   Pre ID  Created                 Leaf data  Description")
+            for row in rows:
+                attributed = by_path.get(str(self.root / ".snapshots" / str(row["number"]) / "snapshot"))
+                usage = size(attributed) if attributed is not None else "unknown"
+                print(f"{row['number']:6}  {row['type']:<6} {row.get('pre-number') or '-'!s:>6}  "
+                      f"{clean(row.get('date', '')):<22}  {usage:>9}  {clean(row.get('description', ''))}")
+        paired = {row.get("pre-number") for row in rows if row["type"] == "post"}
+        unpaired = [str(row["number"]) for row in rows if row["type"] == "pre" and row["number"] not in paired]
+        if unpaired:
+            print("\nPre snapshots without a post: " + ", ".join(unpaired))
+            print("A session can still be running, or it can have ended before its exit hook completed.")
+        pending = sum(bool(re.fullmatch(r"[a-f0-9]{64}\.json", path.name)) for path in self.state.glob("*.json"))
+        if pending:
+            print(f"Pending session records: {pending} ({self.state}).")
+        errors = self.state / "errors.jsonl"
+        if errors.exists():
+            lines = errors.read_text().splitlines()
+            if lines:
+                print(f"\nRecorded hook errors: {len(lines)}. Latest entries:")
+                for line in lines[-3:]:
+                    try:
+                        item = json.loads(line)
+                        print(f"ERROR {clean(item['time'])}: {clean(item['error'])}")
+                    except (ValueError, KeyError, TypeError):
+                        print("ERROR: unreadable diagnostic record.")
+                print(f"Error log: {errors}")
+        print("\nInspect a pair: snapper -c projects status PRE..POST")
+        print("Delete selected IDs: snapper -c projects delete ID [ID ...]")
+        print("Use the IDs above. Select both IDs to remove a complete pair.")
+
+    def install_hooks(self, settings=None):
+        settings = Path(settings) if settings is not None else Path.home().resolve() / ".claude/settings.json"
+        settings = settings.resolve()
+        document = json.loads(settings.read_text()) if settings.exists() else {}
+        if not isinstance(document, dict) or not isinstance(document.get("hooks", {}), dict):
+            raise SnapshotError("Claude settings and hooks must be JSON objects.")
+        hooks = document.setdefault("hooks", {})
+        for event in ("SessionStart", "SessionEnd"):
+            groups = hooks.get(event, [])
+            if not isinstance(groups, list):
+                raise SnapshotError(f"Claude {event} hooks must be a JSON array.")
+            retained = []
+            for group in groups:
+                if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+                    raise SnapshotError(f"Claude {event} contains an invalid hook group.")
+                if not all(isinstance(hook, dict) for hook in group["hooks"]):
+                    raise SnapshotError(f"Claude {event} contains an invalid hook.")
+                other = [hook for hook in group["hooks"] if hook.get("command") != COMMAND]
+                if other or not group["hooks"]:
+                    retained.append({**group, "hooks": other})
+            hooks[event] = [*retained, hook_group(event)]
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        atomic_json(settings, document, indent=2)
+
+    def check(self):
+        _, exclusions = self.validate()
+        self.snapshots()
+        settings = Path.home().resolve() / ".claude/settings.json"
+        try:
+            document = json.loads(settings.read_text())
+            if not isinstance(document, dict) or not isinstance(document.get("hooks", {}), dict):
+                raise SnapshotError("Claude settings and hooks must be JSON objects.")
+            if document.get("disableAllHooks"):
+                raise SnapshotError(f"Claude hooks are disabled in {settings}.")
+            for event in ("SessionStart", "SessionEnd"):
+                groups = document.get("hooks", {}).get(event, [])
+                if (not isinstance(groups, list) or any(not isinstance(group, dict)
+                        or not isinstance(group.get("hooks"), list)
+                        or any(not isinstance(hook, dict) for hook in group["hooks"]) for group in groups)):
+                    raise SnapshotError(f"Claude {event} contains an invalid hook group.")
+                matching = [group for group in groups if any(hook.get("command") == COMMAND for hook in group.get("hooks", []))]
+                if len(matching) != 1 or matching[0] != hook_group(event):
+                    raise SnapshotError(f"Configure one {event} snapshot hook with a 60-second timeout in {settings}.")
+        except (OSError, ValueError, TypeError) as error:
+            raise SnapshotError(f"Cannot read Claude hook settings: {error}") from error
+        print(f"Projects snapshots: source, manual retention, {len(exclusions)} exclusions, and Claude hooks are configured.")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Create Claude session snapshots or inspect their storage.")
+    parser.add_argument("action", choices=("hook", "report", "check", "install-hooks"))
+    action = parser.parse_args().action
+    manager = ProjectSnapshots()
+    try:
+        if action == "hook":
+            try:
+                data = json.load(sys.stdin)
+            except (ValueError, OSError) as error:
+                manager.record_error(error)
+                raise SnapshotError(f"Invalid hook JSON: {error}") from error
+            manager.hook(data)
+        else:
+            getattr(manager, action.replace("-", "_"))()
+    except (OSError, ValueError, RuntimeError) as error:
+        print(f"project-snapshots: {clean(error)}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

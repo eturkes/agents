@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Verify installed hooks with disposable files and a tagged native snapshot pair."""
+
+import errno
+import json
+import subprocess
+import tempfile
+import uuid
+from pathlib import Path
+
+root = Path.home().resolve() / "Projects"
+helper = Path(__file__).resolve().with_name("project-snapshots")
+session = "check-" + uuid.uuid4().hex
+
+
+def snapshots():
+    rows = json.loads(subprocess.check_output(
+        ["snapper", "--jsonout", "-c", "projects", "list", "--columns", "number,type,pre-number,userdata"],
+        text=True,
+    ))["projects"]
+    return [row for row in rows if (row.get("userdata") or {}).get("claude_session") == session]
+
+
+def hook(event, cwd):
+    payload = {"hook_event_name": event, "session_id": session, "source": "startup", "cwd": str(cwd)}
+    subprocess.run([str(helper), "hook"], input=json.dumps(payload), text=True, check=True)
+
+
+subprocess.run([str(helper), "check"], check=True)
+policy = Path.home() / ".local/state/project-snapshots/excludes"
+cache = next(root / line.strip() for line in policy.read_text().splitlines()
+             if line.strip() and not line.startswith("#") and (root / line.strip()).is_dir())
+with tempfile.TemporaryDirectory(prefix=".snapshot-check-", dir=root) as included, \
+        tempfile.TemporaryDirectory(prefix=".snapshot-check-", dir=cache) as excluded:
+    data = Path(included) / "data"
+    skipped = Path(excluded) / "data"
+    data.write_text("before\n")
+    skipped.write_text("rebuildable\n")
+    try:
+        hook("SessionStart", Path(included))
+        data.write_text("after\n")
+        hook("SessionEnd", Path.home())
+        rows = snapshots()
+        before = next(row for row in rows if row["type"] == "pre")
+        after = next(row for row in rows if row["type"] == "post")
+        assert after["pre-number"] == before["number"]
+        for row, expected in ((before, "before\n"), (after, "after\n")):
+            snapshot = root / ".snapshots" / str(row["number"]) / "snapshot"
+            saved = snapshot / data.relative_to(root)
+            assert saved.read_text() == expected
+            assert not (snapshot / skipped.relative_to(root)).exists()
+            try:
+                saved.write_text("must remain read-only\n")
+            except OSError as error:
+                assert error.errno == errno.EROFS, error
+            else:
+                raise AssertionError("Snapshot accepted a write")
+        print("Native hooks: paired content, read-only snapshots, nested exclusion and changed exit cwd passed.")
+    finally:
+        # Retire only this check's tagged snapshots; user retention stays manual.
+        numbers = [str(row["number"]) for row in snapshots()]
+        if numbers:
+            subprocess.run(["snapper", "-c", "projects", "delete", *numbers], check=True)

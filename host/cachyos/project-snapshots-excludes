@@ -1,0 +1,23 @@
+# Rebuildable environments, dependencies and caches; paths relative to Projects.
+cement/.venv
+cement/.mypy_cache
+cement/.ruff_cache
+cement/.pytest_cache
+cnl-ckc/.toolchain
+cnl-ckc/.ruff_cache
+cnl-ckc/rust/target
+figure-verification/.venv
+figure-verification/.venv-host
+figure-verification/.venv-model
+figure-verification/.venv-webui
+figure-verification/.mypy_cache
+figure-verification/.ruff_cache
+figure-verification/.pytest_cache
+figure-verification/.hypothesis
+figure-verification/models
+figure-verification/.agent/measurements/node_modules
+trading/.venv
+trading/node_modules
+trading/.pytest_cache
+trading/.ruff_cache
+trading/__pycache__

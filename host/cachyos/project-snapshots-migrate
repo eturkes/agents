@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""Move Projects to a native subvolume; retain content and isolate rebuildable caches."""
+
+import argparse
+import ctypes
+import fcntl
+import json
+import os
+import shutil
+import subprocess
+from contextlib import contextmanager
+from pathlib import Path
+
+
+def run(*args):
+    result = subprocess.run(args, check=True, text=True, capture_output=True)
+    return result.stdout
+
+
+def is_subvolume(path):
+    tree = json.loads(run("bcachefs", "subvolume", "list-snapshots", "--json", str(path)))
+    return Path(tree["query_root"]["path"]).resolve() == path.resolve()
+
+
+def subvolumes(path):
+    mount = json.loads(run("findmnt", "--json", "--target", str(path), "--output", "TARGET"))
+    root = Path(mount["filesystems"][0]["target"])
+    entries = json.loads(run("bcachefs", "subvolume", "list", "--json", "--recursive", "--snapshots", str(root)))
+    def descend(rows, parent):
+        for entry in rows:
+            current = parent / entry["path"]
+            if current.is_relative_to(path):
+                yield current
+            yield from descend(entry.get("children", []), current)
+
+    return list(descend(entries, root))
+
+
+def validate_exclusions(source, exclusions):
+    paths = []
+    for value in exclusions:
+        path = Path(value)
+        if path.is_absolute() or not path.parts or ".." in path.parts:
+            raise ValueError(f"Use a relative cache path inside Projects: {value}")
+        current = source
+        for part in path.parts:
+            current /= part
+            if current.is_symlink():
+                raise ValueError(f"Cache path crosses a symlink: {value}")
+        if current.exists() and not current.is_dir():
+            raise ValueError(f"Cache path must be a directory: {value}")
+        if any(path == other or path.is_relative_to(other) or other.is_relative_to(path) for other in paths):
+            raise ValueError(f"Cache paths overlap: {value}")
+        paths.append(path)
+    return paths
+
+
+def archive_hash(path):
+    # Dereference hardlinks, not symlinks: cache subvolumes split cross-boundary hardlinks.
+    with subprocess.Popen(
+        ["tar", "--sort=name", "--format=gnu", "--hard-dereference", "-C", str(path), "-cf", "-", "."],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ) as archive:
+        digest = subprocess.run(["sha256sum"], stdin=archive.stdout, capture_output=True, text=True, check=True)
+        archive.stdout.close()
+        errors = archive.stderr.read().decode()
+        status = archive.wait()
+        if status or errors:
+            raise RuntimeError(f"Archive comparison failed ({status}): {errors.strip()}")
+    return digest.stdout.split()[0]
+
+
+def open_references(source):
+    prefix = str(source) + "/"
+    references = []
+    for process in Path("/proc").iterdir():
+        if not process.name.isdecimal():
+            continue
+        try:
+            links = [process / "cwd", process / "root", *(process / "fd").iterdir()]
+            targets = []
+            for link in links:
+                try:
+                    targets.append(os.readlink(link))
+                except OSError:
+                    pass
+            try:
+                targets.extend(line.split(maxsplit=5)[5].strip() for line in (process / "maps").read_text().splitlines() if len(line.split(maxsplit=5)) == 6)
+            except (OSError, ProcessLookupError):
+                pass
+            if any(target == str(source) or target.startswith(prefix) for target in targets):
+                references.append(f"{process.name} {(process / 'comm').read_text().strip()}")
+        except (OSError, ProcessLookupError):
+            continue
+    return references
+
+
+def require_idle(source):
+    references = open_references(source)
+    if references:
+        raise RuntimeError("Projects has open process references; close them before activation: " + ", ".join(references))
+
+
+@contextmanager
+def paused(units):
+    active = []
+    try:
+        # Stop timers before querying services they can activate.
+        for unit in sorted(units, key=lambda value: (not value.endswith(".timer"), value)):
+            status = subprocess.run(["systemctl", "--user", "is-active", "--quiet", unit], check=False).returncode
+            if status == 0:
+                active.append(unit)
+                subprocess.run(["systemctl", "--user", "stop", unit], check=True)
+        yield
+    finally:
+        failures = []
+        for unit in reversed(active):
+            if subprocess.run(["systemctl", "--user", "start", unit], check=False).returncode:
+                failures.append(unit)
+        if failures:
+            raise RuntimeError("Restart these units: " + " ".join(failures))
+
+
+def exchange(first, second):
+    libc = ctypes.CDLL(None, use_errno=True)
+    rename = libc.renameat2
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(-100, os.fsencode(first), -100, os.fsencode(second), 2):
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code))
+
+
+def isolate_caches(root, exclusions):
+    for relative in exclusions:
+        path = root / relative
+        if not path.exists():
+            continue
+        if not is_subvolume(path):
+            parent_times = path.parent.stat()
+            saved = path.with_name(path.name + ".snapshot-migration")
+            if saved.exists():
+                raise RuntimeError(f"Resolve the retained cache copy first: {saved}")
+            path.rename(saved)
+            try:
+                run("bcachefs", "subvolume", "create", str(path))
+                run("cp", "-a", "--reflink=always", "--", str(saved) + "/.", str(path) + "/")
+                delta = run("rsync", "-aHAXnci", "--delete", "--", str(saved) + "/", str(path) + "/")
+                if delta:
+                    raise RuntimeError(f"Cache copy differs: {relative}\n{delta}")
+            except BaseException:
+                if path.exists():
+                    run("bcachefs", "subvolume", "delete", str(path))
+                saved.rename(path)
+                raise
+            shutil.rmtree(saved)
+            os.utime(path.parent, ns=(parent_times.st_atime_ns, parent_times.st_mtime_ns))
+        run("bcachefs", "set-file-option", "--nocow=1", str(path))
+
+
+def migrate(source, state, exclusions, units=()):
+    source = source.absolute()
+    if source.is_symlink() or source.resolve() != source or not source.is_dir():
+        raise ValueError("Projects must be a real directory with resolved parents.")
+    paths = validate_exclusions(source, exclusions)
+    if is_subvolume(source):
+        missing = [path for path in paths if (source / path).exists() and not is_subvolume(source / path)]
+        if missing:
+            with paused(units):
+                require_idle(source)
+                isolate_caches(source, missing)
+        print("Projects is a native subvolume; cache boundaries are ready.", flush=True)
+        return
+    if subvolumes(source):
+        raise RuntimeError("Projects has nested subvolumes; preserve their topology before migration.")
+    if state.resolve().is_relative_to(source):
+        raise ValueError("Keep migration state outside Projects.")
+    state.mkdir(parents=True, exist_ok=True, mode=0o700)
+    staged = state / "staged"
+    marker = state / "source.json"
+    identity = {"source": str(source), "inode": source.stat().st_ino, "device": source.stat().st_dev}
+    if staged.exists():
+        if not marker.exists() or json.loads(marker.read_text()) != identity or not is_subvolume(staged):
+            raise RuntimeError(f"Inspect the existing migration stage: {staged}")
+        if subvolumes(staged) != [staged]:
+            raise RuntimeError(f"Inspect the partially prepared cache subvolumes: {staged}")
+    else:
+        marker.write_text(json.dumps(identity) + "\n")
+        run("bcachefs", "subvolume", "create", str(staged))
+        print("Preparing a reflink copy; the original Projects directory stays active.", flush=True)
+        run("cp", "-a", "--reflink=always", "--", str(source) + "/.", str(staged) + "/")
+    with paused(units):
+        require_idle(source)
+        print("Writers paused. Synchronizing the final changes and separating caches.", flush=True)
+        run("rsync", "-aHAX", "--delete", "--", str(source) + "/", str(staged) + "/")
+        isolate_caches(staged, paths)
+        print("Comparing complete file contents and archive metadata with SHA-256.", flush=True)
+        original_hash = archive_hash(source)
+        copied_hash = archive_hash(staged)
+        if original_hash != copied_hash:
+            raise RuntimeError(f"Projects copy differs: original={original_hash} staged={copied_hash}")
+        require_idle(source)
+        os.sync()
+        exchange(source, staged)
+        evidence = identity | {"archive_sha256": original_hash, "exclusions": exclusions}
+        (state / "verified.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        # The original is retired only after content equality and the atomic switch.
+        shutil.rmtree(staged)
+        marker.unlink()
+        print("Projects migrated; file contents match. Restoring the paused services.", flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pause-unit", action="append", default=[], help="Stop an active user unit during migration, then restart it.")
+    args = parser.parse_args()
+    home = Path.home().resolve()
+    recipe = Path(__file__).resolve().parent
+    exclusions = [line.strip() for line in (recipe / "project-snapshots-excludes").read_text().splitlines() if line.strip() and not line.startswith("#")]
+    state = home / ".local/state/project-snapshots"
+    state.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with (state / "migration.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        migrate(home / "Projects", state / "migration", exclusions, args.pause_unit)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
+        detail = error.stderr if isinstance(error, subprocess.CalledProcessError) else str(error)
+        raise SystemExit(f"Migration stopped: {detail}") from error

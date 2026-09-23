@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+recipe_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+projects=$(readlink -f -- "$HOME/Projects")
+state_dir="$HOME/.local/state/project-snapshots"
+
+bcachefs subvolume list-snapshots --json "$projects" |
+  python -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); actual=Path(json.load(sys.stdin)["query_root"]["path"]); sys.exit(0 if actual.resolve()==p else "Convert Projects to a native subvolume before setup.")' "$projects"
+
+sudo -n install -D -m 0644 -- "$recipe_dir/snapper-projects.conf" /etc/snapper/config-templates/projects
+if ! sudo -n test -f /etc/snapper/configs/projects; then
+  sudo -n snapper -c projects create-config --fstype bcachefs --template projects "$projects"
+fi
+sudo -n snapper --jsonout -c projects get-config |
+  python -c 'import json,sys; from pathlib import Path; c=json.load(sys.stdin); sys.exit(0 if c["FSTYPE"]=="bcachefs" and Path(c["SUBVOLUME"]).resolve()==Path(sys.argv[1]) else "The projects config points elsewhere; preserve it and resolve the conflict.")' "$projects"
+sudo -n snapper -c projects set-config "ALLOW_USERS=$(id -un)" SYNC_ACL=yes UNIQUE_NUMBERS=yes \
+  BACKGROUND_COMPARISON=no TIMELINE_CREATE=no TIMELINE_CLEANUP=no NUMBER_CLEANUP=no EMPTY_PRE_POST_CLEANUP=no
+
+install -d -m 0700 -- "$state_dir"
+install -m 0600 -- "$recipe_dir/project-snapshots-excludes" "$state_dir/excludes"
+install -d -- "$HOME/.local/bin"
+launcher="$HOME/.local/bin/project-snapshots"
+if [[ -e $launcher || -L $launcher ]]; then
+  [[ $(readlink -f -- "$launcher") == "$recipe_dir/project-snapshots" ]] || {
+    echo "Preserve the existing launcher and resolve this conflict: $launcher" >&2
+    exit 1
+  }
+else
+  ln -s -- "$recipe_dir/project-snapshots" "$launcher"
+fi
+"$launcher" install-hooks
+"$launcher" check
+echo 'Project snapshots are ready. Retention is manual.'
