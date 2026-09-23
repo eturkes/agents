@@ -1,6 +1,6 @@
 # Prototype
 
-Fresh session at the project root; starting set = `CLAUDE.md` (template copy), `LICENSE`, `.agent/spec.md` holding `Intent` alone + any file the intent names. Type `/goal `, paste everything below the rule, Enter.
+Fresh session at the project root; starting set = `CLAUDE.md` (template copy), `LICENSE`, `.agent/spec.md` holding `Intent` alone + any file the intent names. Paste everything below the rule.
 
 ---
 

@@ -1,6 +1,6 @@
 # Maintain
 
-`Phase: MAINTAIN`. Fresh session at the project root; type `/goal `, paste one body (everything between its rules), Enter. The first body takes my request in place of `<request>`.
+`Phase: MAINTAIN`. Fresh session at the project root; paste one body (everything between its rules). The first body takes my request in place of `<request>`.
 
 ## Request
 

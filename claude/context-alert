@@ -4,7 +4,7 @@
 # notice = window - 100K, final = window - 50K (1M ⇒ 900K/950K). Threshold jumps
 # emit the highest crossed tier. Trigger = window - 33K, and usage + remainder
 # report against it; an unpinned first-party MAIN is collapse-managed ⇒ the raw
-# window stands. MAIN notices ask for a checkpoint; a /goal run continues past both.
+# window stands. MAIN notices ask for a checkpoint; the run continues past both.
 IN=""
 [ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 { read -r tp; read -r at; read -r sid; } <<EOF

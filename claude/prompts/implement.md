@@ -1,6 +1,6 @@
 # Implement
 
-My go after ITERATE. Fresh session at the project root; type `/goal `, paste everything below the rule, Enter.
+My go after ITERATE. Fresh session at the project root; paste everything below the rule.
 
 ---
 

@@ -4,7 +4,7 @@ The `Stop` hook sends one email to `emir.turkes@eturkes.com` after each complete
 
 Claude Code uses `Stop` for main turns and `SubagentStop` for subagents. Therefore, this hook receives main-thread turns.
 
-The same script serves the `Notification` hook. When a dialog waits for you, it sends one email with the pending question and its options. A `/goal` run holds at an `AskUserQuestion` dialog without a `Stop` event, so this email is the signal that the run needs you. The matcher covers `permission_prompt`, `elicitation_dialog`, and `agent_needs_input`. The message threads under the current turn of the session.
+The same script serves the `Notification` hook. When a dialog waits for you, it sends one email with the pending question and its options. A turn that waits at an `AskUserQuestion` dialog emits no `Stop` event, so this email is the signal that the session needs you. The matcher covers `permission_prompt`, `elicitation_dialog`, and `agent_needs_input`. The message threads under the current turn of the session.
 
 ## Deploy
 
