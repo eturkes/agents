@@ -1,24 +1,256 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export LC_ALL=C
 
-# Agent-owned CachyOS upgrade; cadence + rollout checks = MAINTENANCE.md.
-# The agent must own a PTY to review package, keyring + .pacnew decisions.
+usage() {
+  echo 'Usage: upgrade [--check]'
+  echo 'Update packages and tools, then check system health.'
+  echo '--check: Check system health and snapshot storage without updating or cleaning anything.'
+  echo 'Exit codes: 0 = clear; 1 = failure; 2 = review needed; 64 = usage or terminal required.'
+}
 
-if [[ ! -t 0 || ! -t 1 ]]; then
-  echo "upgrade: run in an agent-owned PTY; see host/cachyos/MAINTENANCE.md" >&2
+if (($# > 1)); then usage >&2; exit 64; fi
+case ${1:-} in
+  '') mode=upgrade ;;
+  --check) mode=check ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 64 ;;
+esac
+if [[ $mode == upgrade && ( ! -t 0 || ! -t 1 ) ]]; then
+  echo 'Run upgrade in an interactive terminal. Use upgrade --check for read-only checks.' >&2
   exit 64
 fi
 
-repo_root="$HOME/.local/app/agents"
+script_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+repo_root=$(readlink -f -- "$script_dir/../..")
+passed=0 review=0 failed=0
+declare -A failed_before baseline_ok
 
+capture() {
+  check_status=0
+  check_output=$("$@" 2>&1) || check_status=$?
+}
+details() { [[ -z $1 ]] || printf '%s\n' "$1" | sed 's/^/    /'; }
+report() {
+  printf '[%s] %s\n' "$1" "$2"
+  case $1 in
+    PASS) ((passed+=1)) ;;
+    REVIEW) ((review+=1)) ;;
+    FAIL) ((failed+=1)) ;;
+  esac
+}
+check() {
+  local label=$1 action=$2 display=$3
+  shift 3
+  capture "$@"
+  if ((check_status == 0)); then
+    report PASS "$label"
+    [[ $display != show ]] || details "$check_output"
+  else
+    report FAIL "$label (exit $check_status)"
+    details "$check_output"
+    printf '    Next: %s\n' "$action"
+  fi
+}
+failed_units() { systemctl "--$1" --failed --no-pager --no-legend --plain; }
+capture_baseline() {
+  local scope
+  for scope in system user; do
+    capture failed_units "$scope"
+    if ((check_status)); then
+      details "$check_output"
+      return "$check_status"
+    fi
+    failed_before[$scope]=$(awk '{print $1}' <<< "$check_output")
+    baseline_ok[$scope]=1
+  done
+}
+check_services() {
+  local scope=$1 unit rest listing new=0 old=0 classified=''
+  capture failed_units "$scope"
+  if ((check_status)); then
+    report FAIL "$scope services: failed-unit listing unavailable (exit $check_status)"
+    details "$check_output"
+    printf '    Next: Run systemctl --%s --failed and resolve the connection error.\n' "$scope"
+    return
+  elif [[ -z $check_output ]]; then
+    report PASS "$scope services: no failed units"
+  elif [[ ${baseline_ok[$scope]:-0} == 0 ]]; then
+    report REVIEW "$scope services: current failed units; no before-update baseline"
+    details "$check_output"
+  else
+    listing=$check_output
+    while read -r unit rest; do
+      [[ -n $unit ]] || continue
+      if grep -Fxq -- "$unit" <<< "${failed_before[$scope]}"; then
+        ((old+=1))
+        classified+="pre-existing: $unit"$'\n'
+      else
+        ((new+=1))
+        classified+="new: $unit"$'\n'
+      fi
+    done <<< "$listing"
+    if ((new)); then
+      report FAIL "$scope services: $new newly failed; $old pre-existing"
+    else
+      report REVIEW "$scope services: $old pre-existing failed units"
+    fi
+    details "${classified%$'\n'}"
+  fi
+  if [[ -n $check_output ]]; then
+    printf '    Next: Inspect each listed unit with systemctl --%s status UNIT.\n' "$scope"
+  fi
+}
+check_packages() {
+  capture pacman -Dk
+  if ((check_status == 0)); then
+    report PASS 'Package database'
+  elif ((check_status == 1)) && [[ -n $check_output ]] &&
+       ! grep -Evq "^error: 'CACHY_UPDATE_NOTICE': (description file|file list) is missing$" <<< "$check_output"; then
+    report REVIEW 'Package database: CachyOS acknowledgement marker (pacman -Dk exit 1)'
+    details "$check_output"
+    echo '    Next: Read the CachyOS update notice. Preserve the marker until you review its instructions.'
+  else
+    report FAIL "Package database (pacman -Dk exit $check_status)"
+    details "$check_output"
+    echo '    Next: Resolve the listed package-record errors before another update.'
+  fi
+}
+installed_kernels() {
+  pacman -Qql | sed -n 's|^/usr/lib/modules/\([^/]*\)/pkgbase$|\1|p' | sort -u
+}
+check_dkms() {
+  local modules kernels kernel module missing=''
+  capture dkms status
+  if ((check_status)); then
+    report FAIL "Kernel modules: DKMS status unavailable (exit $check_status)"
+    details "$check_output"
+    echo '    Next: Run dkms status and resolve the reported error before rebooting.'
+    return
+  fi
+  modules=$check_output
+  capture installed_kernels
+  if ((check_status)) || [[ -z $check_output ]]; then
+    report FAIL 'Kernel modules: installed kernel list unavailable'
+    details "$check_output"
+    echo '    Next: Check the installed kernel packages with pacman -Q.'
+    return
+  fi
+  kernels=$check_output
+  while read -r kernel; do
+    for module in bcachefs nvidia; do
+      if ! awk -F'[,/:] *' -v module="$module" -v kernel="$kernel" \
+          '$1 == module && $3 == kernel && $NF == "installed" {found=1} END {exit !found}' <<< "$modules"; then
+        missing+="$module for $kernel"$'\n'
+      fi
+    done
+  done <<< "$kernels"
+  if [[ -n $missing ]]; then
+    report FAIL 'Kernel modules: required DKMS installations are missing'
+    details "${missing%$'\n'}"
+    details "$modules"
+    echo '    Next: Resolve the DKMS build errors before rebooting.'
+  else
+    report PASS 'Kernel modules: bcachefs and NVIDIA installed for every installed kernel'
+    details "$kernels"
+  fi
+}
+check_configs() {
+  capture sudo -n pacdiff -o
+  if ((check_status)); then
+    report FAIL "Configuration review: file listing unavailable (exit $check_status)"
+    details "$check_output"
+    echo '    Next: Run sudo pacdiff -o to inspect the error.'
+  elif [[ -n $check_output ]]; then
+    report REVIEW 'Configuration files need a manual merge decision'
+    details "$check_output"
+    echo '    Next: Review the listed files with sudo pacdiff. Keep local settings when you merge them.'
+  else
+    report PASS 'Configuration files: no pending .pacnew or .pacsave files'
+  fi
+}
+check_codexify() {
+  local summary
+  capture codexify doctor
+  if ((check_status)) || grep -Eq '^FAIL[ :]' <<< "$check_output"; then
+    report FAIL "Codexify health (doctor exit $check_status)"
+    details "$check_output"
+    echo '    Next: Run codexify doctor and resolve its reported issues.'
+  else
+    if grep -Eq '^WARN(ING)?[ :]' <<< "$check_output"; then
+      report REVIEW 'Codexify health: doctor reported warnings'
+      echo '    Next: Run codexify doctor and review its warnings.'
+    else
+      report PASS 'Codexify health'
+    fi
+    summary=$(sed -n -E '/^(PASS updates:|WARN(ING)?[ :]|Result:)/p' <<< "$check_output")
+    details "${summary:-$check_output}"
+  fi
+}
+postflight() {
+  printf '\n=== System health and snapshot storage ===\n'
+  check_packages
+  check_dkms
+  check 'Recovery kernel integrity' 'Resolve the recovery checkpoint errors before rebooting.' hide \
+    sudo -n "$script_dir/kernel-recovery" check
+  check_services system
+  check_services user
+  check 'Crash diagnostics policy' 'Run agent-crash-policy check and resolve the reported settings.' hide \
+    "$script_dir/agent-crash-policy" check
+  check 'NVIDIA compute access' 'Inspect the driver error and DKMS status before starting GPU work.' show \
+    nvidia-smi --query-gpu=name,driver_version,memory.used,display_active --format=csv
+  check 'Codex executable' 'Check the Codex installation and PATH.' show codex --version
+  check_codexify
+  check 'BrowserOS connection' 'Start BrowserOS, then run upgrade --check again.' hide \
+    browseros-call tabs '{"action":"list"}'
+  check_configs
+  check 'Project snapshot storage' 'Run project-snapshots report and resolve the reported error.' show \
+    "$script_dir/project-snapshots" report
+  echo '    Snapshot retention is manual. Choose which snapshots to keep; upgrade only reports their storage.'
+  printf '\nSummary: %d passed, %d need review, %d failed.\n' "$passed" "$review" "$failed"
+  if ((failed)); then
+    echo 'Next: Resolve the FAIL items, then run upgrade --check.'
+    return 1
+  elif ((review)); then
+    echo 'Next: Review the items above, then run upgrade --check.'
+    return 2
+  fi
+  echo 'All checks completed without reported issues.'
+}
+
+if [[ $mode == check ]]; then
+  postflight
+  exit 0
+fi
+
+update_stage='Service baseline'
+cft_tmp=''
+stage() { update_stage=$1; printf '\n=== %s ===\n' "$update_stage"; }
+finish() {
+  local update_status=$? result
+  trap - EXIT
+  set +e
+  [[ -z $cft_tmp ]] || rm -rf -- "$cft_tmp"
+  if ((update_status)); then
+    report FAIL "Update stopped during $update_stage (exit $update_status); later update stages did not run"
+  else
+    echo 'Update stages completed.'
+  fi
+  postflight
+  result=$?
+  exit "$result"
+}
+trap finish EXIT
+capture_baseline
+
+stage 'Recovery kernel preflight'
 sudo -n "$repo_root/host/cachyos/kernel-recovery" check
 
-echo "=== System packages (pacman/AUR) ==="
+stage 'System packages (pacman/AUR)'
 # paru owns repo + AUR toolchain; run first so later steps use current binaries.
 paru -Syu
 
-echo
-echo "=== Python (uv tools) ==="
+stage 'Python tools (uv)'
 # uv itself is pacman-managed → `paru -Syu` above moves it; this step owns the
 # uv-installed tools. headroom-ai path-pins the locally built wheel in
 # ~/src/headroom/dist (image-worker termination guard): `upgrade --all`
@@ -28,8 +260,7 @@ echo "=== Python (uv tools) ==="
 # State + recipe: $repo_root/host/cachyos/headroom/README.md
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 
-echo
-echo "=== MoonBit ==="
+stage 'MoonBit'
 # ~/.moon toolchain self-updates: `moon upgrade` updates binaries; `moon update`
 # refreshes registry index. Project dependencies remain project-local.
 moon_home="${MOON_HOME:-$HOME/.moon}"
@@ -38,31 +269,14 @@ case ":$PATH:" in
   *) export PATH="$moon_home/bin:$PATH" ;;
 esac
 
-# `moon upgrade` confirmation requires TTY; allocate pty for non-TTY caller.
-if [[ -t 0 ]]; then
-  moon upgrade
-else
-  printf 'y\n' | script -qefc 'moon upgrade' /dev/null
-fi
+moon upgrade
 moon update
 
-echo
-echo "=== Local app repositories ==="
+stage 'Local app repositories'
 git -C "$HOME/.local/app/bgcmd" pull --ff-only
 git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only
 
-echo
-echo "=== Codexify ==="
-# doctor reports installation health + release status; connector self_update
-# owns verified replacement.
-if command -v codexify >/dev/null 2>&1; then
-  codexify doctor
-else
-  echo "codexify install pending; skipping"
-fi
-
-echo
-echo "=== pnpm globals ==="
+stage 'Global Node tools (pnpm)'
 # vite/vitest = pnpm globals; `update -g --latest` upgrades them. Export global
 # bin for direct/non-login invocation.
 case ":$PATH:" in
@@ -71,8 +285,7 @@ case ":$PATH:" in
 esac
 pnpm update -g --latest
 
-echo
-echo "=== chromiumfish ==="
+stage 'Headless browser (chromiumfish)'
 # Upgrade pnpm workspace, then fetch browser referenced by updated chromiumfish.
 # Browser startup requires executable chrome_crashpad_handler. If fetched cache
 # lacks it, install Chrome for Testing handler matching MAJOR.MINOR.BUILD.
@@ -96,6 +309,7 @@ if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
     unzip -q -o -j "$cft_tmp/chrome-linux64.zip" chrome-linux64/chrome_crashpad_handler -d "$cft_tmp"
     install -m 0755 "$cft_tmp/chrome_crashpad_handler" "$chromiumfish_dir/chrome_crashpad_handler"
     rm -rf "$cft_tmp"
+    cft_tmp=''
     echo "chromiumfish $browser_version: installed chrome_crashpad_handler from Chrome for Testing $cft_version"
   fi
 
@@ -106,24 +320,21 @@ if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
     echo "chromiumfish cache $chromiumfish_dir has an unrunnable chrome_crashpad_handler; replace it before headless use" >&2
     exit 1
   fi
+  echo 'Next: After browser changes, capture a real page with webcap and inspect the image.'
 else
   echo "chromiumfish workspace not present; skipping"
 fi
 
-echo
-echo "=== Marketplace LSP servers ==="
+stage 'Marketplace language servers'
 # Marketplace servers = user-managed. Shared updater resolves candidates,
 # requires real LSP handshake + restores prior server on failure. Caller absorbs
 # exit 1/2 so workstation upgrade continues with retained working server.
 if [[ -x "$repo_root/claude/marketplace/upgrade-servers" ]]; then
-  "$repo_root/claude/marketplace/upgrade-servers" || true
+  "$repo_root/claude/marketplace/upgrade-servers" ||
+    report REVIEW "Language server updater exited $?; inspect its report for retained versions"
 else
   echo "upgrade-servers not found at $repo_root/claude/marketplace/upgrade-servers; skipping"
 fi
 
-echo
-echo "=== Bounded cache cleanup ==="
+stage 'Bounded cache cleanup'
 "$repo_root/host/cachyos/cache-retention"
-
-echo
-echo "upgrade: stages complete; run the postflight checks in host/cachyos/MAINTENANCE.md"

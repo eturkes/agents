@@ -15,3 +15,4 @@
 - X11 stalls → `./check-x11-latency`; portal polling + measurement boundary → `MAINTENANCE.md`.
 - Projects snapshots → `PROJECT-SNAPSHOTS.md`; native Snapper pre/post hooks, explicit NoCoW cache boundaries, manual retention.
 - Snapshot checks → `python -B ./check-project-snapshots -q`, `python -B ./check-project-snapshots-migrate -q`, `./project-snapshots check`, `python -B ./check-project-snapshots-live`.
+- Upgrade checks → `python -B ./check-upgrade -q`, `./upgrade --check`; status 2 = review items, 1 = failures. Preserve existing update gates.

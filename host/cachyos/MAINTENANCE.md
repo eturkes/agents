@@ -7,36 +7,29 @@
 ## Execute
 
 1. Review Arch/CachyOS notices, AUR diffs and local changes in repositories the updater pulls.
-2. Verify external connections. Record kernel/package versions, `df -h / /boot` and failed-unit baselines.
-3. Run `sudo -n host/cachyos/kernel-recovery check` before kernel/DKMS updates.
-4. Run `host/cachyos/upgrade` through `exec_command` with `tty=true`. Resolve native prompts from upstream evidence in that session.
-5. List `.pacnew`/`.pacsave` files with `sudo pacdiff -o`. Merge changes that preserve local policy.
+2. Verify external connections. Record kernel/package versions and `df -h / /boot`.
+3. Run `host/cachyos/upgrade` in an interactive terminal (`exec_command`: `tty=true`). Resolve native prompts from upstream evidence.
+4. Follow the reported actions. Merge configuration files with `sudo pacdiff`; preserve local settings.
 
-Crashpad gate = nonzero handler + successful `--help`.
+Preflight = failed-unit baselines + recovery-kernel check before package work.
+Crashpad gate = nonzero handler + successful `--help`; preserve both checks.
 After updater stages, `cache-retention` runs offline uv pruning + two-version system/AUR archive retention.
 Busy uv cache → skip pruning (`UV_LOCK_TIMEOUT=0`), preserve active processes; other errors → stop cleanup.
 `paccache.timer` owns weekly system archives; native KDE Trash policy owns age cleanup on KIO Trash operations.
 
 ## Postflight
 
-```bash
-pacman -Dk
-dkms status
-sudo -n host/cachyos/kernel-recovery check
-systemctl --failed --no-pager
-systemctl --user --failed --no-pager
-host/cachyos/agent-crash-policy check
-nvidia-smi --query-gpu=name,driver_version,memory.used,display_active --format=csv
-codex --version
-codexify doctor
-browseros-call tabs '{"action":"list"}'
-sudo pacdiff -o
-```
+`upgrade` runs postflight after successful or failed update stages; later update stages stop on failure.
+`upgrade --check` runs the same read-only checks from any directory, without updates or cleanup.
 
-- Require bcachefs + NVIDIA DKMS modules for the installed kernel; retain the running kernel until authorized reboot.
-- Check affected services. After browser changes, inspect a real headless capture.
-- Attribute new failures against the baseline; record commands, return codes, changed versions + unresolved checks.
-- If `pacman -Dk` flags `CACHY_UPDATE_NOTICE`, report the acknowledgement marker separately from package-record failures. Preserve the marker and stock check.
+- Coverage = stock `pacman -Dk`, bcachefs + NVIDIA DKMS for every installed kernel, recovery checkpoint, system/user failed units, crash policy, NVIDIA access, Codex, Codexify, BrowserOS, configuration files + project snapshot storage.
+- Status = `PASS` check succeeded; `REVIEW` manual decision; `FAIL` action required. Exit = `0` clear, `1` failure, `2` review, `64` usage/PTY.
+- Failed units → compare with the pre-update baseline; standalone checks label current failures without attributing them to updates.
+- `CACHY_UPDATE_NOTICE` alone → review; other package-record errors → failure. Preserve the marker and stock check.
+- Snapshot retention = manual; the report shows storage without deleting snapshots.
+- Retain the running kernel until authorized reboot. Check affected services; after browser changes, inspect a real headless capture.
+
+Verification = `bash -n host/cachyos/upgrade`, `shellcheck host/cachyos/upgrade`, `ruff check host/cachyos/check-upgrade`, `python -B host/cachyos/check-upgrade -q`.
 
 ## Kernel checkpoint
 
