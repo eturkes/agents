@@ -294,7 +294,8 @@ if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
   pnpm -C "$HOME/.local/share/chromiumfish" update --latest
   chromiumfish fetch
 
-  chromiumfish_dir="$(dirname "$(chromiumfish path)")"
+  chromiumfish_path=$(chromiumfish path)
+  chromiumfish_dir=$(dirname -- "$chromiumfish_path")
   if [[ ! -x "$chromiumfish_dir/chrome_crashpad_handler" ]]; then
     browser_version="$(chromiumfish --version | sed -n 's/.*browser \([^)]*\)).*/\1/p')"
     cft_json="$(curl -fsSL https://googlechromelabs.github.io/chrome-for-testing/latest-patch-versions-per-build-with-downloads.json)"

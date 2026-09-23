@@ -27,8 +27,7 @@ elif name == "systemctl":
     key += " user" if "--user" in args else " system"
     key += " after" if (root / "updated").exists() else " before"
 elif name == "chromiumfish" and args == ["path"]:
-    print(root / "browser/chrome")
-    sys.exit(0)
+    key += " path"
 elif name == "paru":
     (root / "updated").touch()
 value = settings.get(key, ["", 0])
@@ -70,6 +69,7 @@ class Upgrade(unittest.TestCase):
                         for module in ("bcachefs", "nvidia") for kernel in ("7.0-test", "6.9-test")), 0,
             ],
             "codex": ["codex-cli 1.0\n", 0],
+            "chromiumfish path": [str(self.root / "browser/chrome") + "\n", 0],
             "project-snapshots": ["Project snapshots: 4 retained. Physical usage: unavailable.\n", 0],
         }
         self.environment = os.environ | {
@@ -211,6 +211,23 @@ class Upgrade(unittest.TestCase):
         self.assertIn("unrunnable chrome_crashpad_handler", output)
         self.assertNotIn("cache-retention", {call[0] for call in calls})
         self.assertIn(["project-snapshots", "report"], calls)
+
+    def require_chromiumfish_path_failure(self, output):
+        self.settings["chromiumfish path"] = [output, 23]
+        # A valid handler in cwd exposes dirname's empty-path fallback without a download.
+        self.write(self.root / "chrome_crashpad_handler", "#!/bin/sh\nexit 0\n")
+        code, output, calls = self.run_upgrade(tty=True)
+        self.assertEqual(code, 1, output)
+        self.assertIn("Update stopped during Headless browser (chromiumfish) (exit 23)", output)
+        self.assertNotIn("upgrade-servers", {call[0] for call in calls})
+        self.assertNotIn("cache-retention", {call[0] for call in calls})
+        self.assertIn(["project-snapshots", "report"], calls)
+
+    def test_chromiumfish_path_failure_with_empty_output(self):
+        self.require_chromiumfish_path_failure("")
+
+    def test_chromiumfish_path_failure_with_valid_path_output(self):
+        self.require_chromiumfish_path_failure(str(self.root / "browser/chrome") + "\n")
 
     def test_baseline_failure_prevents_updates(self):
         self.settings["systemctl system before"] = ["Cannot connect to system bus\n", 1]
