@@ -57,6 +57,32 @@ sudo -n systemctl is-active intel-graphics-rollback.timer
 sudo -n systemctl restart sddm.service
 ```
 
+BrowserOS restart must select the existing synced profile (`Profile 3`). An unqualified launch can stop at the native profile picker.
+The picker is a CDP `browser_ui` target, not a normal tab; a healthy MCP socket can still report no browser window.
+Preserve the private desktop entry's launch options; keep its credentials out of logs. Refresh only the four desktop environment keys.
+
+```bash
+python - <<'PY'
+import configparser
+import os
+import shlex
+import subprocess
+from pathlib import Path
+
+env = os.environ.copy()
+for line in subprocess.check_output(['systemctl', '--user', 'show-environment'], text=True).splitlines():
+    key, _, value = line.partition('=')
+    if key in {'DISPLAY', 'XAUTHORITY', 'XDG_SESSION_TYPE', 'XDG_CURRENT_DESKTOP'}:
+        env[key] = value
+entry = configparser.ConfigParser(interpolation=None)
+entry.read(Path.home() / '.local/share/applications/browseros.desktop')
+args = [arg for arg in shlex.split(entry['Desktop Entry']['Exec']) if arg not in {'%U', '%u', '%F', '%f'}]
+subprocess.Popen([*args, '--profile-directory=Profile 3', '--restore-last-session'], env=env,
+                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                 start_new_session=True)
+PY
+```
+
 After autologin, verify rendering, CUDA, HDMI, VNC and a real browser WebGL renderer before cancelling the timer:
 
 ```bash
@@ -72,6 +98,7 @@ sudo -n systemctl stop intel-graphics-rollback.timer
 It also checks HDMI/panel state, usable framebuffer and disabled DPMS/blanking after KDE applies its layout.
 It permits NVIDIA compute clients. CUDA check executes PTX arithmetic and compares 64 results with CPU arithmetic.
 Browser inspection uses an ephemeral `about:blank` tab + `WEBGL_debug_renderer_info`; close the tab afterwards.
+The returned renderer must identify Intel, not NVIDIA or software rendering. Re-list stale MCP page IDs before cleanup.
 No reboot or physical HDMI/lid manipulation forms part of these checks.
 
 ## Reboot preflight
