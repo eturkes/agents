@@ -33,6 +33,7 @@
 - Future-facing text, esp. prompts → state the desired action/target positively (`always`/`must`).
 - Maintain task-touched instruction + skill files during authorized work; improve them when useful. Route durable guidance to one scope: global `~/.codex/AGENTS.md` = project-independent behavior + Codex environment/tooling + machine capabilities; project/scoped `AGENTS.md` = repo principles + binding rules; `.agents/skills/` = repo workflows.
 - Preserve project-specific rules when refreshing templates. Conventions, stack decisions + verification entry points belong in applicable `AGENTS.md`; optional task notes hold changing state.
+- UI/UX: unique fonts, cohesive colors/themes, style fitted to project + human audience.
 - Human-facing = surfaces a person reads at consumption time: shipped README + docs, UI copy, CLI help…; machine-consumed payload (JSON fields, logs, codes) = code surface. Write it natural + direct in ASD-STE100 register: ≤20 words/sentence in instructions, ≤25 in descriptions; imperative steps, one instruction per sentence, condition before command; simple tenses, finite verbs, active voice, definite modality (`must`); terminology fixed + sentence shape varied; full forms with articles + `that`; flexible enumeration; code + identifiers verbatim.
 
 ## Engineering
@@ -48,6 +49,6 @@
 - Complete appropriate tests + required checks, then finish delivery. Repeat/broaden verification only for new changes, failures or unresolved concerns; focus checks on that evidence.
 - A gate backing a durable claim must rerun from committed state. Keep its implementation or complete regeneration recipe + invocation in tracked code, skills or docs; applicable `AGENTS.md` points to the entry point.
 - Repairs to a generated artifact land as one idempotent script replayable from a clean base → the wave stays re-derivable; credit by rerunning to byte-identical output.
-- Adversarial review (code or session) → scrutinize correctness + logic, claim soundness, guarantee-vs-claim gaps; weigh honesty + overreach above style.
+- Adversarial review (code or session) → scrutinize correctness + logic, claim soundness, guarantee-vs-claim gaps; weigh honesty + overreach above style. Report every issue, incl. uncertain/low-severity; I filter findings.
 - Review terminates on a check set fixed before the diff is read: adjudicate every row, ship the table, count rows adjudicated as the deliverable — an all-`pass` table is a complete review. Findings bind to the change under review; everything outside it reports as a deferred item, and this pass fixes the adjudicated rows alone. An accepted ruling holds until new evidence reverses it, and a fix earns one re-review round against that finding's check alone. Model opinion drifts run to run, so an open-ended review→fix loop flip-flops, creeps scope + injects defects — the fixed set + evidence bar are what make it converge.
 - Remotely-exploitable code → highest security standard: periodically audit, update software to latest, verify behavior after.
