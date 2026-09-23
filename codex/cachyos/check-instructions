@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["tomlkit==0.15.1"]
 # ///
-"""Check trust pruning, home routing, and instruction replay."""
+"""Check trust pruning, standalone machine policies, and instruction replay."""
 import json
 import runpy
 import tempfile
@@ -38,33 +38,44 @@ with tempfile.TemporaryDirectory(prefix="instruction-check-") as directory:
         assert prune(result) == (result, 0), f"case {index}: not idempotent"
     print(f"trust_pruning_cases={len(fixtures)}: OK")
 
-merged = (here / "AGENTS.merged.md").read_text()
-header = merged.split("# Alignment\n", 1)[0]
-assert "`~/.local/app/emachine/`" in header, "Codexify default target is missing"
-assert "`~/.codex/AGENTS.md`" in header, "native runtime routing changed"
-assert "`~/.local/app/agents/codex/cachyos/AGENTS.codexify.md`" in header
-assert "AGENTS.merged.md" not in header, "home instructions route back to themselves"
-runtime = (here / "AGENTS.codexify.md").read_text()
-assert runtime.startswith("# Codexify\n") and "# Alignment\n" not in runtime
 render_home = deployment["render_home"]
-assert render_home(here) == merged, "home template differs from shared alignment"
+required = {"Collaboration", "Execution", "Authoring", "Engineering", "Environment", "Reading"}
+for machine in ("cachyos", "aeon"):
+    target = here.parent / machine
+    policy = (target / "AGENTS.codexify.md").read_text()
+    assert policy.startswith("# Codexify\n"), f"{machine}: runtime missing"
+    sections = [line[3:] for line in policy.splitlines() if line.startswith("## ")]
+    assert required <= set(sections), f"{machine}: incomplete policy"
+    assert len(sections) == len(set(sections)), f"{machine}: duplicate sections"
+    bullets = [line for line in policy.splitlines() if line.startswith("- ")]
+    assert len(bullets) == len(set(bullets)), f"{machine}: duplicate rules"
+    assert "AGENTS.codexify.md" not in policy, f"{machine}: instructions route back to themselves"
+    assert (target / "AGENTS.md").read_text().startswith("# Codex\n"), f"{machine}: native policy missing"
+    assert render_home(target) == policy, f"{machine}: deployment changed the policy"
+
+runtime = (here / "AGENTS.codexify.md").read_text()
+routing = runtime.split("## Task routing\n", 1)[1].split("\n## ", 1)[0]
+assert "`~/.local/app/emachine/`" in routing, "Codexify default target is missing"
+assert "explicit target overrides" in routing, "explicit target precedence is missing"
+assert "`emachine projects`" in routing and "`docs/features.md`" in routing, "project activation is missing"
 with tempfile.TemporaryDirectory(prefix="routing-check-") as directory:
     parent = Path(directory)
     target = parent / "cachyos"
     target.mkdir()
-    (target / "AGENTS.merged.md").write_text(header + "# Alignment\nold\n")
-    shared = parent / "AGENTS.project.md"
-    for alignment in ["# Alignment\nfirst\n", "# Alignment\nsecond\n"]:
-        shared.write_text(alignment)
-        expected = header + alignment
-        assert render_home(target) == expected, "deployment lost routing or shared changes"
-        (target / "AGENTS.merged.md").write_text(expected)
+    source = target / "AGENTS.codexify.md"
+    for label in ("first", "second"):
+        expected = runtime.replace("## Collaboration\n", f"## Collaboration\n\n- Context = {label}.\n")
+        source.write_text(expected)
+        assert render_home(target) == expected, "deployment lost routing or policy changes"
+        deployment["write"](parent / "AGENTS.md", render_home(target))
+        assert (parent / "AGENTS.md").read_bytes() == source.read_bytes(), "deployment changed source bytes"
         assert render_home(target) == expected, "instruction replay is not idempotent"
-    (target / "AGENTS.merged.md").write_text(header)
-    try:
-        render_home(target)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("incomplete instruction template was accepted")
-print("home_routing_and_replay: OK")
+    for section in required:
+        source.write_text(runtime.replace(f"## {section}\n", ""))
+        try:
+            render_home(target)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"incomplete instruction template accepted: {section}")
+print("standalone_policies=2 routing_and_replay: OK")

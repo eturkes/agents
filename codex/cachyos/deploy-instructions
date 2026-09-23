@@ -48,11 +48,12 @@ def write(path, content):
 
 
 def render_home(here):
-    template = (here / "AGENTS.merged.md").read_text()
-    routing, marker, _ = template.partition("# Alignment\n")
-    if not marker:
-        raise ValueError("home instruction template requires an Alignment section")
-    return routing + (here.parent / "AGENTS.project.md").read_text()
+    template = (here / "AGENTS.codexify.md").read_text()
+    required = {"Collaboration", "Execution", "Authoring", "Engineering", "Environment", "Reading"}
+    sections = {line[3:] for line in template.splitlines() if line.startswith("## ")}
+    if not template.startswith("# Codexify\n") or not required <= sections:
+        raise ValueError("Codexify instruction template requires runtime and policy sections")
+    return template
 
 
 def main():
