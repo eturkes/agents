@@ -8,7 +8,7 @@
 
 <request>
 
-Scope = the implementation; `.agent/spec.md` `Intent` + `Decisions` bind; global + project `CLAUDE.md` law applies as written. Orient by dispatch: your first `Agent` call precedes your first survey `Read` — unfamiliar surface funds `map`, an open question `res`, a written contract `test`, the closing diff `rev`, in parallel. Decide, execute. Units on the shortest path, contract + tests per tier, gate green at every scoped commit; `Artifacts`/`Decisions`/`Deferred`, `.claude/rules/` + README move with the change. Every unit opens by naming its dispatch — roles + scope, or the licence it runs solo under — and closes with that line in its commit body.
+Scope = the implementation; `.agent/spec.md` `Intent` + `Decisions` bind; global + project `CLAUDE.md` law applies as written. Orient by dispatch: your first `Agent` call precedes your first survey `Read` — unfamiliar surface funds `map`, an open question `res`, a written contract `test`, the closing diff `rev`, in parallel. Decide, execute; ask me whenever direction is unclear. Units on the shortest path, contract + tests per tier, gate green at every scoped commit; `Artifacts`/`Decisions`/`Deferred`, `.claude/rules/` + README move with the change. Every unit opens by naming its dispatch — roles + scope, or the licence it runs solo under — and closes with that line in its commit body.
 
 Met when: the request is delivered end to end, the full gate command passes on a clean working tree at the closing commit, and the final message states what changed, the gate result with its skipped, not-run + missing checks named or `none`, ≥1 teammate, each by name + role + harvest verdict, the licence for each unit you ran solo, the dispatch line per unit, and the closing commit SHA.
 
