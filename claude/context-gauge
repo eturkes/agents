@@ -10,8 +10,9 @@
 # POSIX sh + utilities except jq. Globs pin transcript depth; `ls -t` ranks mtime.
 # Usage: context-gauge [-p|-t] [<teammate>]
 #   (no arg)   → MAIN last turn: session id match, then newest project transcript
-#   <teammate> → newest role-name/raw-id match across plain + workflow sessions;
-#                report HIGH-WATER turn for sizing across compaction/trailing zero usage
+#   <teammate> → newest role-name/raw-id match in this session's plain + workflow
+#                transcripts (no session id → every session); report HIGH-WATER
+#                turn for sizing across compaction/trailing zero usage
 #   -p         → resolved transcript path; marker polling reads LAST assistant text;
 #                raw grep also matches spawn prompt + marker-bearing messages
 #   -t         → "tail N/TOTAL" = tool calls since the last DURABLE one (Write/Edit/
@@ -26,16 +27,19 @@ project_transcripts="$transcript_root/$(pwd -P | tr '/.' '--')"
 f=""
 if [ -n "$1" ]; then
   agent=true # subagent turns carry isSidechain=true
-  # Newest-first; filename = raw agent id, meta.json = role name.
-  # shellcheck disable=SC2012
-  f=$(ls -td "$project_transcripts"/*/subagents/*.jsonl \
-              "$project_transcripts"/*/subagents/workflows/*/*.jsonl 2>/dev/null |
-    while IFS= read -r p; do
-      [ -f "$p" ] || continue
-      case ${p##*/} in *"$1"*) printf '%s\n' "$p"; break;; esac
-      m=${p%.jsonl}.meta.json
-      [ -f "$m" ] && [ "$(jq -r '.name//""' "$m" 2>/dev/null)" = "$1" ] &&
+  # Newest-first; filename = raw agent id, meta.json = role name. Names recur
+  # across sessions → scope = this session. A raw-id fragment also hits longer
+  # names (rev-1 ⊂ rev-10) → exact role name first.
+  s=${CLAUDE_CODE_SESSION_ID:-*}
+  # shellcheck disable=SC2012,SC2086
+  ts=$(ls -td "$project_transcripts"/$s/subagents/*.jsonl \
+               "$project_transcripts"/$s/subagents/workflows/*/*.jsonl 2>/dev/null)
+  f=$(printf '%s\n' "$ts" | while IFS= read -r p; do
+      [ "$(jq -r '.name//""' "${p%.jsonl}.meta.json" 2>/dev/null)" = "$1" ] &&
         { printf '%s\n' "$p"; break; }
+    done)
+  [ -n "$f" ] || f=$(printf '%s\n' "$ts" | while IFS= read -r p; do
+      case ${p##*/} in *"$1"*) printf '%s\n' "$p"; break;; esac
     done)
 else
   agent=false
