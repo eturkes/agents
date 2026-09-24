@@ -11,8 +11,9 @@
 # Usage: context-gauge [-p|-t] [<teammate>]
 #   (no arg)   → MAIN last turn: session id match, then newest project transcript
 #   <teammate> → newest role-name/raw-id match in this session's plain + workflow
-#                transcripts (no session id → every session); report HIGH-WATER
-#                turn for sizing across compaction/trailing zero usage
+#                transcripts from any cwd (no session id → every session of the
+#                cwd project); report HIGH-WATER turn for sizing across
+#                compaction/trailing zero usage
 #   -p         → resolved transcript path; marker polling reads LAST assistant text;
 #                raw grep also matches spawn prompt + marker-bearing messages
 #   -t         → "tail N/TOTAL" = tool calls since the last DURABLE one (Write/Edit/
@@ -23,17 +24,32 @@
 [ "$1" = "-p" ] && { path_only=1; shift; }
 [ "$1" = "-t" ] && { tail_only=1; shift; }
 transcript_root="$HOME/.claude/projects"
-project_transcripts="$transcript_root/$(pwd -P | tr '/.' '--')"
+# = CC's project dir name: each UTF-16 unit outside [A-Za-z0-9] → '-'; past 200
+# units → first 200 + '-' + base36 |Java hashCode| of the path. `; echo .` keeps
+# a trailing newline of the path that `$(…)` would strip.
+project_transcripts="$transcript_root/$(jq -rn --arg p "$(pwd -P; echo .)" '
+  def mod($m): . - (. / $m | floor) * $m;
+  def b36: (if . >= 36 then . / 36 | floor | b36 else "" end)
+    + "0123456789abcdefghijklmnopqrstuvwxyz"[mod(36):mod(36) + 1];
+  [$p[:-2] | explode[] | if . > 65535 then (. - 65536) as $c
+    | 55296 + ($c / 1024 | floor), 56320 + ($c | mod(1024)) else . end] as $u
+  | [$u[] | if (. >= 48 and . <= 57) or (. >= 65 and . <= 90) or (. >= 97 and . <= 122)
+      then . else 45 end] | implode
+  | if length <= 200 then . else .[:200] + "-" + (reduce $u[] as $x (0;
+      . * 31 + $x | mod(4294967296)) | if . >= 2147483648 then 4294967296 - . else . end
+      | b36) end')"
 f=""
 if [ -n "$1" ]; then
   agent=true # subagent turns carry isSidechain=true
   # Newest-first; filename = raw agent id, meta.json = role name. Names recur
-  # across sessions → scope = this session. A raw-id fragment also hits longer
-  # names (rev-1 ⊂ rev-10) → exact role name first.
-  s=${CLAUDE_CODE_SESSION_ID:-*}
+  # across sessions → scope = this session, globbed under every project so any
+  # cwd resolves it. A raw-id fragment also hits longer names (rev-1 ⊂ rev-10)
+  # → exact role name first.
+  r=$transcript_root s="*/$CLAUDE_CODE_SESSION_ID"
+  [ -n "$CLAUDE_CODE_SESSION_ID" ] || r=$project_transcripts s='*'
   # shellcheck disable=SC2012,SC2086
-  ts=$(ls -td "$project_transcripts"/$s/subagents/*.jsonl \
-               "$project_transcripts"/$s/subagents/workflows/*/*.jsonl 2>/dev/null)
+  ts=$(ls -td "$r"/$s/subagents/*.jsonl \
+               "$r"/$s/subagents/workflows/*/*.jsonl 2>/dev/null)
   f=$(printf '%s\n' "$ts" | while IFS= read -r p; do
       [ "$(jq -r '.name//""' "${p%.jsonl}.meta.json" 2>/dev/null)" = "$1" ] &&
         { printf '%s\n' "$p"; break; }
