@@ -1,6 +1,7 @@
 #!/bin/sh
-# SubagentStart + PreCompact + SubagentStop: hold an agent's deliverable, and the
-# brief that defines it, on disk across the three seams that drop them.
+# SubagentStart + PreCompact + SubagentStop + PreToolUse(TaskStop): hold an
+# agent's deliverable, and the brief that defines it, on disk across the four
+# seams that drop them.
 #
 # Every subagent system prompt ends with the line "- Do NOT Write
 # report/summary/findings/analysis .md files. Return findings directly as your
@@ -20,6 +21,14 @@
 # 268 — and accepts "nothing needed writing", so it never manufactures a report.
 # A long gap between writes is NOT that case: the widest measured tail, 206 tool
 # calls, was verification after a complete report and closed on its marker.
+#
+# PreToolUse(TaskStop) holds the first stop of a mid-turn teammate. A stop before
+# the marker cuts the in-flight call and any row still changing: over half of
+# measured lead stops came before it, while a teammate that posts one does so a
+# median ~2.5 min after its last write (`agent-census` stops). The deny names the
+# marker to wait for + the Write/Edit targets to re-read; a re-issue within 10 min
+# = the deliberate stop. Ended turns (marker, API Error, idle) and transcripts quiet
+# 15+ min pass: nothing in flight.
 IN=""
 [ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 ev=$(printf '%s' "$IN" | jq -r '.hook_event_name // ""' 2>/dev/null)
@@ -52,6 +61,54 @@ EOF
 
   jq -n --arg n "$tools" '{hookSpecificOutput:{hookEventName:"SubagentStop",
     additionalContext:("You have written nothing to disk across \($n) tool calls, so everything this run found exists only in this conversation and ends with it. If your task named an output file, write it now. If the correct outcome is that nothing needed writing, state that in your final message.")}}'
+  ;;
+PreToolUse)
+  { read -r tool; read -r sid; read -r name; } <<EOF
+$(printf '%s' "$IN" | jq -r '.tool_name // "", .session_id // "",
+  (.tool_input.task_id // .tool_input.shell_id // "" | sub("@.*"; ""))' 2>/dev/null)
+EOF
+  [ "$tool" = TaskStop ] && [ -n "$sid" ] && [ -n "$name" ] || exit 0
+  case $sid$name in */*) exit 0 ;; esac
+
+  # Newest exact role name among this session's transcripts under any project;
+  # task ids + background shells match none.
+  # shellcheck disable=SC2012
+  tp=$(ls -td "$HOME/.claude/projects"/*/"$sid"/subagents/*.jsonl \
+              "$HOME/.claude/projects"/*/"$sid"/subagents/workflows/*/*.jsonl 2>/dev/null |
+    while IFS= read -r p; do
+      [ "$(jq -r '.name // ""' "${p%.jsonl}.meta.json" 2>/dev/null)" = "$name" ] &&
+        { printf '%s\n' "$p"; break; }
+    done)
+  [ -n "$tp" ] || exit 0
+
+  # Turn state = last user/assistant record; marker = last DONE token the lead
+  # sent; files = Write/Edit targets, newest first, one JSON line since a path
+  # may hold a newline. `fromjson?` skips a line still being written; any other
+  # decode error passes.
+  out=$(jq -rRn '[inputs | fromjson? | select(.type == "user" or .type == "assistant")] as $r
+  | ($r[-1].message.content | if type == "array" then . else [] end) as $l
+  | (if $r[-1].type == "assistant" and any($l[]; .type == "text" and (.text | length) > 0)
+        and all($l[]; .type != "tool_use") then "ended" else "mid" end),
+    ([$r[] | select(.type == "user") | .message.content
+      | if type == "string" then . else [.[]? | select(.type == "text") | .text] | join(" ") end
+      | match("[A-Z][A-Z0-9]*(-[A-Z0-9]+)*-DONE-[0-9]+"; "g").string] | last // ""),
+    ([$r[] | select(.type == "assistant") | .message.content[]?
+      | select(.type == "tool_use" and (.name == "Write" or .name == "Edit" or .name == "NotebookEdit"))
+      | .input.file_path // .input.notebook_path // empty]
+     | reverse | reduce .[] as $p ([]; if index([$p]) then . else . + [$p] end) | tojson)' \
+  "$tp" 2>/dev/null) || exit 0
+  { read -r turn; read -r marker; read -r files; } <<EOF
+$out
+EOF
+  held=$HOME/.claude/cache/agent-flow/$sid.$name
+  { [ "$turn" = mid ] && [ -n "$(find "$tp" -mmin -15 2>/dev/null)" ]; } || { rm -f "$held"; exit 0; }
+  [ -z "$(find "$held" -mmin -10 2>/dev/null)" ] || { rm -f "$held"; exit 0; }
+  mkdir -p "${held%/*}" 2>/dev/null && : > "$held" || exit 0   # no state → no re-issue → pass
+  find "${held%/*}" -type f -mtime +0 -delete 2>/dev/null
+
+  jq -n --arg n "$name" --arg m "${marker:-its completion marker}" --argjson f "${files:-[]}" '{hookSpecificOutput:{
+    hookEventName:"PreToolUse",permissionDecision:"deny",
+    permissionDecisionReason:("\($n) is mid-turn and has not posted \($m). Wait for it: a stop now cuts the in-flight call and any row it is still changing. To stop it anyway (budget, supersession, takeover, cancellation), call TaskStop again, then re-read every file it wrote." + (if $f == [] then "" else " Its Write/Edit targets: \($f | join(", "))." end))}}'
   ;;
 esac
 exit 0

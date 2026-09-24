@@ -11,11 +11,13 @@ Sections map 1:1 to the law:
   deaths      -> terminal `API Error` classes, with peak usage at death
   writes      -> the SubagentStop firing set (>=15 tool calls, nothing durable)
   tail        -> `context-gauge -t`, corpus-wide: distance from the last durable write
+  stops       -> the agent-flow TaskStop hold: lead stops on a mid-turn teammate, and those before its marker
 
 A compaction is one `type=system` entry carrying `compactMetadata` (`durationMs` is the
 summarizer's own cost) followed by the `isCompactSummary` user entry holding the summary.
 """
 import json, os, re, sys, glob, statistics
+from datetime import datetime
 
 DONE = re.compile(r"[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-DONE-\d+")
 REPORT = ".scratch/agents/"
@@ -101,6 +103,113 @@ def scan(path):
     return r
 
 
+def records(path):
+    with open(path, "rb") as fh:
+        for raw in fh:
+            try:
+                e = json.loads(raw)
+            except ValueError:
+                continue
+            if isinstance(e, dict):
+                yield e, e.get("message") if isinstance(e.get("message"), dict) else {}
+
+
+def blocks(m):
+    return [b for b in (m.get("content") if isinstance(m.get("content"), list) else [])
+            if isinstance(b, dict)]
+
+
+def ended(e, m):
+    """agent-flow's turn test: an assistant record with text and no tool_use."""
+    b = blocks(m)
+    return (e.get("type") == "assistant" and any(x.get("type") == "text" and x.get("text")
+                                                 for x in b)
+            and not any(x.get("type") == "tool_use" for x in b))
+
+
+def lead_stops(path):
+    """(time, stopped prompt prefix) per successful TaskStop in a lead transcript."""
+    sent, out = {}, []
+    for e, m in records(path):
+        if e.get("isSidechain"):
+            continue
+        for b in blocks(m):
+            if b.get("type") == "tool_use" and b.get("name") == "TaskStop":
+                sent[b.get("id")] = e.get("timestamp")
+            elif b.get("type") == "tool_result" and b.get("tool_use_id") in sent:
+                c = b.get("content")
+                try:
+                    r = json.loads(c if isinstance(c, str) else text_of({"content": c}))
+                except ValueError:
+                    continue
+                if isinstance(r, dict) and str(r.get("message", "")).startswith("Successfully"):
+                    out.append((sent[b["tool_use_id"]], str(r.get("command", "")).rstrip(".")))
+    return out
+
+
+def teammate(path):
+    """Brief, marker time, turn state per record time, write times, last durable write per marker."""
+    t: dict = dict(brief="", marker=None, states=[], times=[], last_write=None, gap=None, calls=0)
+    for e, m in records(path):
+        ts = e.get("timestamp") or ""
+        if ts:
+            t["times"].append(ts)   # every record rewrites the file = the hook's mtime test
+        if e.get("type") == "user" and not t["brief"]:
+            t["brief"] = text_of(m)
+        if e.get("type") not in ("user", "assistant"):
+            continue
+        t["states"].append((ts, ended(e, m)))
+        for b in blocks(m):
+            if e.get("type") != "assistant":
+                continue
+            if b.get("type") == "tool_use":
+                t["calls"] += 1
+                if durable(b) and t["marker"] is None:
+                    t["last_write"], t["calls"] = ts, 0
+            elif (b.get("type") == "text" and t["marker"] is None
+                  and DONE.search(b.get("text", ""))):
+                t["marker"] = ts
+                if t["last_write"]:
+                    t["gap"] = (secs(ts) - secs(t["last_write"]), t["calls"])
+    return t
+
+
+def secs(ts):
+    return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+
+
+def stops(roots):
+    """Lead TaskStops matched to one teammate by its brief's opening words."""
+    n = matched = early = held = 0
+    gaps = []
+    for r in roots:
+        for lead in glob.glob(os.path.join(r, "*", "*.jsonl")):
+            subs = (glob.glob(os.path.join(lead[:-6], "subagents", "*.jsonl"))
+                    + glob.glob(os.path.join(lead[:-6], "subagents", "workflows", "*", "*.jsonl")))
+            if not subs:
+                continue
+            mates = [teammate(s) for s in subs]
+            gaps += [t["gap"] for t in mates if t["gap"]]
+            for at, cmd in lead_stops(lead):
+                n += 1
+                hit = [t for t in mates if cmd[:40] and cmd[:40] in t["brief"][:1500]]
+                if len(hit) != 1:
+                    continue
+                t = hit[0]
+                matched += 1
+                early += not (t["marker"] and t["marker"] <= at)
+                before = [s for s in t["states"] if s[0] and s[0] <= at]
+                touched = max((x for x in t["times"] if x <= at), default="")
+                held += bool(before) and not before[-1][1] and secs(at) - secs(touched) <= 900
+    print(f"\nstops: {matched} of {n} lead TaskStops matched to one teammate; {early} came before "
+          f"its marker; {held} found it mid-turn within 15 min = the agent-flow hold")
+    if gaps:
+        s = sorted(g[0] for g in gaps)
+        c = sorted(g[1] for g in gaps)
+        print(f"  marker after the last durable write: median {statistics.median(s):.0f}s "
+              f"p90 {q(s, .9):.0f}s, {statistics.median(c):.0f} tool calls (n={len(s)})")
+
+
 def q(v, p):
     v = sorted(v)
     return v[min(len(v) - 1, int(len(v) * p))] if v else 0
@@ -149,6 +258,8 @@ def main():
         w = max(live, key=lambda r: r["tail"])
         print(f"  widest: tail {w['tail']}/{w['tools']} cut={w['cut']} done={w['done']}  "
               f"{os.path.basename(w['path'])}")
+
+    stops(roots)
 
 
 main()

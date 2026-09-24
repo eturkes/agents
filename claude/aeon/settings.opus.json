@@ -83,6 +83,17 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "matcher": "TaskStop",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/agent-flow"
+          }
+        ]
+      }
+    ],
     "PreCompact": [
       {
         "matcher": "*",
