@@ -11,24 +11,22 @@
 # says, and outranks the built-in line by naming it.
 #
 # PreCompact stdout = custom compact instructions for subagent + MAIN
-# compactions alike. Auto-compaction dropped the brief's report path from 5 of 21
-# measured subagent summaries; these lines name what a summary must carry. A
-# pasted phase prompt's Met when rides the same line: past compaction, only the
-# summary holds it.
+# compactions alike. Auto-compaction can drop the brief's report path; these lines
+# name what a summary must carry. A pasted phase prompt's Met when rides the same
+# line: past compaction, only the summary holds it.
 #
 # SubagentStop additionalContext resumes the agent with the feedback attached. It
-# fires on one unambiguous case — a whole run with nothing written to disk, 8 of
-# 268 — and accepts "nothing needed writing", so it never manufactures a report.
-# A long gap between writes is NOT that case: the widest measured tail, 206 tool
-# calls, was verification after a complete report and closed on its marker.
+# fires on one unambiguous case — a whole run with nothing written to disk — and
+# accepts "nothing needed writing", so it never manufactures a report. A long gap
+# between writes stays outside it: a long tail can be pure verification after a
+# complete report.
 #
 # PreToolUse(TaskStop) holds the first stop of a mid-turn teammate. A stop before
-# the marker cuts the in-flight call and any row still changing: over half of
-# measured lead stops came before it, while a teammate that posts one does so a
-# median ~2.5 min after its last write (`agent-census` stops). The deny names the
-# marker to wait for + the Write/Edit targets to re-read; a re-issue within 10 min
-# = the deliberate stop. Ended turns (marker, API Error, idle) and transcripts quiet
-# 15+ min pass: nothing in flight.
+# the marker cuts the in-flight call and any row still changing, while waiting for
+# the marker costs minutes (`agent-census` stops). The deny names the marker to
+# wait for + the Write/Edit targets to re-read; a re-issue within 10 min = the
+# deliberate stop. Ended turns (marker, API Error, idle) and transcripts quiet 15+
+# min pass: nothing in flight.
 IN=""
 [ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
 ev=$(printf '%s' "$IN" | jq -r '.hook_event_name // ""' 2>/dev/null)

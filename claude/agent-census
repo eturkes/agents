@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Subagent corpus census: what actually ends a teammate run, and what it leaves behind.
 
-Re-derives every measured figure the global `Subagents` law states. Run it after a
-stretch of waves to check whether the rates still hold:
+Live rates behind the global `Subagents` law: the law states rules, and their
+numbers live here, measured fresh on every run.
 
   agent-census [<projects-dir> ...]      default ~/.claude/projects
 
 Sections map 1:1 to the law:
-  compaction  -> "teammates do auto-compact and context is not what kills them"
+  compaction  -> "teammates do auto-compact, can keep working past it, and context is not what kills them"
   deaths      -> terminal `API Error` classes, with peak usage at death
   writes      -> the SubagentStop firing set (>=15 tool calls, nothing durable)
   tail        -> `context-gauge -t`, corpus-wide: distance from the last durable write

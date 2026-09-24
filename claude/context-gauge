@@ -17,10 +17,9 @@
 #   -p         → resolved transcript path; marker polling reads LAST assistant text;
 #                raw grep also matches spawn prompt + marker-bearing messages
 #   -t         → "tail N/TOTAL" = tool calls since the last DURABLE one (Write/Edit/
-#                NotebookEdit/commit). That distance is what predicts lost work at
-#                TaskStop: 16 of 25 agents past 30 were cut mid-call, 4 closed on a
-#                marker, against 78 of 173 closing at a short tail. A tail of pure
-#                verification is correct, so read it as "ask for a flush", not failure.
+#                NotebookEdit/commit). That distance predicts the work a TaskStop
+#                loses (`agent-census` tail). A tail of pure verification is
+#                correct, so read it as "ask for a flush", not failure.
 [ "$1" = "-p" ] && { path_only=1; shift; }
 [ "$1" = "-t" ] && { tail_only=1; shift; }
 transcript_root="$HOME/.claude/projects"
