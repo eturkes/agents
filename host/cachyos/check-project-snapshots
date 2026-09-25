@@ -262,16 +262,15 @@ class ProjectSnapshots(unittest.TestCase):
                 self.report()
         self.manager.runner = original
 
-    def test_templates_have_both_bounded_hooks(self):
+    def test_template_has_both_bounded_hooks(self):
         root = Path(__file__).resolve().parents[2]
-        for name in ("opus", "fable"):
-            settings = json.loads((root / "claude/cachyos" / f"settings.{name}.json").read_text())
-            for event in ("SessionStart", "SessionEnd"):
-                groups = settings["hooks"].get(event, [])
-                hooks = [hook for group in groups for hook in group["hooks"] if "project-snapshots" in hook.get("command", "")]
-                self.assertEqual(len(hooks), 1, (name, event))
-                self.assertEqual(hooks[0]["command"], '"$HOME/.local/bin/project-snapshots" hook')
-                self.assertEqual(hooks[0]["timeout"], 60)
+        settings = json.loads((root / "claude/cachyos/settings.json").read_text())
+        for event in ("SessionStart", "SessionEnd"):
+            groups = settings["hooks"].get(event, [])
+            hooks = [hook for group in groups for hook in group["hooks"] if "project-snapshots" in hook.get("command", "")]
+            self.assertEqual(len(hooks), 1, event)
+            self.assertEqual(hooks[0]["command"], '"$HOME/.local/bin/project-snapshots" hook')
+            self.assertEqual(hooks[0]["timeout"], 60)
 
     def test_hook_installation_preserves_settings_and_is_idempotent(self):
         settings = self.root / "settings.json"

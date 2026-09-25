@@ -5,12 +5,12 @@ Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` po
 Start a session with:
 
 ```sh
-ANTHROPIC_MODEL=<model> headroom wrap claude --1m --code-memory none
+ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none
 ```
 
 `--code-memory none` keeps `wrap` from registering the Serena MCP server. Code intelligence comes from Claude Code's LSP plugins instead.
 
-Set `ANTHROPIC_MODEL` explicitly. The `--1m` option passes this value to the launched process. The launch value overrides the Claude Code `model` setting. Therefore, `settings.json` omits that key.
+`--1m` passes `ANTHROPIC_MODEL` with a `[1m]` suffix to the launched process and falls back to `claude-opus-4-8` when it is unset. Claude Code's own `~/.claude/settings.json` pins `ANTHROPIC_MODEL` to `claude-opus-5-5[1m]` in its `env` block, and that pin overrides the launch value. Launch with the same model anyway, so that `wrap` names the model that actually runs.
 
 ## Image-worker termination guard
 

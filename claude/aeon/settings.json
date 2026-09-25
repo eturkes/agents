@@ -1,19 +1,19 @@
 {
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "local-proxy",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "273000",
+    "ANTHROPIC_MODEL": "claude-opus-5-5[1m]",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "MCP_TIMEOUT": "60000",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "273000",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "920000",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "128000",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "gpt-6-sol",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "gpt-6-luna",
     "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-6-sol",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-6-sol",
-    "ANTHROPIC_SMALL_FAST_MODEL": "gpt-6-sol",
-    "CLAUDE_CODE_AUTO_MODE_MODEL": "gpt-6-sol",
-    "CLAUDE_CODE_BG_CLASSIFIER_MODEL": "gpt-6-sol",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-6-luna",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-6-luna",
+    "ANTHROPIC_SMALL_FAST_MODEL": "gpt-6-luna",
+    "CLAUDE_CODE_AUTO_MODE_MODEL": "gpt-6-luna",
+    "CLAUDE_CODE_BG_CLASSIFIER_MODEL": "gpt-6-luna",
     "CLAUDE_CODE_EFFORT_LEVEL": "max",
     "CLAUDE_CODE_NO_FLICKER": "0",
     "DISABLE_AUTOUPDATER": "1"
@@ -94,29 +94,6 @@
         ]
       }
     ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/turn-email",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "permission_prompt|elicitation_dialog|agent_needs_input",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/turn-email",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
     "PreCompact": [
       {
         "matcher": "*",
@@ -149,29 +126,6 @@
           }
         ]
       }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$HOME/.local/bin/project-snapshots\" hook",
-            "timeout": 60
-          }
-        ],
-        "matcher": "startup|resume|clear|fork"
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$HOME/.local/bin/project-snapshots\" hook",
-            "timeout": 60
-          }
-        ]
-      }
     ]
   },
   "enableArtifact": false,
@@ -183,20 +137,20 @@
     "refreshInterval": 60
   },
   "enabledPlugins": {
-    "xml-lsp@global": true,
-    "prolog-lsp@global": true,
     "pyright-lsp@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
     "markdown-lsp@global": true,
     "r-lsp@global": true,
-    "bash-lsp@global": true
+    "bash-lsp@global": true,
+    "xml-lsp@global": true,
+    "prolog-lsp@global": true
   },
   "extraKnownMarketplaces": {
     "global": {
       "source": {
         "source": "directory",
-        "path": "/home/eturkes/.local/app/agents/claude/marketplace"
+        "path": "/var/home/eturkes/debian/agents/claude/marketplace"
       }
     },
     "claude-plugins-official": {
@@ -214,6 +168,7 @@
   },
   "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
+  "timeFormat": "24-hour-utc",
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
@@ -223,6 +178,5 @@
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "crossSessionInbound": "accept",
-  "useAutoModeDuringPlan": false,
-  "timeFormat": "24-hour-utc"
+  "useAutoModeDuringPlan": false
 }

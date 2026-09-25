@@ -6,7 +6,8 @@
 # Gauge denominator = the auto-compaction trigger ⇒ 100% = compaction. ACW set ⇒
 # window = min(JSON context_window_size, ACW), source "env", enforced for every
 # model ⇒ trigger = window - 33K; unset ⇒ MAIN's first-party window is
-# collapse-managed ⇒ raw window stands. Red ≥92% = CC's `warn`, trigger - 20K.
+# collapse-managed ⇒ raw window stands. Red = rounded ≥92% ≈ CC's `warn` (trigger - 20K)
+# at a 240K trigger; on a raw 1M window it opens at 915K.
 # Teammates → context-gauge, resolving the same way per target.
 j=""
 [ -t 0 ] || j=$(cat)

@@ -17,7 +17,7 @@ Claude Code's built-in `LSP` tool and passive diagnostics drive every plugin her
 4. Add an `lspServers` entry to `.claude-plugin/marketplace.json`. Include the command and `extensionToLanguage` mapping.
 5. Add `plugins/<name>-lsp/<machine>/README.md` with the installation and upgrade procedure.
 6. Keep platform steps in the machine README. Keep the shared `lspServers` entry in the marketplace manifest.
-7. Enable the plugin in `enabledPlugins` within each machine's `settings.opus.json` and `settings.fable.json`.
+7. Enable the plugin in `enabledPlugins` within each machine's `settings.json`.
 8. Record the plugin in `installed_plugins.json`.
 9. Add the server to `upgrade-servers`. Include the upstream version resolver, installation procedure, and successful `initialize` response.
 
