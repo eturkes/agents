@@ -1,6 +1,6 @@
 # Headroom deployment on CachyOS
 
-Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` points to CLIProxyAPI at `127.0.0.1:8317`. The Headroom proxy listens on `127.0.0.1:8787`.
+Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` points to CLIProxyAPI at `127.0.0.1:8317`, and its `tpm` lifts the proxy's token rate limit (see [Token rate limit](#token-rate-limit)). The Headroom proxy listens on `127.0.0.1:8787`.
 
 Start a session with:
 
@@ -74,6 +74,24 @@ rg -uu 'headroom wrap selfheal' ~/Projects/*/.claude ~/.local/app/*/.claude
 ```
 
 Every hook must name `/home/eturkes/.local/bin/headroom`. These files are gitignored, so each machine repairs its own.
+
+## Token rate limit
+
+Starting with 0.39.0, the proxy enforces its tokens-per-minute limit before it forwards a request. `--tpm`, `HEADROOM_TPM`, or `tpm` in `settings.json` sets the limit, and the default is 100,000. For each request it would forward, the proxy counts the tokens in the request's `messages` with its own tokenizer, before compression, and checks that count against a token bucket. The bucket refills at the limit's rate and never holds more than one minute of tokens. A request that needs more tokens than the bucket holds gets HTTP 429 with a `Retry-After` header, and Claude Code shows it as:
+
+```text
+API Error: Request rejected (429) · {"detail":"Token rate limited. Retry after 301.8s"}
+```
+
+A request larger than the limit never fits in the bucket, so the proxy rejects it however long the client waits, even though the error names a finite wait. With the default limit, a Claude Code session whose conversation passes about 100,000 tokens can no longer send a turn. A smaller request fails only until the bucket refills. Claude Code retries a 429 on its own when `Retry-After` is 60 seconds or less, and it ends the turn with the error when the wait is longer. Earlier builds never enforce the limit, so the setting has no effect there.
+
+`settings.json` sets `tpm` to 1,000,000,000, which disables the limit in practice. A `--tpm` option takes precedence over an exported `HEADROOM_TPM`, and both take precedence over the file. The `--no-rate-limit` flag turns off both rate limits, but `wrap` does not pass that flag to the proxy it starts, and `headroom proxy` reads no environment variable or `settings.json` key for it. The requests-per-minute limit keeps its default of 60.
+
+The proxy applies `settings.json` only at startup. After you change the file, restart the proxy and confirm the active limits:
+
+```sh
+curl -sS http://127.0.0.1:8787/stats | jq .rate_limiter
+```
 
 ## Knobs
 
