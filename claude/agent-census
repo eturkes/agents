@@ -9,7 +9,7 @@ numbers live here, measured fresh on every run.
 Sections map 1:1 to the law:
   compaction  -> "teammates do auto-compact, can keep working past it, and context is not what kills them"
   deaths      -> terminal `API Error` classes, with peak usage at death
-  writes      -> the SubagentStop firing set (>=15 tool calls, nothing durable)
+  writes      -> the SubagentStop wrote-nothing notice (>=15 tool calls, nothing durable)
   tail        -> `context-gauge -t`, corpus-wide: distance from the last durable write
   stops       -> the agent-flow TaskStop hold: lead stops on a mid-turn teammate, and those before its marker
 
@@ -245,7 +245,7 @@ def main():
 
     fire = [r for r in rows if r["durable"] == 0 and r["tools"] >= 15]
     print(f"\nwrites: {sum(1 for r in rows if r['durable'] == 0)} of {n} wrote nothing durable; "
-          f"{len(fire)} of {n} also reached 15 tool calls = the SubagentStop firing set")
+          f"{len(fire)} of {n} also reached 15 tool calls = the SubagentStop wrote-nothing set")
 
     print("\ntail = tool calls after the last durable write")
     for lo, hi in ((0, 0), (1, 10), (11, 30), (31, 10 ** 9)):

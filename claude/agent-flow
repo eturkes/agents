@@ -8,7 +8,11 @@
 # final assistant message" — unconditional, and `claude`, `general-purpose` +
 # `Explore` all quote it back. Report-file delivery is the opposite instruction,
 # so SubagentStart restates it where it reaches every agent whatever its brief
-# says, and outranks the built-in line by naming it.
+# says, and outranks the built-in line by naming it. Claude Code enforces that
+# line on Write alone: Write.validateInput rejects a subagent Write whose basename
+# matches /^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$/i before PreToolUse, and no
+# tool hook fires for it, while Edit passes and creates a missing file from an
+# empty old_string ⇒ SubagentStart names Edit as the route into such a file.
 #
 # PreCompact stdout = custom compact instructions for subagent + MAIN
 # compactions alike. Auto-compaction can drop the brief's report path; these lines
@@ -16,10 +20,15 @@
 # line: past compaction, only the summary holds it.
 #
 # SubagentStop additionalContext resumes the agent with the feedback attached. It
-# fires on one unambiguous case — a whole run with nothing written to disk — and
-# accepts "nothing needed writing", so it never manufactures a report. A long gap
-# between writes stays outside it: a long tail can be pure verification after a
-# complete report.
+# fires in two cases and never manufactures a report:
+# - a rejected Write whose path no later successful Edit filled → route to Edit.
+#   The transcript alone records the rejection. Later = issued after the
+#   rejection's result: an Edit batched with the Write went out before the
+#   rejection, so the Write's content never landed. Checked first: the
+#   wrote-nothing count treats a rejected Write as written.
+# - a whole run without a counted durable write (Durable below), where "nothing
+#   needed writing" is an accepted answer. A long gap between writes stays
+#   outside it: a long tail can be pure verification after a complete report.
 #
 # PreToolUse(TaskStop) holds the first stop of a mid-turn teammate. A stop before
 # the marker cuts the in-flight call and any row still changing, while waiting for
@@ -33,7 +42,7 @@ ev=$(printf '%s' "$IN" | jq -r '.hook_event_name // ""' 2>/dev/null)
 
 case $ev in
 SubagentStart)
-  jq -n '{hookSpecificOutput:{hookEventName:"SubagentStart",additionalContext:"When your task names an output file, that file is the deliverable: always write it early and keep it current as you work, then point your final message at it and give the headline there. This outranks the \"Do NOT Write report/summary/findings/analysis .md files\" line in your Notes. Work held only in this conversation ends with the run."}}'
+  jq -n '{hookSpecificOutput:{hookEventName:"SubagentStart",additionalContext:"When your task names an output file, that file is the deliverable: always write it early and keep it current as you work, then point your final message at it and give the headline there. This outranks the \"Do NOT Write report/summary/findings/analysis .md files\" line in your Notes. A file whose basename matches /^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\\.md$/i accepts Edit alone: an empty old_string creates it; once it exists, Read it, then update it with Edit. Work held only in this conversation ends with the run."}}'
   ;;
 PreCompact)
   printf '%s\n' "Carry into the summary, literally and in full: every path this run must write or update, the completion marker or \"Met when\" condition it was given, its write allowlist and git posture, the ids of any rows still unfilled, and the exact next action. Keep paths and identifiers verbatim."
@@ -46,12 +55,50 @@ EOF
   [ "$active" = false ] || exit 0
   [ -n "$tp" ] && [ -f "$tp" ] || exit 0
 
+  rejected=$(jq -rRn '
+    def text:
+      if type == "string" then .
+      elif type == "array" then [.[]? | objects | select(.type == "text") | .text | strings] | join(" ")
+      else "" end;
+    reduce (inputs | fromjson? | objects
+            | select(.type == "assistant" or .type == "user")
+            | .message | objects | .content | arrays | .[] | objects) as $x
+      ({use: {}, rejected: []};
+       if $x.type == "tool_use" and ($x.name == "Write" or $x.name == "Edit") and ($x.id | type) == "string" then
+         (($x.input | objects | .file_path) // null) as $p
+         | .use[$x.id] = {
+           name: $x.name,
+           path: $p,
+           resolves: (if $x.name == "Edit" then
+             [.rejected | to_entries[] | select(.value.resolved != true and .value.path == $p) | .key]
+           else [] end)
+         }
+       elif $x.type == "tool_result" and ($x.tool_use_id | type) == "string" then
+         .use[$x.tool_use_id] as $u
+         | if $u.name == "Write" and $x.is_error == true and ($u.path | type == "string" and length > 0)
+              and ($x.content | text | contains("Subagents should return findings as text"))
+           then .rejected += [{path:$u.path, resolved:false}]
+           elif $u.name == "Edit" and $x.is_error != true then
+             reduce $u.resolves[] as $i (. ; .rejected[$i].resolved = true)
+           else . end
+       else . end)
+    | [.rejected[] | select(.resolved != true) | .path]
+    | reduce .[] as $path ([]; if index([$path]) then . else . + [$path] end)
+    | tojson
+  ' "$tp" 2>/dev/null) || exit 0
+  [ "$rejected" = "[]" ] || {
+    jq -n --argjson p "$rejected" '{hookSpecificOutput:{hookEventName:"SubagentStop",
+      additionalContext:("Claude Code rejected your Write to \($p | join(", ")): a file whose basename matches /^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\\.md$/i accepts Edit alone. Apply your content with Edit, then finish: an empty old_string creates a missing file; Read an existing one first.")}}'
+    exit 0
+  }
+
   # Durable = leaves bytes behind. SendMessage and reads do not.
   { read -r tools; read -r durable; } <<EOF
-$(jq -n '[inputs|select(.type=="assistant")|.message.content[]?|select(.type=="tool_use")]
+$(jq -rRn '[inputs | fromjson? | objects | select(.type=="assistant")
+    | .message | objects | .content | arrays | .[] | objects | select(.type=="tool_use")]
   | length,
     ([.[]|select(.name=="Write" or .name=="Edit" or .name=="NotebookEdit"
-       or (.name=="Bash" and ((.input.command // "")|test("git commit|git add|>>|\\btee\\b"))))]|length)' \
+       or (.name=="Bash" and ((.input | objects | .command | strings) // "" | test("git commit|git add|>>|\\btee\\b"))))]|length)' \
   "$tp" 2>/dev/null)
 EOF
   [ "$durable" = 0 ] 2>/dev/null || exit 0

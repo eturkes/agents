@@ -1,0 +1,410 @@
+#!/usr/bin/env python3
+"""Exercise agent-flow hook outputs: SubagentStart text, SubagentStop recoveries, PreCompact, PreToolUse."""
+
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+FLOW = os.environ.get("FLOW_BIN") or str(Path(__file__).with_name("agent-flow"))
+START_CONTEXT = (
+    "When your task names an output file, that file is the deliverable: always write it "
+    "early and keep it current as you work, then point your final message at it and give "
+    "the headline there. This outranks the \"Do NOT Write report/summary/findings/analysis "
+    ".md files\" line in your Notes. A file whose basename matches "
+    r"/^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$/i accepts Edit alone: an empty "
+    "old_string creates it; once it exists, Read it, then update it with Edit. Work "
+    "held only in this conversation ends with the run."
+)
+STOP_PREFIX = (
+    "Claude Code rejected your Write to {paths}: a file whose basename matches "
+    r"/^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$/i accepts Edit alone. Apply your "
+    "content with Edit, then finish: an empty old_string creates a missing file; Read an "
+    "existing one first."
+)
+WROTE_NOTHING = (
+    "You have written nothing to disk across {count} tool calls, so everything this run "
+    "found exists only in this conversation and ends with it. If your task named an "
+    "output file, write it now. If the correct outcome is that nothing needed writing, "
+    "state that in your final message."
+)
+REJECTION = (
+    "<tool_use_error>Subagents should return findings as text, not write report files. "
+    "Include this content in your final response instead.</tool_use_error>"
+)
+
+
+# Records the hook must skip without failing: lines that carry no tool block, then
+# junk blocks + tool_uses whose id, input or path has the wrong type.
+MALFORMED_LINES = [
+    None,
+    "not an object",
+    17,
+    [],
+    {"type": "assistant"},
+    {"type": "assistant", "message": "not an object"},
+    {"type": "user", "message": {"content": "not an array"}},
+]
+MALFORMED_TOOLS = [
+    {
+        "type": "assistant",
+        "message": {
+            "content": [
+                None,
+                "text",
+                0,
+                [],
+                {"type": "tool_use", "name": "Write", "id": 7, "input": {"file_path": "/x/REPORT.md"}},
+                {"type": "tool_use", "name": "Write", "id": "no-input"},
+                {"type": "tool_use", "name": "Write", "id": "string-input", "input": "not an object"},
+                {"type": "tool_use", "name": "Write", "id": "number-path", "input": {"file_path": 17}},
+                {"type": "tool_use", "name": "Edit", "id": "array-input", "input": []},
+                {"type": "tool_use", "name": "Bash", "id": "string-command", "input": "not an object"},
+            ]
+        },
+    },
+    {
+        "type": "user",
+        "message": {
+            "content": [
+                None,
+                [],
+                {"type": "tool_result", "tool_use_id": 7, "is_error": True, "content": REJECTION},
+                {"type": "tool_result", "tool_use_id": "string-input", "is_error": True, "content": REJECTION},
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "number-path",
+                    "is_error": True,
+                    "content": [None, "x", {"type": "text", "text": 7}, {"type": "text", "text": REJECTION}],
+                },
+                {"type": "tool_result", "tool_use_id": "array-input", "is_error": False, "content": "ok"},
+            ]
+        },
+    },
+]
+
+
+class AgentFlow(unittest.TestCase):
+    def run_hook(self, payload, records=None, trailing=""):
+        with tempfile.TemporaryDirectory() as directory:
+            if records is not None:
+                transcript = Path(directory) / "transcript.jsonl"
+                transcript.write_text(
+                    "".join(json.dumps(record) + "\n" for record in records) + trailing,
+                    encoding="utf-8",
+                )
+                payload = {**payload, "agent_transcript_path": str(transcript)}
+            result = subprocess.run(
+                [FLOW], input=json.dumps(payload), text=True, capture_output=True
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def assert_context(self, output, event, context):
+        self.assertTrue(output, f"expected {event} additionalContext, got empty stdout")
+        self.assertEqual(
+            json.loads(output),
+            {"hookSpecificOutput": {"hookEventName": event, "additionalContext": context}},
+        )
+
+    @staticmethod
+    def write_candidate(path="/x/REPORT.md", tool_id="t1", content=REJECTION):
+        return [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": tool_id,
+                            "name": "Write",
+                            "input": {"file_path": path, "content": "x"},
+                        }
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "is_error": True,
+                            "content": content,
+                        }
+                    ]
+                },
+            },
+        ]
+
+    @staticmethod
+    def edit_result(path, tool_id="t2", error=False):
+        return [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": tool_id,
+                            "name": "Edit",
+                            "input": {"file_path": path, "old_string": "x", "new_string": "y"},
+                        }
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "is_error": error,
+                            "content": "edit failed" if error else "File updated",
+                        }
+                    ]
+                },
+            },
+        ]
+
+    @staticmethod
+    def read_calls(count=15):
+        return [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": f"r{index}",
+                            "name": "Read",
+                            "input": {"file_path": "/x/source.py"},
+                        }
+                    ]
+                },
+            }
+            for index in range(count)
+        ]
+
+    def test_subagent_start_text_exact(self):
+        output = self.run_hook({"hook_event_name": "SubagentStart"})
+        self.assert_context(output, "SubagentStart", START_CONTEXT)
+
+    def test_rejected_write_unresolved_emits_edit_route(self):
+        path = "/tmp/REPORT.md"
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False},
+            self.write_candidate(path),
+        )
+        self.assert_context(output, "SubagentStop", STOP_PREFIX.format(paths=path))
+
+    def test_rejected_write_resolved_by_later_edit_falls_through(self):
+        path = "/tmp/REPORT.md"
+        records = self.write_candidate(path) + self.edit_result(path)
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assertEqual(output, "")
+
+    def test_later_edit_error_keeps_candidate(self):
+        path = "/tmp/REPORT.md"
+        records = self.write_candidate(path) + self.edit_result(path, error=True)
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assert_context(output, "SubagentStop", STOP_PREFIX.format(paths=path))
+
+    def test_multiple_paths_unique_in_order(self):
+        first = "/x/SUMMARY.md"
+        second = "/x/ANALYSIS-notes.md"
+        records = (
+            self.write_candidate(first, "t1")
+            + self.write_candidate(second, "t2")
+            + self.write_candidate(first, "t3")
+        )
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assert_context(
+            output, "SubagentStop", STOP_PREFIX.format(paths=f"{first}, {second}")
+        )
+
+    def test_array_form_tool_result_content(self):
+        path = "/x/FINDINGS.md"
+        records = self.write_candidate(
+            path, content=[{"type": "text", "text": REJECTION}]
+        )
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assert_context(output, "SubagentStop", STOP_PREFIX.format(paths=path))
+
+    def test_stop_hook_active_is_quiet(self):
+        records = self.write_candidate("/x/REPORT.md")
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": True}, records
+        )
+        self.assertEqual(output, "")
+
+    def test_partial_trailing_line_tolerated(self):
+        path = "/x/REPORT.md"
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False},
+            self.write_candidate(path),
+            trailing='{"type":"assistant","message":',
+        )
+        self.assert_context(output, "SubagentStop", STOP_PREFIX.format(paths=path))
+
+    def test_wrote_nothing_check_unchanged(self):
+        records = self.read_calls()
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assert_context(
+            output, "SubagentStop", WROTE_NOTHING.format(count=15)
+        )
+
+    def test_precompact_output_unchanged(self):
+        output = self.run_hook({"hook_event_name": "PreCompact"})
+        expected = (
+            'Carry into the summary, literally and in full: every path this run must write '
+            'or update, the completion marker or "Met when" condition it was given, '
+            'its write allowlist and git posture, the ids of any rows still unfilled, and the '
+            'exact next action. Keep paths and identifiers verbatim.'
+        ) + chr(10)
+        self.assertEqual(output, expected)
+
+    def test_pretooluse_non_taskstop_quiet(self):
+        output = self.run_hook(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Read",
+                "session_id": "session-1",
+                "tool_input": {"file_path": "/x/source.py"},
+            }
+        )
+        self.assertEqual(output, "")
+
+    def test_wrote_nothing_partial_trailing_line(self):
+        records = self.read_calls()
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False},
+            records,
+            trailing='{"type":"assistant","message":',
+        )
+        self.assert_context(
+            output, "SubagentStop", WROTE_NOTHING.format(count=15)
+        )
+
+    def test_parallel_batch_edit_leaves_candidate(self):
+        path = "/tmp/REPORT.md"
+        records = [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "write-1",
+                            "name": "Write",
+                            "input": {"file_path": path, "content": "x"},
+                        },
+                        {
+                            "type": "tool_use",
+                            "id": "edit-1",
+                            "name": "Edit",
+                            "input": {
+                                "file_path": path,
+                                "old_string": "x",
+                                "new_string": "y",
+                            },
+                        },
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "write-1",
+                            "is_error": True,
+                            "content": REJECTION,
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "edit-1",
+                            "is_error": False,
+                            "content": "File updated",
+                        },
+                    ]
+                },
+            },
+        ]
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assert_context(output, "SubagentStop", STOP_PREFIX.format(paths=path))
+
+    def test_rejected_again_after_resolving_edit(self):
+        path = "/tmp/FINDINGS.md"
+        records = (
+            self.write_candidate(path, tool_id="write-1")
+            + self.edit_result(path, tool_id="edit-1")
+            + self.write_candidate(path, tool_id="write-2")
+        )
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assert_context(output, "SubagentStop", STOP_PREFIX.format(paths=path))
+
+    def test_other_write_error_is_not_candidate(self):
+        records = self.write_candidate(
+            "/tmp/REPORT.md", content="File has not been read yet"
+        )
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assertEqual(output, "")
+
+    def test_rejection_text_in_success_result_is_not_candidate(self):
+        records = self.write_candidate("/tmp/REPORT.md")
+        records[1]["message"]["content"][0]["is_error"] = False
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assertEqual(output, "")
+
+
+    def test_edit_of_other_path_leaves_candidate(self):
+        path = "/x/REPORT.md"
+        records = self.write_candidate(path) + self.edit_result("/x/OTHER.md")
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assert_context(output, "SubagentStop", STOP_PREFIX.format(paths=path))
+
+    def test_malformed_records_leave_candidate(self):
+        path = "/x/REPORT.md"
+        records = MALFORMED_LINES + MALFORMED_TOOLS + self.write_candidate(path, tool_id="valid")
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assert_context(output, "SubagentStop", STOP_PREFIX.format(paths=path))
+
+    def test_malformed_records_leave_wrote_nothing_notice(self):
+        bash = {"type": "tool_use", "name": "Bash", "id": "b1", "input": "not an object"}
+        records = MALFORMED_LINES + [{"type": "assistant", "message": {"content": [bash]}}] + self.read_calls()
+        output = self.run_hook(
+            {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
+        )
+        self.assert_context(output, "SubagentStop", WROTE_NOTHING.format(count=16))
+
+
+if __name__ == "__main__":
+    unittest.main()
