@@ -127,8 +127,9 @@ EOF
   [ -n "$tp" ] || exit 0
 
   # Turn state = last user/assistant record; marker = last DONE token the lead
-  # sent; files = Write/Edit targets, newest first, one JSON line since a path
-  # may hold a newline. `fromjson?` skips a line still being written; any other
+  # sent, its name in either case since leads write it verbatim or uppercased;
+  # files = Write/Edit targets, newest first, one JSON line since a path may
+  # hold a newline. `fromjson?` skips a line still being written; any other
   # decode error passes.
   out=$(jq -rRn '[inputs | fromjson? | select(.type == "user" or .type == "assistant")] as $r
   | ($r[-1].message.content | if type == "array" then . else [] end) as $l
@@ -136,7 +137,7 @@ EOF
         and all($l[]; .type != "tool_use") then "ended" else "mid" end),
     ([$r[] | select(.type == "user") | .message.content
       | if type == "string" then . else [.[]? | select(.type == "text") | .text] | join(" ") end
-      | match("[A-Z][A-Z0-9]*(-[A-Z0-9]+)*-DONE-[0-9]+"; "g").string] | last // ""),
+      | match("[A-Za-z0-9][A-Za-z0-9_-]*-DONE-[0-9]+"; "g").string] | last // ""),
     ([$r[] | select(.type == "assistant") | .message.content[]?
       | select(.type == "tool_use" and (.name == "Write" or .name == "Edit" or .name == "NotebookEdit"))
       | .input.file_path // .input.notebook_path // empty]

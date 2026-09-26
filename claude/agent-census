@@ -19,7 +19,7 @@ summarizer's own cost) followed by the `isCompactSummary` user entry holding the
 import json, os, re, sys, glob, statistics
 from datetime import datetime
 
-DONE = re.compile(r"[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-DONE-\d+")
+DONE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*-DONE-[0-9]+")
 REPORT = ".scratch/agents/"
 WRITE_TOOLS = {"Write", "Edit", "NotebookEdit"}
 BASH_DURABLE = re.compile(r"git commit|git add|>>|\btee\b")

@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -101,6 +102,79 @@ class AgentFlow(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
+
+    def run_taskstop_hook(self, name, user_texts, *, ended=False, quiet_minutes=0, repeats=1):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "home"
+            session_id = "session-1"
+            subagents = home / ".claude" / "projects" / "project" / session_id / "subagents"
+            subagents.mkdir(parents=True)
+            transcript = subagents / f"agent-a{name}-case.jsonl"
+            records = [
+                {"type": "user", "message": {"content": text}}
+                for text in user_texts
+            ]
+            if ended:
+                records.append(
+                    {"type": "assistant", "message": {"content": [{"type": "text", "text": "finished"}]}}
+                )
+            else:
+                records.append(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {"type": "tool_use", "id": "read-1", "name": "Read", "input": {}}
+                            ]
+                        },
+                    }
+                )
+            transcript.write_text(
+                "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+            )
+            transcript.with_suffix(".meta.json").write_text(
+                json.dumps({"name": name}), encoding="utf-8"
+            )
+            if quiet_minutes:
+                old_time = time.time() - quiet_minutes * 60
+                os.utime(transcript, (old_time, old_time))
+
+            payload = {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "TaskStop",
+                "session_id": session_id,
+                "tool_input": {"task_id": name},
+            }
+            outputs = []
+            for _ in range(repeats):
+                result = subprocess.run(
+                    [FLOW],
+                    input=json.dumps(payload),
+                    text=True,
+                    capture_output=True,
+                    env={**os.environ, "HOME": str(home)},
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                outputs.append(result.stdout)
+            return outputs
+
+    def assert_taskstop_hold(self, output, name, marker):
+        reason = (
+            f"{name} is mid-turn and has not posted {marker}. Wait for it: a stop now cuts the "
+            "in-flight call and any row it is still changing. To stop it anyway (budget, "
+            "supersession, takeover, cancellation), call TaskStop again, then re-read every "
+            "file it wrote."
+        )
+        self.assertEqual(
+            json.loads(output),
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            },
+        )
 
     def assert_context(self, output, event, context):
         self.assertTrue(output, f"expected {event} additionalContext, got empty stdout")
@@ -404,6 +478,62 @@ class AgentFlow(unittest.TestCase):
             {"hook_event_name": "SubagentStop", "stop_hook_active": False}, records
         )
         self.assert_context(output, "SubagentStop", WROTE_NOTHING.format(count=16))
+
+    def test_taskstop_hold_names_lowercase_marker(self):
+        name = "rev-9"
+        marker = "rev-9-DONE-1"
+        output = self.run_taskstop_hook(name, [f"I am still working; wait for {marker}."])[0]
+        self.assert_taskstop_hold(output, name, marker)
+
+    def test_taskstop_hold_names_underscore_mixed_case_marker(self):
+        name = "Map_2"
+        marker = "Map_2-DONE-3"
+        output = self.run_taskstop_hook(name, [f"I am still working; wait for {marker}."])[0]
+        self.assert_taskstop_hold(output, name, marker)
+
+    def test_taskstop_hold_names_uppercase_marker(self):
+        name = "impl-2"
+        marker = "IMPL-2-DONE-1"
+        output = self.run_taskstop_hook(name, [f"I am still working; wait for {marker}."])[0]
+        self.assert_taskstop_hold(output, name, marker)
+
+    def test_taskstop_hold_names_last_marker(self):
+        name = "rev-9"
+        marker = "rev-9-DONE-2"
+        output = self.run_taskstop_hook(
+            name,
+            ["Initial brief: rev-9-DONE-1.", f"Updated brief: {marker}."],
+        )[0]
+        self.assert_taskstop_hold(output, name, marker)
+
+    def test_taskstop_hold_without_token_names_fallback(self):
+        name = "rev-9"
+        output = self.run_taskstop_hook(
+            name,
+            ["Brief includes rev-9-done-1 and <NAME>-DONE-<i> only."],
+        )[0]
+        self.assert_taskstop_hold(output, name, "its completion marker")
+
+    def test_taskstop_reissue_within_10_min_passes(self):
+        name = "rev-9"
+        marker = "REV-9-DONE-1"
+        outputs = self.run_taskstop_hook(
+            name, [f"I am still working; wait for {marker}."], repeats=2
+        )
+        self.assert_taskstop_hold(outputs[0], name, marker)
+        self.assertEqual(outputs[1], "")
+
+    def test_taskstop_ended_turn_passes(self):
+        output = self.run_taskstop_hook(
+            "rev-9", ["Brief includes REV-9-DONE-1."], ended=True
+        )[0]
+        self.assertEqual(output, "")
+
+    def test_taskstop_quiet_transcript_passes(self):
+        output = self.run_taskstop_hook(
+            "rev-9", ["Brief includes REV-9-DONE-1."], quiet_minutes=20
+        )[0]
+        self.assertEqual(output, "")
 
 
 if __name__ == "__main__":
