@@ -24,7 +24,7 @@ The build provides these controls:
 - Limit OCR ONNX intra-operation and inter-operation threads to one.
 - Honor `--no-image-optimize`, `HEADROOM_NO_IMAGE_OPTIMIZE=1`, `--no-optimize`, and the per-request bypass header.
 
-The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` carries the guard as a single commit on upstream tag `v0.35.0`, so the build reports the version of the release it patches.
+The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` carries the guard as a single commit on upstream tag `v0.39.0`, so the build reports the version of the release it patches.
 
 ### Build and install
 
@@ -75,6 +75,8 @@ rg -uu 'headroom wrap selfheal' ~/Projects/*/.claude ~/.local/app/*/.claude
 
 Every hook must name `/home/eturkes/.local/bin/headroom`. These files are gitignored, so each machine repairs its own.
 
+`wrap` keeps its state in `.claude/.headroom_wrap_*` files next to `settings.local.json`: a marker, an owner record for each env key, and a settings lock. Each project must gitignore `.claude/.headroom_wrap_*` together with `.claude/settings.local.json`. An ignore line that names only the marker leaves the other two files untracked.
+
 ## Token rate limit
 
 Starting with 0.39.0, the proxy enforces its tokens-per-minute limit before it forwards a request. `--tpm`, `HEADROOM_TPM`, or `tpm` in `settings.json` sets the limit, and the default is 100,000. For each request it would forward, the proxy counts the tokens in the request's `messages` with its own tokenizer, before compression, and checks that count against a token bucket. The bucket refills at the limit's rate and never holds more than one minute of tokens. A request that needs more tokens than the bucket holds gets HTTP 429 with a `Retry-After` header, and Claude Code shows it as:
@@ -99,13 +101,15 @@ curl -sS http://127.0.0.1:8787/stats | jq .rate_limiter
 
 ## Verification
 
-Prepare the test environment with `uv sync --extra all --extra dev`, then run the bounded suites in the checkout:
+Prepare the test environment with `uv sync --frozen --extra all --extra dev`. Then run the bounded suites in the checkout:
 
 ```sh
-uv run pytest \
+uv run --frozen pytest \
   tests/test_image_compression_isolation.py \
   tests/test_image_compression_policy.py \
   tests/test_image_ocr_api_compat.py
 ```
+
+`--frozen` keeps `uv.lock` at the tagged state. Without it, uv can rewrite the lockfile, and the next rebase then stops on the uncommitted change.
 
 See the [container deployment](../../../container/aeon/headroom/README.md).
