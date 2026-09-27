@@ -62,7 +62,7 @@ case "$mode" in
     done
     "$recipe_dir/nvidia-prime-policy" rollback
     check_files
-    echo 'Intel graphics configured; NVIDIA compute remains available. Restart SDDM to activate.'
+    echo 'The Intel graphics policy is ready. NVIDIA compute remains available. Restart SDDM to activate the policy.'
     ;;
   check)
     check_files
@@ -96,7 +96,7 @@ case "$mode" in
       echo 'FAIL Xorg providers are not Intel-only' >&2
       failed=1
     fi
-    # Check display state after KDE has applied its saved layout, not only Xsetup.
+    # KDE's saved layout can override Xsetup → check the post-KDE display state.
     if python - <<'PY'
 import re
 import subprocess

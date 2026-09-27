@@ -7,7 +7,7 @@ xset -dpms
 outputs=$(xrandr --query)
 hdmi=$(awk '$1 ~ /^HDMI-/ && $2 == "connected" {print $1; exit}' <<< "$outputs")
 if [[ -n "$hdmi" ]]; then
-  # Disable the panel only after the external output activates successfully.
+  # Panel off only after the external output activates.
   xrandr --output "$hdmi" --auto --primary
   while read -r panel; do
     xrandr --output "$panel" --off

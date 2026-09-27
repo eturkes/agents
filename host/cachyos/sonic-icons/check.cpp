@@ -18,7 +18,7 @@ int main(int argc, char **argv)
     const auto directories = manifest.value("Directories").toStringList()
         + manifest.value("ScaledDirectories").toStringList();
     if (theme.isEmpty() || directories.isEmpty()) {
-        out << "FAIL: no installed manifest for active theme=" << theme << '\n';
+        out << "FAIL: empty theme name or manifest directory list, theme=" << theme << '\n';
         return 2;
     }
     QSet<QString> names;

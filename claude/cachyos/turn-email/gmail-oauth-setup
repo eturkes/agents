@@ -33,7 +33,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ok = "code" in result
         body = (
             b"<html><body style='font:16px sans-serif;padding:3em'>"
-            + (b"<h2>Authorized.</h2><p>Claude Code can now send mail. Close this tab.</p>"
+            + (b"<h2>The authorization response arrived.</h2><p>Check the terminal for the setup result. Then close this tab.</p>"
                if ok else b"<h2>Authorization failed.</h2><p>Check the terminal.</p>")
             + b"</body></html>"
         )

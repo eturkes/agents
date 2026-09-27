@@ -204,15 +204,15 @@ def migrate(source, state, exclusions, units=()):
         exchange(source, staged)
         evidence = identity | {"archive_sha256": original_hash, "exclusions": exclusions}
         (state / "verified.json").write_text(json.dumps(evidence, indent=2) + "\n")
-        # The original is retired only after content equality and the atomic switch.
+        # After exchange, staged = the original → retired only after content equality + the atomic switch.
         shutil.rmtree(staged)
         marker.unlink()
-        print("Projects migrated; file contents match. Restoring the paused services.", flush=True)
+        print("Projects migration is complete. File contents match. The paused units restart now.", flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--pause-unit", action="append", default=[], help="Stop an active user unit during migration, then restart it.")
+    parser.add_argument("--pause-unit", action="append", default=[], help="Stop an active user unit during migration. Restart it after migration.")
     args = parser.parse_args()
     home = Path.home().resolve()
     recipe = Path(__file__).resolve().parent

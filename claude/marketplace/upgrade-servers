@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # User-global marketplace LSP updater.
-# Resolve upstream version at run time → stage candidate → real UTF-16 LSP
-# handshake → activate. Failure → restore previous installation.
-# Exit: 0 = current/upgraded; 1 = candidate failed + previous version restored;
-# 2 = check incomplete (network/tooling). `set -e` callers use `|| true`.
+# Resolve upstream version at run time → install candidate → real UTF-16 LSP
+# handshake. Failure → restore the previous installation where one exists.
+# Exit: 0 = current/upgraded; 1 = candidate failed; 2 = check incomplete
+# (network/tooling). `set -e` callers use `|| true`.
 
 status=0
 
@@ -146,7 +146,7 @@ fi
 echo
 case $status in
   0) echo "upgrade-servers: all servers current" ;;
-  1) echo "upgrade-servers: an upgrade failed and was rolled back (see FAIL above)" >&2 ;;
+  1) echo "upgrade-servers: an upgrade failed (see FAIL above)" >&2 ;;
   2) echo "upgrade-servers: some checks did not complete (see -- above)" >&2 ;;
 esac
 exit "$status"

@@ -90,7 +90,7 @@ def verify_files(root, files):
 
 
 def hook_text():
-    # Same path triggers as kernel/DKMS hooks; run after their module/initramfs work.
+    # Kernel/DKMS trigger overlap → run after their module/initramfs hooks.
     return f"""[Trigger]
 Type = Path
 Operation = Install
@@ -115,7 +115,7 @@ def load_manifest():
 
 
 def entry_properties(config, title):
-    # Limine updates may re-indent comments; boot fields + module order own the contract.
+    # Limine can re-indent comments → compare boot fields + module order alone.
     require(sum(line.strip() == title for line in config.splitlines()) == 1, "recovery entry title must be unique")
     selected = False
     result = {}
@@ -176,7 +176,7 @@ def capture():
     require(BOOT.is_mount(), "/boot must be mounted")
     original = CONFIG.read_bytes()
     require(MARKER.encode() not in original and not HOOK.exists(), "unmanaged recovery entry/hook already exists")
-    # This helper preserves a plain Linux entry. UKI/config-enrollment changes need a separate rollout.
+    # Scope = plain Linux entry; UKI/config enrollment → separate rollout.
     for path in Path("/sys/firmware/efi/efivars").glob("SecureBoot-*"):
         require(int.from_bytes(path.read_bytes()[4:], "little") == 0, "Secure Boot requires enrolled-config handling")
     enrollment = Path("/etc/boot/hooks/post.d/90-limine-enroll-config")

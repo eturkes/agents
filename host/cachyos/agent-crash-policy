@@ -38,7 +38,7 @@ if [[ "$mode" == apply ]]; then
       echo "Conflicting crash-policy file: $config" >&2; exit 1
     fi
   fi
-  # Vendor wants/upholds links survive disable; masks also block socket/path activation.
+  # Vendor wants/upholds survive disable → mask, which also blocks socket/path activation.
   if ((${#user_units[@]})); then systemctl --user mask "${user_units[@]}"; fi
   sudo -n systemctl mask "$system_unit"
   stop_loaded --user

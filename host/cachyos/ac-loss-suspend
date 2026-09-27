@@ -83,7 +83,7 @@ def advance(state, now, power):
     if latched:
         return empty(latched=True), False
     since, last = state["since"], state["last"]
-    # CLOCK_BOOTTIME includes sleep. Missed polls, resumes and clock resets earn no grace credit.
+    # CLOCK_BOOTTIME includes sleep → gaps beyond MAX_GAP + reversed clocks restart grace.
     if since is None or last is None or not 0 <= now - last <= MAX_GAP:
         since = now
     return {"since": since, "last": now, "latched": False}, now - since >= GRACE
@@ -95,7 +95,7 @@ def load_state(path):
     except FileNotFoundError:
         return None
     except (OSError, ValueError):
-        # Corruption must not discard a successful suspend latch before confirmed AC returns.
+        # Corruption → retain suspend latch until confirmed AC.
         return empty(latched=True)
 
 
@@ -117,8 +117,7 @@ def request_suspend():
 
 def run_once(path, now, observe, suspend):
     previous = load_state(path)
-    # A failed reset write must not leave old grace credit for the next poll.
-    # Keep a prior latch durable; losing it could repeat a successful suspend.
+    # Reset-write failure → discard old grace credit; retain a prior latch, since losing it could repeat a successful suspend.
     if previous is None or (valid(previous) and not previous["latched"]):
         path.unlink(missing_ok=True)
 
@@ -138,7 +137,7 @@ def run_once(path, now, observe, suspend):
     save_state(path, state)
     if suspend():
         return "suspend-requested"
-    # A definite rejection may retry normally. An exception leaves disposition uncertain and latched.
+    # Definite rejection → retry; exception → uncertain disposition, latch retained.
     state["latched"] = False
     save_state(path, state)
     return "suspend-rejected"

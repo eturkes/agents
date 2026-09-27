@@ -80,7 +80,7 @@ def main():
     if args.apply:
         if ({"firefox", "google-chrome"} & set(selected)
                 and output("xdg-settings", "get", "default-web-browser") != ["browseros.desktop"]):
-            raise SystemExit("preserve the configured default browser before removal")
+            raise SystemExit("Set BrowserOS as the default browser before removal.")
         if "profile-sync-daemon" in selected:
             subprocess.run(["systemctl", "--user", "disable", "--now", "psd.service"], check=True)
         for unit in ("app-org.kde.kalendarac@autostart.service", "app-org.kde.kdeconnect.daemon@autostart.service"):

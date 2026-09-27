@@ -2,11 +2,9 @@
 # Context gauge = assistant usage sum: input + cache creation/read + output.
 # Output: "N% used/<window>". Cached system/tool/instruction + hidden-reasoning
 # input can exceed transcript-visible text; server tools can bill each internal
-# iteration. Denominator = the auto-compaction trigger ⇒ 100% = compaction. Raw =
-# 1M for MAIN, CLAUDE_CODE_MAX_CONTEXT_TOKENS for a teammate's unknown model. ACW
-# set ⇒ window = min(raw, ACW), source "env"; unset ⇒ source "unknown-model" for a
-# teammate. Both enforce ⇒ trigger = window - 33K. Unpinned MAIN = collapse-managed
-# ⇒ raw window stands.
+# iteration. Denominator: teammate = CLAUDE_CODE_MAX_CONTEXT_TOKENS (unknown model)
+# - 33K = its compaction trigger ⇒ 100% = compaction; MAIN = raw 1M, collapse-
+# managed; ACW set ⇒ min(raw, ACW) - 33K for both.
 # POSIX sh + utilities except jq. Globs pin transcript depth; `ls -t` ranks mtime.
 # Usage: context-gauge [-p|-t] [<teammate>]
 #   (no arg)   → MAIN last turn: session id match, then newest project transcript

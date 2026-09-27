@@ -1,6 +1,6 @@
 # Claude Code LSP marketplace
 
-This user-global marketplace provides LSP plugins for Claude Code. Enabled plugins in `~/.claude/settings.json` apply by file extension across projects. The marketplace uses a `directory` source. Install each server on `PATH` by following its README, then run `claude plugin install <name>@global --scope user`.
+This user-global marketplace provides LSP plugins for Claude Code. Enabled plugins in `~/.claude/settings.json` apply by file extension across projects. The marketplace uses a `directory` source. Install each server on `PATH` as its README describes. Then run `claude plugin install <name>@global --scope user`.
 
 ## Scope
 
@@ -28,7 +28,7 @@ The platform upgrade entry points call `upgrade-servers`:
 
 ## Upgrades
 
-Package-managed servers (`marksman`, `bash-language-server`, `pyright`, `typescript-language-server`, R `languageserver`) upgrade with the system package manager. `./upgrade-servers` covers the hand-installed servers: it resolves each current upstream version at run time, installs the candidate, and performs an LSP client handshake. A candidate becomes active after a successful response. If validation fails, the script restores the previous installation. State markers next to each server contain the installed versions.
+Package-managed servers (`marksman`, `bash-language-server`, `pyright`, `typescript-language-server`, R `languageserver`) upgrade with the system package manager. `./upgrade-servers` covers the hand-installed servers: it resolves each current upstream version at run time, installs the candidate, and performs an LSP client handshake. The script installs each candidate before validation. If validation fails and a previous installation exists, the script restores it. State markers next to each server contain the installed versions.
 
 - `prolog-lsp` tracks the default branch because the newest tag fails UTF-16 `initialize`. The UTF-16 initialization fix is on the default branch.
 - `xml-lsp` resolves the Eclipse Maven repository `<release>` value. GitHub releases lag this artifact.
@@ -36,5 +36,5 @@ Package-managed servers (`marksman`, `bash-language-server`, `pyright`, `typescr
 Exit codes:
 
 - `0`: The server is current or upgraded.
-- `1`: The upgrade failed and the script restored the previous installation.
+- `1`: The upgrade failed. The script restored the previous installation where one existed.
 - `2`: The check was incomplete.

@@ -2,7 +2,7 @@
 
 Eclipse LemMinX provides XML language support for DMN, BPMN, SHACL-XML, and XSD.
 
-`../../../upgrade-servers` resolves the Eclipse Maven `<release>` value and stages the JAR. It requires a successful LSP handshake before activation. If validation fails, it restores the previous JAR. `host/cachyos/upgrade` runs the shared upgrader.
+`../../../upgrade-servers` resolves the Eclipse Maven `<release>` value and stages the JAR. It installs the JAR before an LSP handshake validates it. If validation fails and a previous JAR exists, it restores that JAR. `host/cachyos/upgrade` runs the shared upgrader.
 
 ## Prerequisites
 

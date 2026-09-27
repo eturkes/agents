@@ -26,7 +26,7 @@ check_files() {
 
 case "$mode" in
   apply|rollback)
-    # Reject foreign files before the first write; rollback owns these three paths only.
+    # Foreign files → abort before the first write; rollback scope = these three paths.
     for index in "${!sources[@]}"; do
       target=${targets[index]}
       if [[ -L "$target" ]] || { [[ -e "$target" ]] && ! cmp -s -- "$recipe_dir/${sources[index]}" "$target"; }; then
@@ -45,7 +45,7 @@ case "$mode" in
       sudo -n install -D -o root -g root -m "${modes[index]}" -- "$recipe_dir/${sources[index]}" "${targets[index]}"
     done
     check_files
-    echo 'NVIDIA-primary configuration installed. Restart SDDM to activate it.'
+    echo 'The NVIDIA-primary policy is ready. Restart SDDM to activate the policy.'
     ;;
   check)
     check_files

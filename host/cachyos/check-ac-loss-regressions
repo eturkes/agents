@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep interruption, observation and uncertain-request failures awake."""
+"""Failure regressions: saves, observation timing, scope + uncertain requests never earn an early or repeat suspend."""
 
 import contextlib
 import importlib.machinery

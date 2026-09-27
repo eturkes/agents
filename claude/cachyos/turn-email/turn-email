@@ -48,7 +48,7 @@ model=$(printf '%s' "$meta" | jq -r '.model // "?"' 2>/dev/null)
 ctx=$(printf '%s' "$meta" | jq -r 'if .ctx then "\(.ctx / 1000 | floor)K" else "?" end' 2>/dev/null)
 
 # Per-session turn counter; stale sessions reaped after 7d. Stop advances it;
-# a Notification reads it, so the mail threads under the turn it interrupts.
+# a Notification reads it → its mail threads under the last completed turn.
 mkdir -p "$cache" 2>/dev/null || exit 0
 find "$cache" -maxdepth 1 -type f -mtime +7 -delete 2>/dev/null
 n=0; [ -f "$cache/$sid" ] && IFS= read -r n <"$cache/$sid" 2>/dev/null

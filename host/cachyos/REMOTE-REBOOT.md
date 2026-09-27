@@ -139,28 +139,3 @@ Sources: [bcachefs snapshots](https://bcachefs.org/Snapshots/),
 [Snapper bcachefs backend](https://github.com/openSUSE/snapper/blob/master/snapper/Bcachefs.h),
 [default-root operation](https://github.com/openSUSE/snapper/blob/master/snapper/Filesystem.cc),
 [Limine-Snapper-Sync](https://gitlab.com/Zesko/limine-snapper-sync/-/blob/master/README.md).
-
-## Fixed graphics review
-
-6 rows adjudicated; source-level rulings. Runtime and physical-test boundaries remain explicit above.
-
-| Check | Ruling | Evidence / boundary |
-|---|---|---|
-| GPU roles | Pass | Intel PCI screen; GPU auto-attachment disabled; NVIDIA modules/libraries retained. |
-| HDMI layout | Pass | HDMI activation succeeds before eDP disable. KDE post-login layout checked separately. |
-| Headless/open-lid fallback | Pass, static | Closed lid retains framebuffer without eDP; open lid uses connected outputs. Physical transitions untested. |
-| Deployment + rollback | Pass | Six owned paths; foreign/symlink preflight; root metadata; no implicit session restart. |
-| Live claim soundness | Pass, corrected | Output/lid/framebuffer/DPMS checks; unavailable or unknown NVIDIA accounting fails. |
-| Persistent display policy | Pass | PowerDevil no idle dim/off/suspend; X startup disables DPMS/blanking. |
-
-## Fixed power review
-
-5 rows adjudicated; 23 original tests unchanged + 7 failure regressions. Live suspend is outside this review.
-
-| Check | Ruling | Evidence / boundary |
-|---|---|---|
-| Grace + interruption | Pass, corrected | Failed reset writes discard stale grace; timestamps follow observations; stale reads reset. |
-| Supply evidence | Pass, corrected | Dual-battery/USB handling; malformed or unknown scope prevents suspension. |
-| Request boundary | Pass, corrected | Durable latch precedes request; uncertain/nonzero results retain it; prior latch survives write errors. |
-| System service | Pass | Per-boot state; desktop/network independent; inhibitor checks; emergency action = PowerOff. |
-| Deployment evidence | Pass, corrected | Byte/metadata + effective-unit checks; coherent inactive/successful execution with matching exit timestamp. |

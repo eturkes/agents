@@ -29,18 +29,6 @@ Real reboot + next-login persistence require separate validation; the GUI check 
 `preview` captures the actual fullscreen restart dialog after three seconds; inspect its PNG for rendered controls.
 Both tools retain the live session; no VNC client connection is opened.
 
-## Review
-
-Fixed set = 5 rows; 5 adjudicated by source inspection. Runtime checks remain the commands above.
-
-| Check | Ruling | Evidence / boundary |
-|---|---|---|
-| Headless dispatch | Pass | Exact zero-monitor condition; child-only overrides; packaged executable + arguments retained. |
-| Active monitors | Pass | Nonzero-monitor branch leaves renderer settings unchanged; physical multi-monitor runtime not exercised. |
-| Deployment ownership | Pass | Existing foreign definitions + service symlinks rejected; repeat apply produces identical bytes. |
-| Preview isolation + cleanup | Pass | Unconditional activation-free private bus; child PID owns prompt; disconnected system bus; bounded TERM → KILL cleanup. |
-| Claim limits | Pass | Mapped/focused test + separate rendered preview; real reboot + next-login validation excluded. |
-
 Sources:
 
 - [Greeter screen admission + timeout](https://github.com/Sonic-DE/sonic-workspace/blob/ddf0e9f8029f496923379f15f5f262a413d01f04/logout-greeter/greeter.cpp)

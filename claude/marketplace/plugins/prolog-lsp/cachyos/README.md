@@ -2,7 +2,7 @@
 
 `jamesnvc/lsp_server` provides the SWI-Prolog language server.
 
-`../../../upgrade-servers` installs default-branch HEAD and stages the candidate pack. It requires a successful UTF-16 `initialize` handshake before activation. If validation fails, it restores the previous pack. `host/cachyos/upgrade` runs the shared upgrader.
+`../../../upgrade-servers` installs default-branch HEAD and stages the candidate pack. It installs the pack before a UTF-16 `initialize` handshake validates it. If validation fails and a previous pack exists, it restores that pack. `host/cachyos/upgrade` runs the shared upgrader.
 
 ## Prerequisites
 

@@ -13,12 +13,12 @@ lm=$(stat -c %Y "$lk" 2>/dev/null || echo 0)     # reap stale-fetch lock
 [ "$lm" -gt 0 ] && [ "$(( now - lm ))" -ge 60 ] && rmdir "$lk" 2>/dev/null
 mkdir "$lk" 2>/dev/null || exit 0                # live fetch owns lock
 
-# Credential transport = child-local files/variables; process listings expose
-# command structure alone.
+# Token = child-local variable → curl header via stdin (-H @-): process
+# listings show command structure alone.
 setsid -f sh -c '
   t=$("$1" 2>/dev/null)
   if [ -n "$t" ]; then
-    r=$(curl -fsS --max-time 8 -H "Authorization: Bearer $t" -H "anthropic-beta: oauth-2025-04-20" https://api.anthropic.com/api/oauth/usage 2>/dev/null)
+    r=$(printf "Authorization: Bearer %s\n" "$t" | curl -fsS --max-time 8 -H @- -H "anthropic-beta: oauth-2025-04-20" https://api.anthropic.com/api/oauth/usage 2>/dev/null)
     [ -n "$r" ] && printf %s "$r" | jq -e .five_hour >/dev/null 2>&1 && printf %s "$r" >"$2.tmp" && mv "$2.tmp" "$2"
   fi
   rmdir "$3" 2>/dev/null

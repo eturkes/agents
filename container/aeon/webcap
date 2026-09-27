@@ -6,11 +6,6 @@
 // live, the headless command handler never completes → rc=124, no artifact.
 // CDP drives the same binary correctly → always capture through here.
 //
-// Rendering is sound: `--use-gl=angle --use-angle=swiftshader` (chromiumfish
-// BASE_ARGS) rasterizes text + backgrounds. This build answers
-// prefers-color-scheme light under CDP emulation + `--force-dark-mode` →
-// `--dark` rewrites the page's own dark media blocks.
-//
 // Usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]
 //   --full-page        whole scroll height in PNG (PDF spans the document always)
 //   --dark             render the page's prefers-color-scheme: dark styles
@@ -20,7 +15,7 @@
 //   --wait MS          settle delay after load, default 0
 //   --timeout MS       navigation timeout, default 45000
 //   --user-data-dir D  capture as this profile's user; runs against a copy of D
-// Writes every requested artifact, prints one path per line.
+// Writes every requested artifact + prints one path per line; `--dom -` prints the HTML instead.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
@@ -87,8 +82,8 @@ const context = { viewport: { width: Number(opts.width), height: Number(opts.hei
 
 // This build answers prefers-color-scheme light under CDP media emulation
 // (newPage colorScheme + emulateMedia both report dark=false) → promote every
-// dark media block to `all`. Dark blocks follow their light counterparts → the
-// cascade already resolves in their favour. Cross-origin sheets deny cssRules
+// dark media block to `all`; the cascade stands, so a later light rule still
+// wins. Cross-origin sheets deny cssRules
 // → stay light. matchMedia keeps reporting light → pages theming off it rather
 // than off the media query need their own switch.
 function promoteDarkRules() {
@@ -126,8 +121,8 @@ let page;
 // itself provide → the owning browser loses extensions its Preferences still
 // names. Copying also sheds ProcessSingleton → leave that browser running.
 //
-// `cp --reflink` shares extents: a 5GB profile copies in ~1.5s for no disk. It
-// reflinks within one filesystem → the copy lands beside the original.
+// `cp --reflink` shares extents within one filesystem (no disk cost) → the copy
+// lands beside the original.
 // Singleton* name the live instance's socket → a copy keeping them forwards
 // the capture into that browser.
 function cloneProfile(dir) {

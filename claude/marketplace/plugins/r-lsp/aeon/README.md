@@ -8,4 +8,4 @@ The `languageserver` R package provides diagnostics through `lintr`, definitions
 2. Run `Rscript -e 'install.packages("languageserver")'`.
 3. Confirm that `Rscript -e 'library(languageserver)'` exits with status 0.
 
-Project-level `rv` or `renv` libraries stay separate. The plugin uses the user or system library.
+The plugin uses the active R library paths. A startup profile, such as a project `renv` profile, can change those paths.

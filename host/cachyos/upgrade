@@ -71,7 +71,7 @@ check_services() {
   if ((check_status)); then
     report FAIL "$scope services: failed-unit listing unavailable (exit $check_status)"
     details "$check_output"
-    printf '    Next: Run systemctl --%s --failed and resolve the connection error.\n' "$scope"
+    printf '    Next: Run systemctl --%s --failed. Resolve the connection error.\n' "$scope"
     return
   elif [[ -z $check_output ]]; then
     report PASS "$scope services: no failed units"
@@ -125,7 +125,7 @@ check_dkms() {
   if ((check_status)); then
     report FAIL "Kernel modules: DKMS status unavailable (exit $check_status)"
     details "$check_output"
-    echo '    Next: Run dkms status and resolve the reported error before rebooting.'
+    echo '    Next: Run dkms status. Resolve the reported error before you reboot.'
     return
   fi
   modules=$check_output
@@ -175,11 +175,11 @@ check_codexify() {
   if ((check_status)) || grep -Eq '^FAIL[ :]' <<< "$check_output"; then
     report FAIL "Codexify health (doctor exit $check_status)"
     details "$check_output"
-    echo '    Next: Run codexify doctor and resolve its reported issues.'
+    echo '    Next: Run codexify doctor. Resolve the issues that it reports.'
   else
     if grep -Eq '^WARN(ING)?[ :]' <<< "$check_output"; then
       report REVIEW 'Codexify health: doctor reported warnings'
-      echo '    Next: Run codexify doctor and review its warnings.'
+      echo '    Next: Run codexify doctor. Review its warnings.'
     else
       report PASS 'Codexify health'
     fi
@@ -195,24 +195,24 @@ postflight() {
     sudo -n "$script_dir/kernel-recovery" check
   check_services system
   check_services user
-  check 'Crash diagnostics policy' 'Run agent-crash-policy check and resolve the reported settings.' hide \
+  check 'Crash diagnostics policy' 'Run agent-crash-policy check. Correct the reported settings.' hide \
     "$script_dir/agent-crash-policy" check
   check 'NVIDIA compute access' 'Inspect the driver error and DKMS status before starting GPU work.' show \
     nvidia-smi --query-gpu=name,driver_version,memory.used,display_active --format=csv
   check 'Codex executable' 'Check the Codex installation and PATH.' show codex --version
   check_codexify
-  check 'BrowserOS connection' 'Start BrowserOS, then run upgrade --check again.' hide \
+  check 'BrowserOS connection' 'Start BrowserOS. Then run upgrade --check again.' hide \
     browseros-call tabs '{"action":"list"}'
   check_configs
-  check 'Project snapshot storage' 'Run project-snapshots report and resolve the reported error.' show \
+  check 'Project snapshot storage' 'Run project-snapshots report. Resolve the reported error.' show \
     "$script_dir/project-snapshots" report
   echo '    Snapshot retention is manual. Choose which snapshots to keep; upgrade only reports their storage.'
   printf '\nSummary: %d passed, %d need review, %d failed.\n' "$passed" "$review" "$failed"
   if ((failed)); then
-    echo 'Next: Resolve the FAIL items, then run upgrade --check.'
+    echo 'Next: Resolve the FAIL items. Then run upgrade --check.'
     return 1
   elif ((review)); then
-    echo 'Next: Review the items above, then run upgrade --check.'
+    echo 'Next: Review the items above. Then run upgrade --check.'
     return 2
   fi
   echo 'All checks completed without reported issues.'
@@ -251,18 +251,12 @@ stage 'System packages (pacman/AUR)'
 paru -Syu
 
 stage 'Python tools (uv)'
-# uv itself is pacman-managed → `paru -Syu` above moves it; this step owns the
-# uv-installed tools. headroom-ai path-pins the locally built wheel in
-# ~/src/headroom/dist (image-worker termination guard): `upgrade --all`
-# re-resolves that same path → the pin holds + the wheel must stay on disk.
-# Once an upstream release ships the guard, return headroom to PyPI:
-#   uv tool install --force --python 3.14 "headroom-ai[all]"
-# State + recipe: $repo_root/host/cachyos/headroom/README.md
+# uv = pacman-managed (`paru -Syu` above moves it); this step owns uv-installed tools.
+# headroom-ai = local wheel pin → the wheel stays on disk; pin lifecycle: $repo_root/host/cachyos/headroom/README.md
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 
 stage 'MoonBit'
-# ~/.moon toolchain self-updates: `moon upgrade` updates binaries; `moon update`
-# refreshes registry index. Project dependencies remain project-local.
+# `moon update` = registry index alone; project dependencies stay project-local.
 moon_home="${MOON_HOME:-$HOME/.moon}"
 case ":$PATH:" in
   *":$moon_home/bin:"*) ;;
@@ -277,8 +271,7 @@ git -C "$HOME/.local/app/bgcmd" pull --ff-only
 git -C "$HOME/.local/app/codex-reset-tracker" pull --ff-only
 
 stage 'Global Node tools (pnpm)'
-# vite/vitest = pnpm globals; `update -g --latest` upgrades them. Export global
-# bin for direct/non-login invocation.
+# Direct/non-login invocation → export the pnpm-global bin.
 case ":$PATH:" in
   *":$HOME/.local/share/pnpm/bin:"*) ;;
   *) export PATH="$HOME/.local/share/pnpm/bin:$PATH" ;;
@@ -286,7 +279,6 @@ esac
 pnpm update -g --latest
 
 stage 'Headless browser (chromiumfish)'
-# Upgrade pnpm workspace, then fetch browser referenced by updated chromiumfish.
 # Browser startup requires executable chrome_crashpad_handler. If fetched cache
 # lacks it, install Chrome for Testing handler matching MAJOR.MINOR.BUILD.
 # Persistent cache ⇒ one repair per browser-version bump.
@@ -302,7 +294,7 @@ if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
     cft_version="$(jq -r --arg build "${browser_version%.*}" '.builds[$build].version // empty' <<<"$cft_json")"
     cft_url="$(jq -r --arg build "${browser_version%.*}" '.builds[$build].downloads.chrome[]? | select(.platform == "linux64") | .url' <<<"$cft_json")"
     if [[ -z "$cft_url" ]]; then
-      echo "chromiumfish cache $chromiumfish_dir needs chrome_crashpad_handler; no Chrome for Testing linux64 build matches ${browser_version:-unknown} -- install one by hand before headless use" >&2
+      echo "The chromiumfish cache $chromiumfish_dir lacks chrome_crashpad_handler. No Chrome for Testing linux64 build matches ${browser_version:-unknown}. Install a matching handler by hand before headless use." >&2
       exit 1
     fi
     cft_tmp="$(mktemp -d)"
@@ -314,14 +306,13 @@ if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
     echo "chromiumfish $browser_version: installed chrome_crashpad_handler from Chrome for Testing $cft_version"
   fi
 
-  # Gate = nonzero size + successful `--help`. Together they reject corrupt,
-  # truncated, non-ELF + zero-byte handlers across shell fallback semantics.
+  # Gate = nonzero size + successful `--help`: an empty executable file exits 0 via shell fallback.
   if [[ ! -s "$chromiumfish_dir/chrome_crashpad_handler" ]] ||
      ! "$chromiumfish_dir/chrome_crashpad_handler" --help >/dev/null 2>&1; then
     echo "chromiumfish cache $chromiumfish_dir has an unrunnable chrome_crashpad_handler; replace it before headless use" >&2
     exit 1
   fi
-  echo 'Next: After browser changes, capture a real page with webcap and inspect the image.'
+  echo 'Next: After browser changes, capture a real page with webcap. Examine the image.'
 else
   echo "chromiumfish workspace not present; skipping"
 fi

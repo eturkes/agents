@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Call a BrowserOS MCP tool and print its content[].text.
-
-A client rendering structuredContent alone drops content[], and BrowserOS pairs every
-text-returning tool with a stub structuredContent -- so snapshot/read/grep/run arrive empty
-through the normal tool path. This talks to the server directly.
+"""Call a BrowserOS MCP tool and print its text content.
 
 Usage: browseros-call <tool> '<json-args>'
        browseros-call tabs '{"action":"list"}'
@@ -14,6 +10,8 @@ import json
 import sys
 import urllib.request
 
+# BrowserOS pairs each text tool with a stub structuredContent; a client rendering that
+# alone drops content[] → snapshot/read/grep/run arrive empty through the tool path.
 ENDPOINT = "http://127.0.0.1:9000/mcp"
 
 

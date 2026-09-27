@@ -13,7 +13,7 @@ if ! sudo -n test -f /etc/snapper/configs/projects; then
   sudo -n snapper -c projects create-config --fstype bcachefs --template projects "$projects"
 fi
 sudo -n snapper --jsonout -c projects get-config |
-  python -c 'import json,sys; from pathlib import Path; c=json.load(sys.stdin); sys.exit(0 if c["FSTYPE"]=="bcachefs" and Path(c["SUBVOLUME"]).resolve()==Path(sys.argv[1]) else "The projects config points elsewhere; preserve it and resolve the conflict.")' "$projects"
+  python -c 'import json,sys; from pathlib import Path; c=json.load(sys.stdin); sys.exit(0 if c["FSTYPE"]=="bcachefs" and Path(c["SUBVOLUME"]).resolve()==Path(sys.argv[1]) else "The projects config has a different filesystem type or target path. Keep that config unchanged. Resolve the conflict.")' "$projects"
 sudo -n snapper -c projects set-config "ALLOW_USERS=$(id -un)" SYNC_ACL=yes UNIQUE_NUMBERS=yes \
   BACKGROUND_COMPARISON=no TIMELINE_CREATE=no TIMELINE_CLEANUP=no NUMBER_CLEANUP=no EMPTY_PRE_POST_CLEANUP=no
 
@@ -23,7 +23,7 @@ install -d -- "$HOME/.local/bin"
 launcher="$HOME/.local/bin/project-snapshots"
 if [[ -e $launcher || -L $launcher ]]; then
   [[ $(readlink -f -- "$launcher") == "$recipe_dir/project-snapshots" ]] || {
-    echo "Preserve the existing launcher and resolve this conflict: $launcher" >&2
+    printf 'Keep the existing launcher unchanged: %s\nResolve its conflicting target.\n' "$launcher" >&2
     exit 1
   }
 else

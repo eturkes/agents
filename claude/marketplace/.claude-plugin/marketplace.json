@@ -5,7 +5,7 @@
     "email": "emir.turkes@eturkes.com"
   },
   "metadata": {
-    "description": "User-global LSP plugins available across all projects; Claude Code's built-in LSP tool + passive diagnostics drive them. Server binaries must be present on PATH; see plugin READMEs for install commands."
+    "description": "LSP plugins for all projects. Claude Code's LSP tool and its automatic diagnostics use them. Each server executable must be on PATH. Each plugin README gives the install commands."
   },
   "plugins": [
     {

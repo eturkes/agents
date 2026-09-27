@@ -4,7 +4,7 @@ set -euo pipefail
 /usr/share/sddm/scripts/Xsetup "$@"
 xrandr --setprovideroutputsource modesetting NVIDIA-0
 
-# PRIME changes connector names; choose the connected HDMI, not its old XID/name.
+# PRIME renames connectors → select the connected HDMI at run time.
 outputs=$(xrandr --query)
 hdmi=$(awk '$1 ~ /^HDMI-/ && $2 == "connected" {print $1; exit}' <<< "$outputs")
 if [[ -n "$hdmi" ]]; then

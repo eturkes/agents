@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """msmtp passwordeval helper: print a live Gmail access token on stdout.
 
-Tokens are cached in the credential file until 60s before expiry, so a burst of turns costs one
-refresh rather than one per message. Failure prints nothing and exits non-zero, which makes msmtp
+The credential file caches each token until 60s before expiry, so sequential sends reuse it;
+overlapping sends can each refresh. Failure prints nothing and exits non-zero, which makes msmtp
 abort that single send -- the Stop hook logs it and the turn is unaffected.
 """
 import json

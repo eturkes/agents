@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""Subagent corpus census: what actually ends a teammate run, and what it leaves behind.
-
-Live rates behind the global `Subagents` law: the law states rules, and their
-numbers live here, measured fresh on every run.
+"""Subagent corpus census = live rates behind global `CLAUDE.md` `Subagents`.
 
   agent-census [<projects-dir> ...]      default ~/.claude/projects
 
-Sections map 1:1 to the law:
-  compaction  -> "teammates do auto-compact, can keep working past it, and context is not what kills them"
-  deaths      -> terminal `API Error` classes, with peak usage at death
-  writes      -> the SubagentStop wrote-nothing notice (>=15 tool calls, nothing durable)
-  tail        -> `context-gauge -t`, corpus-wide: distance from the last durable write
+Section -> the rule it measures:
+  compaction  -> `Teammate size`: teammates compact + keep working
+  deaths      -> `Death shape`: terminal `API Error` classes + peak usage at death
+  writes      -> the SubagentStop wrote-nothing notice (>=15 tool calls, no durable call)
+  tail        -> `context-gauge -t`, corpus-wide: distance from the last durable call
   stops       -> the agent-flow TaskStop hold: lead stops on a mid-turn teammate, and those before its marker
 
-A compaction is one `type=system` entry carrying `compactMetadata` (`durationMs` is the
-summarizer's own cost) followed by the `isCompactSummary` user entry holding the summary.
+Compaction record = a `type=system` entry carrying `compactMetadata` (`durationMs` = summarizer
+cost) + the following `isCompactSummary` user entry holding the summary.
 """
 import json, os, re, sys, glob, statistics
 from datetime import datetime
@@ -231,11 +228,11 @@ def main():
           f"   cost median {statistics.median(secs):.0f}s p90 {q(secs, .9):.0f}s "
           f"max {max(secs):.0f}s" if secs else f"\ncompaction: none of {n}")
     if comp:
-        print(f"  summary kept the report path: "
+        print(f"  last summary names .scratch/agents/: "
               f"{sum(r['summary_report'] for r in comp)} of {len(comp)}")
         print(f"  kept working past it: {sum(1 for r in comp if r['post_tools'])} of {len(comp)}"
               f"   ({sum(r['post_tools'] for r in comp)} further tool calls, "
-              f"{sum(r['post_reports'] for r in comp)} further report writes)")
+              f"{sum(r['post_reports'] for r in comp)} further report-path references)")
 
     errs = [r for r in rows if r["err"]]
     ctx = [r for r in errs if CONTEXT_ERR.search(r["err"])]
