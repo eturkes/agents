@@ -5,8 +5,10 @@ Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` po
 Start a session with:
 
 ```sh
-ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none
+ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --effort <level>
 ```
+
+`wrap` passes `--effort` to Claude Code, and teammates run at the same level. The [phase prompts](../../../claude/prompts/README.md) name the level for each phase.
 
 `--code-memory none` keeps `wrap` from registering the Serena MCP server. Code intelligence comes from Claude Code's LSP plugins instead.
 
@@ -18,13 +20,13 @@ The installed build adds hard termination for timed-out image-compression worker
 
 The build provides these controls:
 
-- Terminate a worker, wait for the grace period, kill it, and shut down its pool. This order keeps the process table available to the signals.
-- Retire pools with CAS and idempotent cleanup. A stale timeout can retire only its own pool.
-- Admit one image job at a time. A busy worker rejects the next job immediately.
-- Limit OCR ONNX intra-operation and inter-operation threads to one.
-- Honor `--no-image-optimize`, `HEADROOM_NO_IMAGE_OPTIMIZE=1`, `--no-optimize`, and the per-request bypass header.
+- The guard terminates a timed-out worker. It waits for the grace period before it kills a survivor, and it shuts down the pool last. This order keeps the process table available to the signals.
+- Pool retirement uses CAS and idempotent cleanup. A stale timeout can retire only its own pool.
+- The guard admits one image job at a time. A job that finds the worker busy waits up to the admission timeout. After that timeout, the proxy forwards the original image payload.
+- The guard limits OCR ONNX intra-operation and inter-operation threads to one.
+- The guard honors `--no-image-optimize`, `HEADROOM_NO_IMAGE_OPTIMIZE=1`, `--no-optimize`, and the per-request bypass header.
 
-The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` carries the guard as a single commit on upstream tag `v0.39.0`, so the build reports the version of the release it patches.
+The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies the guard to upstream tag `v0.39.0`.
 
 ### Build and install
 
@@ -43,7 +45,7 @@ Use Rust 1.95 or newer for the build. The repository `rust-toolchain.toml` appli
 
 The uv receipt at `~/.local/share/uv/tools/headroom-ai/uv-receipt.toml` path-pins the installed wheel. Therefore, the routine upgrade routes hold the pin instead of moving it. `host/cachyos/upgrade` runs `uv tool upgrade --all`, and `headroom update` detects the uv-tool install and runs `uv tool upgrade headroom-ai`. Both re-resolve the same path. Keep the wheel on disk.
 
-To move this build, rebase the branch onto the newest upstream tag, rebuild, reinstall, and delete the superseded wheel.
+To update this build, rebase the branch onto the newest upstream tag. Rebuild the wheel, and install the new wheel. Delete the superseded wheel.
 
 This build is the whole Headroom install. `command -v headroom` must resolve to `~/.local/bin/headroom`. The uv routes above own every Headroom upgrade on this machine.
 
@@ -79,15 +81,15 @@ Every hook must name `/home/eturkes/.local/bin/headroom`. These files are gitign
 
 ## Token rate limit
 
-Starting with 0.39.0, the proxy enforces its tokens-per-minute limit before it forwards a request. `--tpm`, `HEADROOM_TPM`, or `tpm` in `settings.json` sets the limit, and the default is 100,000. For each request it would forward, the proxy counts the tokens in the request's `messages` with its own tokenizer, before compression, and checks that count against a token bucket. The bucket refills at the limit's rate and never holds more than one minute of tokens. A request that needs more tokens than the bucket holds gets HTTP 429 with a `Retry-After` header, and Claude Code shows it as:
+Starting with 0.39.0, the proxy enforces its tokens-per-minute limit before it forwards a request. `--tpm`, `HEADROOM_TPM`, or `tpm` in `settings.json` sets the limit, and the default is 100,000. Before it forwards a request, the proxy counts the tokens in the request's `messages` with its own tokenizer, before compression. It checks that count against a token bucket. The bucket refills at the limit's rate and never holds more than one minute of tokens. A request that needs more tokens than the bucket holds gets HTTP 429 with a `Retry-After` header, and Claude Code shows it as:
 
 ```text
 API Error: Request rejected (429) · {"detail":"Token rate limited. Retry after 301.8s"}
 ```
 
-A request larger than the limit never fits in the bucket, so the proxy rejects it however long the client waits, even though the error names a finite wait. With the default limit, a Claude Code session whose conversation passes about 100,000 tokens can no longer send a turn. A smaller request fails only until the bucket refills. Claude Code retries a 429 on its own when `Retry-After` is 60 seconds or less, and it ends the turn with the error when the wait is longer. Earlier builds never enforce the limit, so the setting has no effect there.
+A request larger than the limit never fits in the bucket. The proxy always rejects it, although the error names a finite wait. With the default limit, a Claude Code session can send no turn after its conversation passes about 100,000 tokens. A smaller request fails only until the bucket refills. Claude Code retries a 429 when `Retry-After` is 60 seconds or less. A longer wait ends the turn with the error. Earlier builds do not enforce the limit.
 
-`settings.json` sets `tpm` to 1,000,000,000, which disables the limit in practice. A `--tpm` option takes precedence over an exported `HEADROOM_TPM`, and both take precedence over the file. The `--no-rate-limit` flag turns off both rate limits, but `wrap` does not pass that flag to the proxy it starts, and `headroom proxy` reads no environment variable or `settings.json` key for it. The requests-per-minute limit keeps its default of 60.
+`settings.json` sets `tpm` to 1,000,000,000, which disables the limit in practice. A `--tpm` option takes precedence over an exported `HEADROOM_TPM`, and both take precedence over the file. The `--no-rate-limit` flag turns off both rate limits. `wrap` does not pass that flag to the proxy that it starts, and `headroom proxy` reads no environment variable or `settings.json` key for it. The requests-per-minute limit keeps its default of 60.
 
 The proxy applies `settings.json` only at startup. After you change the file, restart the proxy and confirm the active limits:
 

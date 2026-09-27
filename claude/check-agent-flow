@@ -16,7 +16,8 @@ START_CONTEXT = (
     "the headline there. This outranks the \"Do NOT Write report/summary/findings/analysis "
     ".md files\" line in your Notes. A file whose basename matches "
     r"/^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$/i accepts Edit alone: an empty "
-    "old_string creates it; once it exists, Read it, then update it with Edit. Work "
+    "old_string creates it; once it exists, Read it, then update it with Edit. Mark "
+    "each claim you could not confirm as unconfirmed, naming where you looked. Work "
     "held only in this conversation ends with the run."
 )
 STOP_PREFIX = (
@@ -26,8 +27,8 @@ STOP_PREFIX = (
     "existing one first."
 )
 WROTE_NOTHING = (
-    "You have written nothing to disk across {count} tool calls, so everything this run "
-    "found exists only in this conversation and ends with it. If your task named an "
+    "No Write, Edit or commit call appears across your {count} tool calls, so the findings "
+    "of this run may exist only in this conversation, which ends with it. If your task named an "
     "output file, write it now. If the correct outcome is that nothing needed writing, "
     "state that in your final message."
 )
@@ -160,7 +161,7 @@ class AgentFlow(unittest.TestCase):
 
     def assert_taskstop_hold(self, output, name, marker):
         reason = (
-            f"{name} is mid-turn and has not posted {marker}. Wait for it: a stop now cuts the "
+            f"{name} is mid-turn. Wait for its turn to end with {marker}: a stop now cuts the "
             "in-flight call and any row it is still changing. To stop it anyway (budget, "
             "supersession, takeover, cancellation), call TaskStop again, then re-read every "
             "file it wrote."
@@ -345,10 +346,10 @@ class AgentFlow(unittest.TestCase):
     def test_precompact_output_unchanged(self):
         output = self.run_hook({"hook_event_name": "PreCompact"})
         expected = (
-            'Carry into the summary, literally and in full: every path this run must write '
+            'The summary must carry verbatim: every path this run must write '
             'or update, the completion marker or "Met when" condition it was given, '
             'its write allowlist and git posture, the ids of any rows still unfilled, and the '
-            'exact next action. Keep paths and identifiers verbatim.'
+            'exact next action.'
         ) + chr(10)
         self.assertEqual(output, expected)
 

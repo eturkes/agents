@@ -5,8 +5,7 @@
 #
 # Every subagent system prompt ends with the line "- Do NOT Write
 # report/summary/findings/analysis .md files. Return findings directly as your
-# final assistant message" — unconditional, and `claude`, `general-purpose` +
-# `Explore` all quote it back. Report-file delivery is the opposite instruction,
+# final assistant message", unconditionally. Report-file delivery is the opposite instruction,
 # so SubagentStart restates it where it reaches every agent whatever its brief
 # says, and outranks the built-in line by naming it. Claude Code enforces that
 # line on Write alone: Write.validateInput rejects a subagent Write whose basename
@@ -42,10 +41,10 @@ ev=$(printf '%s' "$IN" | jq -r '.hook_event_name // ""' 2>/dev/null)
 
 case $ev in
 SubagentStart)
-  jq -n '{hookSpecificOutput:{hookEventName:"SubagentStart",additionalContext:"When your task names an output file, that file is the deliverable: always write it early and keep it current as you work, then point your final message at it and give the headline there. This outranks the \"Do NOT Write report/summary/findings/analysis .md files\" line in your Notes. A file whose basename matches /^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\\.md$/i accepts Edit alone: an empty old_string creates it; once it exists, Read it, then update it with Edit. Work held only in this conversation ends with the run."}}'
+  jq -n '{hookSpecificOutput:{hookEventName:"SubagentStart",additionalContext:"When your task names an output file, that file is the deliverable: always write it early and keep it current as you work, then point your final message at it and give the headline there. This outranks the \"Do NOT Write report/summary/findings/analysis .md files\" line in your Notes. A file whose basename matches /^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\\.md$/i accepts Edit alone: an empty old_string creates it; once it exists, Read it, then update it with Edit. Mark each claim you could not confirm as unconfirmed, naming where you looked. Work held only in this conversation ends with the run."}}'
   ;;
 PreCompact)
-  printf '%s\n' "Carry into the summary, literally and in full: every path this run must write or update, the completion marker or \"Met when\" condition it was given, its write allowlist and git posture, the ids of any rows still unfilled, and the exact next action. Keep paths and identifiers verbatim."
+  printf '%s\n' "The summary must carry verbatim: every path this run must write or update, the completion marker or \"Met when\" condition it was given, its write allowlist and git posture, the ids of any rows still unfilled, and the exact next action."
   ;;
 SubagentStop)
   { read -r tp; read -r active; } <<EOF
@@ -92,7 +91,7 @@ EOF
     exit 0
   }
 
-  # Durable = leaves bytes behind. SendMessage and reads do not.
+  # Durable call = Write/Edit/NotebookEdit or Bash commit/add/>>/tee; a plain > redirect passes uncounted.
   { read -r tools; read -r durable; } <<EOF
 $(jq -rRn '[inputs | fromjson? | objects | select(.type=="assistant")
     | .message | objects | .content | arrays | .[] | objects | select(.type=="tool_use")]
@@ -105,7 +104,7 @@ EOF
   [ "$tools" -ge 15 ] 2>/dev/null || exit 0   # a short lookup answers in its message
 
   jq -n --arg n "$tools" '{hookSpecificOutput:{hookEventName:"SubagentStop",
-    additionalContext:("You have written nothing to disk across \($n) tool calls, so everything this run found exists only in this conversation and ends with it. If your task named an output file, write it now. If the correct outcome is that nothing needed writing, state that in your final message.")}}'
+    additionalContext:("No Write, Edit or commit call appears across your \($n) tool calls, so the findings of this run may exist only in this conversation, which ends with it. If your task named an output file, write it now. If the correct outcome is that nothing needed writing, state that in your final message.")}}'
   ;;
 PreToolUse)
   { read -r tool; read -r sid; read -r name; } <<EOF
@@ -154,7 +153,7 @@ EOF
 
   jq -n --arg n "$name" --arg m "${marker:-its completion marker}" --argjson f "${files:-[]}" '{hookSpecificOutput:{
     hookEventName:"PreToolUse",permissionDecision:"deny",
-    permissionDecisionReason:("\($n) is mid-turn and has not posted \($m). Wait for it: a stop now cuts the in-flight call and any row it is still changing. To stop it anyway (budget, supersession, takeover, cancellation), call TaskStop again, then re-read every file it wrote." + (if $f == [] then "" else " Its Write/Edit targets: \($f | join(", "))." end))}}'
+    permissionDecisionReason:("\($n) is mid-turn. Wait for its turn to end with \($m): a stop now cuts the in-flight call and any row it is still changing. To stop it anyway (budget, supersession, takeover, cancellation), call TaskStop again, then re-read every file it wrote." + (if $f == [] then "" else " Its Write/Edit targets: \($f | join(", "))." end))}}'
   ;;
 esac
 exit 0

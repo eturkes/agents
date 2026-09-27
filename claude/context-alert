@@ -50,8 +50,8 @@ k=$((u / 1000)); left=$(( (t - u) / 1000 )); [ "$left" -lt 0 ] && left=0
 tl=$((t / 1000))K; [ $((t % 1000000)) -eq 0 ] && tl=$((t / 1000000))M
 if [ -z "$aid" ]; then
   case $tier in
-    notice) msg="Checkpoint ahead of compaction: land the current unit on a commit with .agent/spec.md current, then continue." ;;
-    final)  msg="Compaction is imminent: commit now with .agent/spec.md current; after compaction, reorient from spec.md + git log and continue." ;;
+    notice) msg="Checkpoint ahead of compaction: land the current unit on a commit with its checklist current (.agent/spec.md Tasks or .scratch/tasks.md), then continue." ;;
+    final)  msg="Compaction is imminent: commit now with the checklist current; after compaction, reorient from the checklist + git log and continue." ;;
   esac
 else
   case $tier in
