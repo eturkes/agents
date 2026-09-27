@@ -15,6 +15,7 @@ ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --e
 | IMPLEMENT | `implement.md` | `xhigh` | Paste after you say go. |
 | MAINTAIN | `maintain.md` | `xhigh` | Paste one body per request. |
 | Roadmap-flow repo → phase flow | `migrate.md` | `xhigh` | Copy `CLAUDE.project.md` over `CLAUDE.md` first. |
+| Phase-flow repo on an older template | `refresh.md` | `xhigh` | Copy `CLAUDE.project.md` over `CLAUDE.md` first. The session does the migration and nothing else. |
 
 - Teammates run at the effort level of the session.
 - The agent works on a phase body until its `Met when` condition holds. It asks you questions whenever your input can improve the work, and it continues after you answer.
