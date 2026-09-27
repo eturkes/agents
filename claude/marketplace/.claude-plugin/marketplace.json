@@ -76,6 +76,19 @@
         "r": {
           "command": "Rscript",
           "args": [
+            "--no-init-file",
+            "-e",
+            "invisible(loadNamespace(\"languageserver\"))",
+            "-e",
+            "v <- paste0(R.version$major, \".\", sub(\"[.].*\", \"\", R.version$minor))",
+            "-e",
+            "p <- Sys.getenv(\"RENV_PROFILE\"); if (!nzchar(p) && file.exists(\"renv/profile\")) p <- c(readLines(\"renv/profile\", n = 1L, warn = FALSE), \"\")[1L]",
+            "-e",
+            "r <- if (nzchar(p)) file.path(\"renv\", \"profiles\", p, \"renv\", \"library\") else file.path(\"renv\", \"library\")",
+            "-e",
+            "lib <- Sys.glob(c(file.path(\"rv\", \"library\", v, \"*\"), file.path(r, \"*\", paste0(\"R-\", v), \"*\"), file.path(r, paste0(\"R-\", v), \"*\")))",
+            "-e",
+            "if (length(lib)) .libPaths(c(lib, .libPaths()))",
             "-e",
             "languageserver::run()"
           ],

@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Exercise gmail-oauth-token against a local token endpoint: cache reuse, one refresh per burst, failure."""
+
+import json
+import os
+import subprocess
+import tempfile
+import threading
+import time
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+SCRIPT = os.environ.get("GMAIL_TOKEN_BIN") or str(Path(__file__).with_name("gmail-oauth-token"))
+
+
+class Endpoint(BaseHTTPRequestHandler):
+    hits = 0
+    status = 200
+    lock = threading.Lock()
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("content-length") or 0))
+        time.sleep(0.3)  # widens the window in which overlapping callers race
+        with Endpoint.lock:
+            Endpoint.hits += 1
+            n = Endpoint.hits
+        body = json.dumps({"access_token": f"new-{n}", "expires_in": 3600}).encode()
+        self.send_response(Endpoint.status)
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+class GmailToken(unittest.TestCase):
+    def setUp(self):
+        Endpoint.hits, Endpoint.status = 0, 200
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Endpoint)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cred = Path(self.tmp.name) / "oauth.json"
+        self.env = {**os.environ, "CLAUDE_MAIL_CRED": str(self.cred),
+                    "CLAUDE_MAIL_TOKEN_URL": f"http://127.0.0.1:{self.server.server_port}/token"}
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.tmp.cleanup()
+
+    def seed(self, token, expires_at):
+        self.cred.write_text(json.dumps({"client_id": "c", "client_secret": "s", "refresh_token": "r",
+                                         "access_token": token, "expires_at": expires_at}))
+
+    def run_many(self, n):
+        procs = [subprocess.Popen([SCRIPT], env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True) for _ in range(n)]
+        return [(p.wait(timeout=60), p.stdout.read().strip(), p.stderr.read()) for p in procs]
+
+    def test_fresh_token_skips_refresh(self):
+        self.seed("cached", time.time() + 3600)
+        self.assertEqual(self.run_many(1), [(0, "cached", "")])
+        self.assertEqual(Endpoint.hits, 0)
+
+    def test_overlapping_sends_share_one_refresh(self):
+        self.seed("old", 0)
+        results = self.run_many(6)
+        self.assertEqual([r[0] for r in results], [0] * 6, [r[2] for r in results])
+        self.assertEqual({r[1] for r in results}, {"new-1"})
+        self.assertEqual(Endpoint.hits, 1)
+        self.assertEqual(json.loads(self.cred.read_text())["access_token"], "new-1")
+        self.assertEqual(sorted(p.name for p in Path(self.tmp.name).iterdir()
+                                if p.name not in ("oauth.json", "oauth.json.lock")), [])
+
+    def test_refresh_failure_prints_nothing(self):
+        self.seed("old", 0)
+        Endpoint.status = 500
+        [(rc, out, err)] = self.run_many(1)
+        self.assertEqual((rc, out), (1, ""))
+        self.assertIn("refresh failed", err)
+        self.assertEqual(json.loads(self.cred.read_text())["access_token"], "old")
+
+
+if __name__ == "__main__":
+    unittest.main()

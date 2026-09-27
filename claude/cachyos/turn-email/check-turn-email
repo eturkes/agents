@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Exercise turn-email mail bodies: pending vs answered AskUserQuestion, Stop mail."""
+
+import base64
+import email
+import json
+import os
+import subprocess
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+SCRIPT = os.environ.get("TURN_EMAIL_BIN") or str(Path(__file__).with_name("turn-email"))
+FAKE_MSMTP = '#!/bin/sh\ncat > "$MAIL_OUT.part" && mv "$MAIL_OUT.part" "$MAIL_OUT"\n'
+
+
+def ask(tool_id, header, question):
+    return {"type": "assistant", "message": {"model": "claude-opus-5-5", "content": [
+        {"type": "tool_use", "id": tool_id, "name": "AskUserQuestion", "input": {"questions": [
+            {"header": header, "question": question,
+             "options": [{"label": "Yes", "description": "go"}, {"label": "No", "description": "stop"}]}]}}]}}
+
+
+def answer(tool_id):
+    return {"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": tool_id, "content": "Yes"}]}}
+
+
+class TurnEmail(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        (root / "home").mkdir()
+        (root / "home" / ".msmtprc").write_text("")
+        (root / "bin").mkdir()
+        fake = root / "bin" / "msmtp"
+        fake.write_text(FAKE_MSMTP)
+        fake.chmod(0o755)
+        self.out = root / "mail.eml"
+        self.transcript = root / "session.jsonl"
+        self.env = {**os.environ, "HOME": str(root / "home"), "MAIL_OUT": str(self.out),
+                    "PATH": f"{root / 'bin'}:{os.environ['PATH']}", "TMPDIR": self.tmp.name}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def mail(self, payload, records):
+        self.transcript.write_text("".join(json.dumps(r) + "\n" for r in records))
+        payload = {"session_id": "s1", "cwd": "/tmp/proj", "transcript_path": str(self.transcript),
+                   **payload}
+        result = subprocess.run([SCRIPT], input=json.dumps(payload), env=self.env,
+                                capture_output=True, text=True, timeout=30, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        deadline = time.time() + 10
+        while not self.out.exists() and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertTrue(self.out.exists(), "no mail reached the msmtp stub")
+        message = email.message_from_bytes(self.out.read_bytes())
+        body = base64.b64decode(message.get_payload()).decode()
+        subject = str(email.header.make_header(email.header.decode_header(message["Subject"])))
+        return subject, body
+
+    def test_permission_prompt_omits_answered_question(self):
+        subject, body = self.mail(
+            {"hook_event_name": "Notification", "notification_type": "permission_prompt",
+             "message": "Claude needs your permission to use Bash"},
+            [ask("q1", "Old", "Stale question?"), answer("q1")])
+        self.assertNotIn("Stale question?", body)
+        self.assertIn("Claude needs your permission to use Bash", body)
+        self.assertIn("Claude needs your permission to use Bash", subject)
+
+    def test_pending_question_attached(self):
+        subject, body = self.mail(
+            {"hook_event_name": "Notification", "notification_type": "permission_prompt",
+             "message": "Claude needs your input"},
+            [ask("q1", "Old", "Stale question?"), answer("q1"), ask("q2", "Scope", "Ship it?")])
+        self.assertIn("[Scope] Ship it?", body)
+        self.assertIn("  - Yes: go", body)
+        self.assertNotIn("Stale question?", body)
+        self.assertIn("Ship it?", subject)
+
+    def test_stop_mail_carries_prompt_and_response(self):
+        subject, body = self.mail(
+            {"hook_event_name": "Stop", "last_assistant_message": "Done: all green."},
+            [{"type": "user", "message": {"content": "Run the gate"}},
+             {"type": "assistant", "message": {"model": "claude-opus-5-5", "content": [
+                 {"type": "text", "text": "Done: all green."}]}}])
+        self.assertIn("Run the gate", body)
+        self.assertIn("Done: all green.", body)
+        self.assertIn("#1", subject)
+
+
+if __name__ == "__main__":
+    unittest.main()

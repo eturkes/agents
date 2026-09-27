@@ -48,6 +48,10 @@ The hook becomes a silent no-op when `msmtp` or `~/.msmtprc` is absent. You can 
 
 The body uses base64 `text/plain`, and the subject uses RFC 2047. These encodings preserve non-ASCII text and lines beyond SMTP's 998-character limit. `References: <cc.SESSION@eturkes.com>` threads all turns from one session.
 
+A notification mail includes an `AskUserQuestion` only while that question waits for an answer. Other notifications report their message.
+
+The token helper caches each access token until 60 seconds before it expires. A lock file serializes refreshes, so overlapping sends share one refresh.
+
 The prompt and response limits are 4,000 and 100,000 characters. A streaming `jq` reduction bounds memory while parsing the transcript.
 
 The turn counter is `~/.claude/cache/turn-email/SESSION`. The hook removes counters after seven days. Hook failures go to `~/.claude/cache/turn-email.log`. Relay results go to `~/.claude/cache/msmtp.log`, with one `smtpstatus` line per send.
@@ -57,6 +61,15 @@ Environment overrides:
 - `CLAUDE_TURN_EMAIL_TO`
 - `CLAUDE_TURN_EMAIL_FROM`
 - `CLAUDE_MAIL_CRED`
+
+## Test
+
+Run the offline suites from this directory. They use a stub `msmtp` and a local token endpoint, so they send no mail:
+
+```sh
+./check-turn-email
+./check-gmail-oauth-token
+```
 
 ## Disable or remove
 

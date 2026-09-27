@@ -56,14 +56,18 @@ n=0; [ -f "$cache/$sid" ] && IFS= read -r n <"$cache/$sid" 2>/dev/null
 proj=$(basename "${cwd:-$HOME}")
 if [ "$event" = Notification ]; then
   # Payload carries no assistant text: the pending question = the transcript's
-  # last AskUserQuestion input; a bare permission prompt reports its message.
+  # last AskUserQuestion still lacking a tool_result; any other prompt reports
+  # its message alone, since an answered question would read as the pending one.
   ntype=$(printf '%s' "$IN" | jq -r '.notification_type // "?"' 2>/dev/null)
   nmsg=$(printf '%s' "$IN" | jq -r '.message // ""' 2>/dev/null)
-  q=$(jq -rn '[inputs | select(.type == "assistant" and (.isSidechain // false | not))
-                | .message.content[]? | select(.type == "tool_use" and .name == "AskUserQuestion")
-                | .input] | last // empty
-              | .questions[] | "[\(.header)] \(.question)\n"
-                + ([.options[] | "  - \(.label): \(.description)"] | join("\n"))' "$tp" 2>/dev/null)
+  q=$(jq -rn 'reduce (inputs | select(.isSidechain // false | not) | .message.content? | arrays | .[] | objects) as $b
+                ({ask: [], done: {}};
+                 if $b.type == "tool_use" and $b.name == "AskUserQuestion" then .ask += [$b]
+                 elif $b.type == "tool_result" then .done[$b.tool_use_id // ""] = true
+                 else . end)
+              | .done as $d | [.ask[] | select($d[.id // ""] | not)] | last // empty
+              | .input.questions[]? | "[\(.header)] \(.question)\n"
+                + ([.options[]? | "  - \(.label): \(.description)"] | join("\n"))' "$tp" 2>/dev/null)
   resp="pending: $ntype — $nmsg
 ${q:+
 $q}"

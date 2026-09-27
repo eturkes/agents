@@ -1,7 +1,7 @@
 #!/bin/sh
 # Refresh 5h/7d OAuth cache when age >=180s. Detached locked poll ⇒ callers
 # return immediately and render cached state. Cache path = $1, default
-# ~/.claude/.oauth_usage.json. Shared by statusline + oauth-limit-alert; token =
+# ~/.claude/.oauth_usage.json. Consumer = statusline; token =
 # ./oauth-token.
 uc="${1:-${OAUTH_USAGE_FILE:-$HOME/.claude/.oauth_usage.json}}"
 lk="$uc.lock"
