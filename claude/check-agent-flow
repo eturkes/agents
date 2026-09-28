@@ -11,10 +11,10 @@ from pathlib import Path
 
 FLOW = os.environ.get("FLOW_BIN") or str(Path(__file__).with_name("agent-flow"))
 START_CONTEXT = (
-    "When your task names an output file, that file is the deliverable: always write it "
-    "early and keep it current as you work, then point your final message at it and give "
-    "the headline there. This outranks the \"Do NOT Write report/summary/findings/analysis "
-    ".md files\" line in your Notes. A file whose basename matches "
+    "When your task names an output file, that file is the deliverable and the input to "
+    "the validator the brief names, so the Notes clause \"Files written as input to another "
+    "tool are fine\" covers it. Write it early, keep it current, then point your final "
+    "message at it with the headline. A file whose basename matches "
     r"/^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$/i accepts Edit alone: an empty "
     "old_string creates it; once it exists, Read it, then update it with Edit. Mark "
     "each claim you could not confirm as unconfirmed, naming where you looked. Work "
