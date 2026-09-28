@@ -10,8 +10,8 @@
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u ⇒ manual.
-{ read -r u; read -r w; read -r sp; read -r sr; read -r wp; read -r wr; read -r tp; read -r pd; read -r ef; } <<EOF
-$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .transcript_path // "", .workspace.project_dir // "", .effort.level // ""' 2>/dev/null)
+{ read -r u; read -r w; read -r sp; read -r sr; read -r wp; read -r wr; read -r tp; read -r ef; } <<EOF
+$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .transcript_path // "", .effort.level // ""' 2>/dev/null)
 EOF
 # Real API turn = non-sidechain assistant record carrying usage; shared by the gauge fallback + cache anchor.
 api='.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object"'
@@ -88,9 +88,8 @@ ce=$(tac "${tp:-$f}" 2>/dev/null | jq -rn "first(inputs|select($api and ((.messa
   fi
   rl="$rl | $ts"
 }
-# TZ column qualifying all timestamps, then launch-dir basename.
+# TZ column qualifying all timestamps.
 [ -n "$rl" ] && rl="$rl | $(date +%Z)"
-[ -n "$rl" ] && [ -n "$pd" ] && rl="$rl | ${pd##*/}"
 # Effort varies per launch (`--effort`) → shown beside the gauge.
 [ -n "$ef" ] && rl=" | $ef$rl"
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
