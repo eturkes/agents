@@ -152,14 +152,14 @@
     ],
     "SessionStart": [
       {
+        "matcher": "startup|resume|clear|fork",
         "hooks": [
           {
             "type": "command",
             "command": "\"$HOME/.local/bin/project-snapshots\" hook",
             "timeout": 60
           }
-        ],
-        "matcher": "startup|resume|clear|fork"
+        ]
       }
     ],
     "SessionEnd": [
@@ -214,15 +214,21 @@
   },
   "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
+  "timeFormat": "24-hour-utc",
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
   "preferredNotifChannel": "notifications_disabled",
-  "switchModelsOnFlag": false,
   "fileCheckpointingEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "crossSessionInbound": "accept",
   "useAutoModeDuringPlan": false,
-  "timeFormat": "24-hour-utc"
+  "pluginConfigs": {
+    "agents-md@builtin": {
+      "options": {
+        "instructionFiles": "claude-md"
+      }
+    }
+  }
 }
