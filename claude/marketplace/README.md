@@ -23,7 +23,7 @@ Claude Code's built-in `LSP` tool and passive diagnostics drive every plugin her
 
 The platform upgrade entry points call `upgrade-servers`:
 
-- Aeon: `~/agents/container/aeon/upgrade`
+- Aeon: `~/.local/app/agents/container/aeon/upgrade`
 - CachyOS: `~/.local/app/agents/host/cachyos/upgrade`
 
 ## Upgrades

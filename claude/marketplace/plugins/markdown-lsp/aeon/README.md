@@ -8,4 +8,4 @@ Marksman reports broken links, duplicate headings, and unresolved references in 
 2. Install it as `~/.local/bin/marksman` with mode 755.
 3. Confirm that `marksman --version` prints a version.
 
-`~/agents/container/aeon/upgrade` does not manage this binary. Repeat the steps for a new release.
+`~/.local/app/agents/container/aeon/upgrade` does not manage this binary. Repeat the steps for a new release.

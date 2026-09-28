@@ -58,7 +58,7 @@
 - Before the first absolute-path call: expand `~` from active `$HOME` → resolve existing paths with `readlink -f` → derive home paths from that result.
 - Shared host/container trees use layer-specific paths (`/run/host/...` in container); path-bound uv venvs → `UV_PROJECT_ENVIRONMENT`: Debian = `.venv`, host = `.venv-host` (git-ignored). Interactive shells → `.envrc` + direnv; otherwise `export`.
 - Discover/preserve repo stack from tracked manifests, lockfiles, scripts, CI + working commands. New language/package/tool surfaces require task need. Defaults: Python → `uv`; Node.js → `pnpm`; visual QA/web scraping → `chromiumfish`.
-- Applicable local inference → prefer OpenVINO on Intel Lunar Lake. Read `~/agents/claude/aeon/CLAUDE.local.md` for enablement + per-device correctness checks; keep driver/build details in that reference.
+- Applicable local inference → prefer OpenVINO on Intel Lunar Lake. Read `~/.local/app/agents/claude/aeon/CLAUDE.local.md` for enablement + per-device correctness checks; keep driver/build details in that reference.
 - Codex configuration = `~/.codex/config.toml` supplies read-only upstream MCP discovery; `~/.codexify/codexify.config.json` owns bridge + tunnel policy. Restart Codexify after changes; refresh the connector when exposed capabilities change.
 - Imported MCP catalogues → `mcp_list_sources` → `mcp_search_tools` → `mcp_get_tool` → `mcp_call_tool`.
 - Authenticated web = live BrowserOS; access includes signed-in browser + university journals. Signed-in PDF/PNG/DOM → `webcap --user-data-dir=/run/host/home/eturkes/.config/browser-os`; isolated visual QA → fresh `chromiumfish` profile.

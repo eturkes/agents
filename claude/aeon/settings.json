@@ -150,7 +150,7 @@
     "global": {
       "source": {
         "source": "directory",
-        "path": "/var/home/eturkes/debian/agents/claude/marketplace"
+        "path": "/var/home/eturkes/debian/.local/app/agents/claude/marketplace"
       }
     },
     "claude-plugins-official": {

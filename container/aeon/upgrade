@@ -4,6 +4,9 @@ set -euo pipefail
 # Aeon Debian: latest user toolchains; host counterpart = host/cachyos/upgrade.
 # apt upgrades = manual.
 
+script_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+repo_root=$(readlink -f -- "$script_dir/../..")
+
 # Noninteractive callers need global bins on PATH.
 export PNPM_HOME="${PNPM_HOME:-$HOME/.local/share/pnpm}"
 case ":$PATH:" in
@@ -17,7 +20,7 @@ rustup update
 cargo install-update -a
 
 # --- Python: uv and uv-managed tools ---
-# headroom-ai = local wheel pin → the wheel stays on disk; pin lifecycle: ~/agents/container/aeon/headroom/README.md
+# headroom-ai = local wheel pin → the wheel stays on disk; pin lifecycle: $repo_root/container/aeon/headroom/README.md
 uv self update
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 
@@ -93,6 +96,9 @@ else
 fi
 moon update
 
+# --- Local app repositories ---
+git -C "$HOME/.local/app/bgcmd" pull --ff-only
+
 # --- SWI-Prolog packs ---
 # apt owns swipl + library(prolog_pack); this refreshes user-global packs.
 # lsp_server = upgrade-servers' default-branch pin (the newest tag breaks UTF-16
@@ -105,8 +111,8 @@ swipl -q -g 'use_module(library(prolog_pack)), Pinned = [lsp_server], findall(P,
 # the Prolog default-branch HEAD, gates each on an LSP handshake + restores a prior
 # install where one exists. `|| true` keeps a failed upgrade (1) or an upstream
 # outage (2) from aborting the run.
-if [[ -x "$HOME/agents/claude/marketplace/upgrade-servers" ]]; then
-  "$HOME/agents/claude/marketplace/upgrade-servers" || true
+if [[ -x "$repo_root/claude/marketplace/upgrade-servers" ]]; then
+  "$repo_root/claude/marketplace/upgrade-servers" || true
 fi
 
 # --- Codex CLI ---
