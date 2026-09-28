@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise hook scope, pairing, recovery, boundary guards and storage reporting."""
+"""Exercise hook scope, pairing, recovery, coverage guards and storage reporting."""
 
 import contextlib
 import copy
@@ -26,6 +26,7 @@ class Backend:
         self.rows = []
         self.calls = []
         self.subvolumes = {root}
+        self.snapshot_subvolumes = set()
         self.next_number = 1
         self.fail_create = False
         self.lose_create_reply = False
@@ -34,6 +35,12 @@ class Backend:
     def __call__(self, command):
         with self.lock:
             self.calls.append(command)
+            if command[:3] == ["bcachefs", "subvolume", "list"]:
+                # Like bcachefs, snapshot subvolumes appear only with --snapshots.
+                shown = self.subvolumes | (self.snapshot_subvolumes if "--snapshots" in command else set())
+                nested = [{"path": str(path.relative_to(self.root)), "subvolid": 7} for path in sorted(shown - {self.root})]
+                stored = [{"path": "1/snapshot", "subvolid": 3}] if "--snapshots" in command else []
+                return json.dumps([{"path": ".snapshots", "subvolid": 2, "children": stored}, *nested])
             if command[0] == "bcachefs":
                 target = Path(command[-1])
                 actual = target if target in self.subvolumes else self.root.parent
@@ -84,7 +91,6 @@ class ProjectSnapshots(unittest.TestCase):
         self.child.mkdir()
         self.state = self.root / "state"
         self.state.mkdir()
-        (self.state / "excludes").write_text("")
         self.backend = Backend(self.projects)
         self.manager = self.module.ProjectSnapshots(self.projects, self.state, run=self.backend)
 
@@ -161,25 +167,29 @@ class ProjectSnapshots(unittest.TestCase):
         self.assertEqual(self.backend.rows, [])
         self.assertIn("ERROR", self.report())
 
-    def test_recreated_exclusion_fails_closed(self):
-        cache = self.child / ".cache"
-        (self.state / "excludes").write_text("# Native boundaries\nproject with spaces/.cache\n")
+    def test_cache_layout_never_blocks_capture(self):
+        (self.child / "node_modules").mkdir()
         self.hook()
-        self.hook(event="SessionEnd")
+        cache = self.child / ".venv"
         cache.mkdir()
-        with self.assertRaisesRegex(self.module.SnapshotError, "exclusion"):
-            self.hook()
         self.backend.subvolumes.add(cache)
-        self.hook()
-        self.assertEqual(len(self.backend.rows), 3)
+        self.hook(event="SessionEnd")
+        self.assertEqual([row["type"] for row in self.backend.rows], ["pre", "post"])
 
-    def test_invalid_exclusion_path_fails_closed(self):
-        for name in ("../outside", "/tmp/outside", ".", ".snapshots/cache"):
-            with self.subTest(name=name):
-                (self.state / "excludes").write_text(name + "\n")
-                with self.assertRaises(self.module.SnapshotError):
-                    self.hook()
-        self.assertEqual(self.backend.rows, [])
+    def test_nested_subvolume_is_reported_and_fails_check(self):
+        self.assertIn("Coverage: the whole tree, caches included.", self.report())
+        self.backend.subvolumes.add(self.child / ".venv")
+        report = self.report()
+        self.assertIn("Coverage: partial. 1 nested subvolumes stay outside snapshots:\n  project with spaces/.venv\n", report)
+        self.assertNotIn("  .snapshots\n", report)
+        with self.assertRaisesRegex(self.module.SnapshotError, "outside snapshots: project with spaces/.venv"):
+            self.manager.check()
+
+    def test_nested_snapshot_subvolume_is_reported(self):
+        self.backend.snapshot_subvolumes.add(self.child / "saved work")
+        self.assertIn("  project with spaces/saved work\n", self.report())
+        with self.assertRaisesRegex(self.module.SnapshotError, "saved work"):
+            self.manager.check()
 
     def test_malformed_input_is_reported_without_snapshot(self):
         invalid = [None, [], {}, self.event(session="../bad"), self.event(cwd="relative/path")]

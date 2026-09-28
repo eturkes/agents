@@ -26,18 +26,18 @@ The report separates snapshot-attributed data from shared history and current da
 These bcachefs counters describe data attribution, not exact deletion savings or complete physical storage.
 `upgrade` and `upgrade --check` show the same report without deleting snapshots.
 
-## Cache boundaries
+## Caches
 
-[project-snapshots-excludes](project-snapshots-excludes) lists rebuildable environments, dependencies, model downloads and caches.
-Each existing path becomes a separate NoCoW subvolume.
-Native snapshots omit these subvolumes; files remain available at their original live paths.
-NoCoW disables data checksums, compression and encryption for those paths.
-Project sources, uncommitted work, `.scratch`, private configuration and application databases retain snapshot coverage.
-Home directories outside Projects remain unchanged.
+Snapshots cover the whole Projects tree, including environments, dependencies, model downloads and caches.
+Tools can create, delete or rebuild any directory, and the hooks keep working.
+Data that a tool rewrites or deletes after a snapshot stays on disk until you delete that snapshot.
+Only the deletion of a complete snapshot releases its data.
+`snapper status` and `snapper diff` list cache changes beside source changes.
 
-The hook checks each configured boundary before capture.
-When a tool recreates a cache as an ordinary directory, rerun the migration recipe after its users stop.
-Update the exclusion list and rerun setup to add another approved cache boundary.
+A nested subvolume stays outside every snapshot.
+`project-snapshots report` lists each nested subvolume and nested snapshot except `.snapshots`.
+`project-snapshots check` fails while one exists.
+The migration recipe folds nested subvolumes back into ordinary directories.
 
 ## Deploy
 
@@ -48,6 +48,9 @@ Run these commands from the agents repository, with terminals outside Projects:
 host/cachyos/project-snapshots-migrate \
   --pause-unit bsc-research-protocols.timer \
   --pause-unit bsc-research-protocols.service \
+  --pause-unit bsc-research-explore.timer \
+  --pause-unit bsc-research-explore.service \
+  --pause-unit bsc-micro-scalping.service \
   --pause-unit bsc-scanner-watch.service \
   --pause-unit bsc-opportunity-alerts.service \
   --pause-unit bsc-research-breadth.service \
@@ -56,10 +59,19 @@ host/cachyos/project-snapshots-migrate \
 host/cachyos/project-snapshots-setup
 ```
 
-Migration = reflink stage → pause active units → final sync → cache boundaries → SHA-256 archive equality → atomic exchange.
+Migration = fold nested subvolumes with units paused → reflink stage → pause active units → final sync → SHA-256 archive equality → atomic exchange.
+A fold makes a full copy, compares it with `rsync` checksums and exchanges it atomically.
+It deletes the old subvolume only after a second checksum comparison finds no late writes.
+A nested subvolume inside a fold target must fold first; otherwise the target stays a subvolume.
+The migration folds every idle subvolume, lists each skipped one and then exits with an error.
+An interrupted fold leaves a path with a `.snapshot-fold` suffix beside the cache.
+An ordinary directory there is an incomplete copy; delete it before the next run.
+A subvolume there is the original. Compare it with the folded path, then delete it with `bcachefs subvolume delete`.
+The full copy rewrites NoCoW data with data checksums.
+It also ends extent sharing with files outside Projects, such as the uv cache, so disk use can grow by up to the folded size.
+A native Projects subvolume needs only the folds; its other paths can stay in use.
 Open file, working-directory or mapped-file references stop activation.
 Only previously active units restart. The verified duplicate retires after the exchange.
-Cross-boundary cache hardlinks become separate inodes; file contents remain identical.
 Migration evidence = `~/.local/state/project-snapshots/migration/verified.json`.
 An interrupted preparation keeps the original Projects tree active and retains its stage for inspection.
 

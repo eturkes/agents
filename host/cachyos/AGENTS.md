@@ -13,6 +13,6 @@
 - Intel desktop/browser + NVIDIA compute → `./intel-graphics-policy check`, `./intel-graphics-policy live`, `./check-cuda-compute`; activation/recovery → `REMOTE-REBOOT.md`.
 - AC-loss grace → `./ac-loss-policy check`, `python -B ./check-ac-loss-suspend -q`, `python -B ./check-ac-loss-regressions -q`; preserve lid-ignore + disabled desktop idle sleep.
 - X11 stalls → `./check-x11-latency`; portal polling + measurement boundary → `MAINTENANCE.md`.
-- Projects snapshots → `PROJECT-SNAPSHOTS.md`; native Snapper pre/post hooks, explicit NoCoW cache boundaries, manual retention.
+- Projects snapshots → `PROJECT-SNAPSHOTS.md`; native Snapper pre/post hooks, whole-tree coverage incl. caches, manual retention.
 - Snapshot checks → `python -B ./check-project-snapshots -q`, `python -B ./check-project-snapshots-migrate -q`, `./project-snapshots check`, `python -B ./check-project-snapshots-live`.
 - Upgrade checks → `python -B ./check-upgrade -q`, `./upgrade --check`; status 2 = review items, 1 = failures.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise migration boundaries on disposable native bcachefs trees."""
+"""Exercise migration and subvolume folding on disposable native bcachefs trees."""
 
 import importlib.machinery
 import importlib.util
@@ -35,7 +35,26 @@ class Migration(unittest.TestCase):
             subprocess.run(["bcachefs", "subvolume", "delete", str(path)], check=True)
         self.temp.cleanup()
 
-    def test_native_migration_preserves_data_and_excludes_cache(self):
+    def cache_subvolume(self, parent):
+        cache = parent / "cache"
+        subprocess.run(["bcachefs", "subvolume", "create", str(cache)], check=True)
+        (cache / "payload").write_bytes(os.urandom(16384))
+        os.link(cache / "payload", cache / "payload link")
+        subprocess.run(["bcachefs", "subvolume", "create", str(cache / "inner")], check=True)
+        (cache / "inner/data").write_bytes(b"inner\n")
+        migration.run("bcachefs", "set-file-option", "--nocow=1", str(cache))
+        return cache
+
+    def assert_folded(self, cache):
+        self.assertEqual(migration.nested(self.source), [])
+        self.assertFalse(migration.is_subvolume(cache))
+        for name in ("payload", "inner/data"):
+            options = migration.run("bcachefs", "get-file-option", "--effective", str(cache / name))
+            self.assertNotIn("nocow", options)
+        self.assertEqual((cache / "payload").stat().st_ino, (cache / "payload link").stat().st_ino)
+        self.assertEqual(list(self.source.rglob("*.snapshot-fold")), [])
+
+    def test_native_migration_preserves_data_and_folds_nested_subvolumes(self):
         project = self.source / "project"
         project.mkdir()
         data = project / "uncommitted file"
@@ -43,48 +62,122 @@ class Migration(unittest.TestCase):
         data.chmod(0o640)
         os.link(data, project / "hardlink")
         (project / "symlink").symlink_to("uncommitted file")
-        cache = project / "cache"
-        cache.mkdir()
-        (cache / "payload").write_bytes(b"cache\n")
+        cache = self.cache_subvolume(project)
         before = migration.archive_hash(self.source)
-        migration.migrate(self.source, self.state, ["project/cache"])
+        migration.migrate(self.source, self.state)
         self.assertEqual(migration.archive_hash(self.source), before)
         self.assertTrue(migration.is_subvolume(self.source))
-        self.assertTrue(migration.is_subvolume(cache))
-        options = migration.run("bcachefs", "get-file-option", "--effective", str(cache / "payload"))
-        self.assertIn("nocow\t1", options)
         self.assertEqual(data.stat().st_ino, (project / "hardlink").stat().st_ino)
+        self.assert_folded(cache)
         subprocess.run(
             ["bcachefs", "subvolume", "snapshot", "-r", str(self.source), str(self.base / "snapshot")],
             check=True,
         )
-        self.assertFalse((self.base / "snapshot/project/cache/payload").exists())
+        self.assertEqual((self.base / "snapshot/project/cache/payload").read_bytes(), (cache / "payload").read_bytes())
         self.assertEqual((self.base / "snapshot/project/uncommitted file").read_bytes(), data.read_bytes())
-        migration.migrate(self.source, self.state, ["project/cache"])
+        migration.migrate(self.source, self.state)
+
+    def test_fold_inside_native_source_preserves_parent_times(self):
+        self.source.rmdir()
+        subprocess.run(["bcachefs", "subvolume", "create", str(self.source)], check=True)
+        project = self.source / "project"
+        project.mkdir()
+        cache = self.cache_subvolume(project)
+        before = migration.archive_hash(self.source)
+        times = project.stat()
+        migration.migrate(self.source, self.state)
+        self.assertEqual(migration.archive_hash(self.source), before)
+        self.assertEqual(project.stat().st_mtime_ns, times.st_mtime_ns)
+        self.assert_folded(cache)
+
+    def test_open_file_blocks_fold_and_preserves_subvolume(self):
+        cache = self.cache_subvolume(self.source)
+        idle = self.source / "idle"
+        subprocess.run(["bcachefs", "subvolume", "create", str(idle)], check=True)
+        payload = (cache / "inner/data").read_bytes()
+        with (cache / "inner/data").open(), self.assertRaisesRegex(RuntimeError, "open") as raised:
+            migration.migrate(self.source, self.state)
+        self.assertIn("nested subvolumes first", str(raised.exception))
+        self.assertTrue(migration.is_subvolume(cache / "inner"))
+        self.assertTrue(migration.is_subvolume(cache))
+        self.assertFalse(migration.is_subvolume(idle))
+        self.assertEqual((cache / "inner/data").read_bytes(), payload)
+        self.assertEqual(list(self.source.rglob("*.snapshot-fold")), [])
 
     def test_open_file_blocks_activation_and_preserves_original(self):
         data = self.source / "data"
         data.write_text("original\n")
         inode = self.source.stat().st_ino
         with data.open(), self.assertRaisesRegex(RuntimeError, "open"):
-            migration.migrate(self.source, self.state, [])
+            migration.migrate(self.source, self.state)
         self.assertEqual(self.source.stat().st_ino, inode)
         self.assertEqual(data.read_text(), "original\n")
 
-    def test_exclusion_cannot_escape_through_symlink(self):
-        outside = self.base / "outside"
-        outside.mkdir()
-        (self.source / "link").symlink_to(outside, target_is_directory=True)
-        with self.assertRaisesRegex(ValueError, "symlink"):
-            migration.validate_exclusions(self.source, ["link/cache"])
-        for invalid in ("../outside", "/outside", "."):
-            with self.assertRaises(ValueError):
-                migration.validate_exclusions(self.source, [invalid])
+    def racing_fold(self, after_exchange):
+        cache = self.cache_subvolume(self.source)
+        subprocess.run(["bcachefs", "subvolume", "delete", str(cache / "inner")], check=True)
+        exchange = migration.exchange
 
-    def test_existing_nested_subvolume_requires_preservation_plan(self):
-        subprocess.run(["bcachefs", "subvolume", "create", str(self.source / "nested")], check=True)
-        with self.assertRaisesRegex(RuntimeError, "nested"):
-            migration.migrate(self.source, self.state, [])
+        def racing(first, second):
+            exchange(first, second)
+            after_exchange(Path(second))
+
+        migration.exchange = racing
+        self.addCleanup(setattr, migration, "exchange", exchange)
+        return cache, self.source / "cache.snapshot-fold"
+
+    def test_same_second_late_rewrite_keeps_original_subvolume(self):
+        second = 1_700_000_000_000_000_000
+
+        def rewrite(original):
+            payload = original / "payload"
+            payload.write_bytes(bytes(len(payload.read_bytes())))
+            os.utime(payload, ns=(second + 1_000_000, second + 1_000_000))
+
+        cache, retained = self.racing_fold(rewrite)
+        os.utime(cache / "payload", ns=(second, second))
+        with self.assertRaisesRegex(RuntimeError, "changed during the fold"):
+            migration.migrate(self.source, self.state)
+        self.assertTrue(migration.is_subvolume(retained))
+        self.assertEqual((retained / "payload").read_bytes(), bytes(16384))
+
+    def test_interrupt_after_exchange_keeps_original_subvolume(self):
+        def interrupt(original):
+            (original / "late").write_text("late write\n")
+            raise KeyboardInterrupt
+
+        _, retained = self.racing_fold(interrupt)
+        with self.assertRaises(KeyboardInterrupt):
+            migration.migrate(self.source, self.state)
+        self.assertTrue(migration.is_subvolume(retained))
+        self.assertEqual((retained / "late").read_text(), "late write\n")
+
+    def test_failed_dot_snapshots_child_blocks_parent_fold(self):
+        cache = self.cache_subvolume(self.source)
+        child = cache / ".snapshots"
+        subprocess.run(["bcachefs", "subvolume", "create", str(child)], check=True)
+        (cache / ".snapshots.snapshot-fold").mkdir()
+        with self.assertRaisesRegex(RuntimeError, "nested subvolumes first"):
+            migration.migrate(self.source, self.state)
+        self.assertTrue(migration.is_subvolume(child))
+        self.assertTrue(migration.is_subvolume(cache))
+        self.assertFalse((self.source / "cache.snapshot-fold").exists())
+
+    def test_retained_original_blocks_further_folds(self):
+        retained = self.source / "cache.snapshot-fold"
+        subprocess.run(["bcachefs", "subvolume", "create", str(retained)], check=True)
+        cache = self.cache_subvolume(self.source)
+        with self.assertRaisesRegex(RuntimeError, "interrupted fold"):
+            migration.migrate(self.source, self.state)
+        self.assertTrue(migration.is_subvolume(cache))
+        self.assertTrue(migration.is_subvolume(retained))
+
+    def test_incomplete_copy_blocks_its_fold(self):
+        cache = self.cache_subvolume(self.source)
+        (self.source / "cache.snapshot-fold").mkdir()
+        with self.assertRaisesRegex(RuntimeError, "retained fold copy"):
+            migration.migrate(self.source, self.state)
+        self.assertTrue(migration.is_subvolume(cache))
 
     def test_archive_hash_detects_same_size_content_change(self):
         data = self.source / "data"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Move Projects to a native subvolume; retain content and isolate rebuildable caches."""
+"""Move Projects to a native subvolume; fold nested subvolumes into its snapshot coverage."""
 
 import argparse
 import ctypes
@@ -36,23 +36,10 @@ def subvolumes(path):
     return list(descend(entries, root))
 
 
-def validate_exclusions(source, exclusions):
-    paths = []
-    for value in exclusions:
-        path = Path(value)
-        if path.is_absolute() or not path.parts or ".." in path.parts:
-            raise ValueError(f"Use a relative cache path inside Projects: {value}")
-        current = source
-        for part in path.parts:
-            current /= part
-            if current.is_symlink():
-                raise ValueError(f"Cache path crosses a symlink: {value}")
-        if current.exists() and not current.is_dir():
-            raise ValueError(f"Cache path must be a directory: {value}")
-        if any(path == other or path.is_relative_to(other) or other.is_relative_to(path) for other in paths):
-            raise ValueError(f"Cache paths overlap: {value}")
-        paths.append(path)
-    return paths
+def nested(source):
+    # Native snapshots stop at subvolume roots; .snapshots holds the snapshots themselves.
+    return [path for path in subvolumes(source)
+            if path != source and not path.is_relative_to(source / ".snapshots")]
 
 
 def archive_hash(path):
@@ -98,7 +85,7 @@ def open_references(source):
 def require_idle(source):
     references = open_references(source)
     if references:
-        raise RuntimeError("Projects has open process references; close them before activation: " + ", ".join(references))
+        raise RuntimeError(f"{source} has open process references; close them first: " + ", ".join(references))
 
 
 @contextmanager
@@ -131,48 +118,66 @@ def exchange(first, second):
         raise OSError(code, os.strerror(code))
 
 
-def isolate_caches(root, exclusions):
-    for relative in exclusions:
-        path = root / relative
-        if not path.exists():
-            continue
-        if not is_subvolume(path):
-            parent_times = path.parent.stat()
-            saved = path.with_name(path.name + ".snapshot-migration")
-            if saved.exists():
-                raise RuntimeError(f"Resolve the retained cache copy first: {saved}")
-            path.rename(saved)
-            try:
-                run("bcachefs", "subvolume", "create", str(path))
-                run("cp", "-a", "--reflink=always", "--", str(saved) + "/.", str(path) + "/")
-                delta = run("rsync", "-aHAXnci", "--delete", "--", str(saved) + "/", str(path) + "/")
-                if delta:
-                    raise RuntimeError(f"Cache copy differs: {relative}\n{delta}")
-            except BaseException:
-                if path.exists():
-                    run("bcachefs", "subvolume", "delete", str(path))
-                saved.rename(path)
-                raise
-            shutil.rmtree(saved)
-            os.utime(path.parent, ns=(parent_times.st_atime_ns, parent_times.st_mtime_ns))
-        run("bcachefs", "set-file-option", "--nocow=1", str(path))
+def fold(path):
+    # Staging stays beside the cache: renameat2 exchange across subvolumes fails with EXDEV.
+    staged = path.with_name(path.name + ".snapshot-fold")
+    if staged.exists():
+        raise RuntimeError(f"Resolve the retained fold copy first: {staged}")
+    inner = [child for child in subvolumes(path) if child != path]
+    if inner:
+        raise RuntimeError("Fold its nested subvolumes first: " + ", ".join(map(str, inner)))
+    parent_times = path.parent.stat()
+    require_idle(path)
+    staged.mkdir()
+    try:
+        # A full copy rewrites NoCoW extents, which carry no data checksums.
+        run("cp", "-a", "--reflink=never", "--", str(path) + "/.", str(staged) + "/")
+        delta = run("rsync", "-aHAXnci", "--delete", "--", str(path) + "/", str(staged) + "/")
+        if delta:
+            raise RuntimeError(f"Folded copy differs: {path}\n{delta}")
+        require_idle(path)
+        os.sync()
+    except BaseException:
+        shutil.rmtree(staged)
+        raise
+    try:
+        exchange(path, staged)
+    except OSError:
+        # renameat2 failed, so nothing moved and staged is still the copy.
+        shutil.rmtree(staged)
+        raise
+    # From here staged = the original subvolume; every exit keeps it until the late comparison passes.
+    # Checksums: the quick check accepts an equal-size rewrite within the same second.
+    late = run("rsync", "-aHAXnci", "--delete", "--", str(staged) + "/", str(path) + "/")
+    if late:
+        raise RuntimeError(f"The original subvolume changed during the fold; it stays at {staged}:\n{late}")
+    run("bcachefs", "subvolume", "delete", str(staged))
+    os.utime(path.parent, ns=(parent_times.st_atime_ns, parent_times.st_mtime_ns))
 
 
-def migrate(source, state, exclusions, units=()):
+def migrate(source, state, units=()):
     source = source.absolute()
     if source.is_symlink() or source.resolve() != source or not source.is_dir():
         raise ValueError("Projects must be a real directory with resolved parents.")
-    paths = validate_exclusions(source, exclusions)
+    folds = sorted(nested(source), key=lambda path: len(path.parts), reverse=True)
+    retained = [str(path) for path in folds if path.name.endswith(".snapshot-fold")]
+    if retained:
+        raise RuntimeError("An interrupted fold kept these original subvolumes: " + ", ".join(retained)
+                           + ". Compare each with its folded path, then delete it with bcachefs subvolume delete.")
+    if folds:
+        skipped = []
+        with paused(units):
+            for path in folds:
+                print(f"Folding {path} into the snapshot tree.", flush=True)
+                try:
+                    fold(path)
+                except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+                    skipped.append(f"{path}: {getattr(error, 'stderr', None) or error}")
+        if skipped:
+            raise RuntimeError("These nested subvolumes stay outside snapshots:\n" + "\n".join(skipped))
     if is_subvolume(source):
-        missing = [path for path in paths if (source / path).exists() and not is_subvolume(source / path)]
-        if missing:
-            with paused(units):
-                require_idle(source)
-                isolate_caches(source, missing)
-        print("Projects is a native subvolume; cache boundaries are ready.", flush=True)
+        print("Projects is a native subvolume; snapshots cover the whole tree.", flush=True)
         return
-    if subvolumes(source):
-        raise RuntimeError("Projects has nested subvolumes; preserve their topology before migration.")
     if state.resolve().is_relative_to(source):
         raise ValueError("Keep migration state outside Projects.")
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -191,9 +196,8 @@ def migrate(source, state, exclusions, units=()):
         run("cp", "-a", "--reflink=always", "--", str(source) + "/.", str(staged) + "/")
     with paused(units):
         require_idle(source)
-        print("Writers paused. Synchronizing the final changes and separating caches.", flush=True)
+        print("Writers paused. Synchronizing the final changes.", flush=True)
         run("rsync", "-aHAX", "--delete", "--", str(source) + "/", str(staged) + "/")
-        isolate_caches(staged, paths)
         print("Comparing complete file contents and archive metadata with SHA-256.", flush=True)
         original_hash = archive_hash(source)
         copied_hash = archive_hash(staged)
@@ -202,7 +206,7 @@ def migrate(source, state, exclusions, units=()):
         require_idle(source)
         os.sync()
         exchange(source, staged)
-        evidence = identity | {"archive_sha256": original_hash, "exclusions": exclusions}
+        evidence = identity | {"archive_sha256": original_hash}
         (state / "verified.json").write_text(json.dumps(evidence, indent=2) + "\n")
         # After exchange, staged = the original → retired only after content equality + the atomic switch.
         shutil.rmtree(staged)
@@ -215,13 +219,11 @@ def main():
     parser.add_argument("--pause-unit", action="append", default=[], help="Stop an active user unit during migration. Restart it after migration.")
     args = parser.parse_args()
     home = Path.home().resolve()
-    recipe = Path(__file__).resolve().parent
-    exclusions = [line.strip() for line in (recipe / "project-snapshots-excludes").read_text().splitlines() if line.strip() and not line.startswith("#")]
     state = home / ".local/state/project-snapshots"
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (state / "migration.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        migrate(home / "Projects", state / "migration", exclusions, args.pause_unit)
+        migrate(home / "Projects", state / "migration", args.pause_unit)
 
 
 if __name__ == "__main__":

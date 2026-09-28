@@ -104,30 +104,25 @@ class ProjectSnapshots:
             raise SnapshotError("bcachefs returned an invalid snapshot node list.")
         return tree
 
-    def exclusions(self):
-        path = self.state / "excludes"
-        if not path.is_file():
-            raise SnapshotError(f"Missing exclusion policy: {path}")
-        entries = []
-        for line in path.read_text().splitlines():
-            name = line.strip()
-            if not name or name.startswith("#"):
-                continue
-            relative = Path(name)
-            if relative.is_absolute() or not relative.parts or ".." in relative.parts or relative.parts[0] == ".snapshots":
-                raise SnapshotError(f"Invalid exclusion path: {name!r}")
-            target = self.root / relative
-            if target.is_symlink() or target.resolve() != target:
-                raise SnapshotError(f"The exclusion must have a direct path: {target}")
-            if target.exists():
-                if not target.is_dir():
-                    raise SnapshotError(f"The exclusion must be a directory: {target}")
-                try:
-                    self.native_tree(target)
-                except SnapshotError as error:
-                    raise SnapshotError(f"Snapshot exclusion lost its native boundary: {target}. {error}") from error
-            entries.append(target)
-        return entries
+    def nested(self):
+        # Native snapshots stop at subvolume roots: each nested subvolume except .snapshots escapes coverage.
+        found = []
+
+        def descend(entries, parent):
+            if not isinstance(entries, list):
+                raise SnapshotError("bcachefs returned an invalid subvolume list.")
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+                    raise SnapshotError("bcachefs returned an invalid subvolume list.")
+                path = parent / entry["path"]
+                if not path.is_relative_to(".snapshots"):
+                    found.append(str(path))
+                    descend(entry.get("children", []), path)
+
+        # Without --snapshots the listing omits snapshot subvolumes, which are boundaries too.
+        listing = ["bcachefs", "subvolume", "list", "--json", "--recursive", "--snapshots", str(self.root)]
+        descend(self.query(listing), Path())
+        return sorted(found)
 
     def validate(self):
         if not self.root.is_dir() or self.root.resolve() != self.root:
@@ -141,9 +136,7 @@ class ProjectSnapshots:
         wrong = [f"{key}={value}" for key, value in POLICY.items() if config.get(key) != value]
         if wrong:
             raise SnapshotError("Snapper manual-retention policy requires " + ", ".join(wrong) + ".")
-        tree = self.native_tree(self.root)
-        exclusions = self.exclusions()
-        return tree, exclusions
+        return self.native_tree(self.root)
 
     def snapshots(self):
         result = self.query([
@@ -278,7 +271,8 @@ class ProjectSnapshots:
             path.unlink()
 
     def report(self):
-        tree, exclusions = self.validate()
+        tree = self.validate()
+        outside = self.nested()
         rows = self.snapshots()
         nodes = tree["nodes"]
         for node in nodes:
@@ -291,10 +285,14 @@ class ProjectSnapshots:
         snapshot_data = sum(value for value in usage if value is not None)
         shared = sum(node["sectors"] * 512 for node in nodes if not node.get("path"))
         free = shutil.disk_usage(self.root)
-        existing = sum(path.exists() for path in exclusions)
         print(f"Projects snapshots — {self.root}")
         print(f"Retention: manual. {len(rows)} snapshots; automatic cleanup is off.")
-        print(f"Exclusions: {existing} native boundaries; {len(exclusions) - existing} configured paths are absent.")
+        if outside:
+            print(f"Coverage: partial. {len(outside)} nested subvolumes stay outside snapshots:")
+            for path in outside:
+                print(f"  {clean(path)}")
+        else:
+            print("Coverage: the whole tree, caches included.")
         print(f"Filesystem: {size(free.free)} free of {size(free.total)}.")
         missing = f" ({usage.count(None)} sizes unavailable)" if None in usage else ""
         print(f"Snapshot leaf data: {size(snapshot_data)}{missing}")
@@ -360,7 +358,12 @@ class ProjectSnapshots:
         atomic_json(settings, document, indent=2)
 
     def check(self):
-        _, exclusions = self.validate()
+        self.validate()
+        outside = self.nested()
+        if outside:
+            recipe = Path(__file__).resolve().with_name("project-snapshots-migrate")
+            raise SnapshotError(f"Nested subvolumes stay outside snapshots: {', '.join(outside)}. "
+                                f"Stop their users, then run {recipe}.")
         self.snapshots()
         settings = Path.home().resolve() / ".claude/settings.json"
         try:
@@ -380,7 +383,7 @@ class ProjectSnapshots:
                     raise SnapshotError(f"Configure one {event} snapshot hook with a 60-second timeout in {settings}.")
         except (OSError, ValueError, TypeError) as error:
             raise SnapshotError(f"Cannot read Claude hook settings: {error}") from error
-        print(f"Projects snapshots: source, manual retention, {len(exclusions)} exclusions, and Claude hooks are configured.")
+        print("Projects snapshots: source, manual retention, whole-tree coverage, and Claude hooks are configured.")
 
 
 def main():

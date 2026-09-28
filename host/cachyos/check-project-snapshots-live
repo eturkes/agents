@@ -27,35 +27,33 @@ def hook(event, cwd):
 
 
 subprocess.run([str(helper), "check"], check=True)
-policy = Path.home() / ".local/state/project-snapshots/excludes"
-cache = next(root / line.strip() for line in policy.read_text().splitlines()
-             if line.strip() and not line.startswith("#") and (root / line.strip()).is_dir())
-with tempfile.TemporaryDirectory(prefix=".snapshot-check-", dir=root) as included, \
-        tempfile.TemporaryDirectory(prefix=".snapshot-check-", dir=cache) as excluded:
+with tempfile.TemporaryDirectory(prefix=".snapshot-check-", dir=root) as included:
     data = Path(included) / "data"
-    skipped = Path(excluded) / "data"
+    cache = Path(included) / "node_modules" / "payload"
+    cache.parent.mkdir()
     data.write_text("before\n")
-    skipped.write_text("rebuildable\n")
+    cache.write_text("rebuildable\n")
     try:
         hook("SessionStart", Path(included))
         data.write_text("after\n")
+        cache.write_text("rebuilt\n")
         hook("SessionEnd", Path.home())
         rows = snapshots()
         before = next(row for row in rows if row["type"] == "pre")
         after = next(row for row in rows if row["type"] == "post")
         assert after["pre-number"] == before["number"]
-        for row, expected in ((before, "before\n"), (after, "after\n")):
+        for row, expected, cached in ((before, "before\n", "rebuildable\n"), (after, "after\n", "rebuilt\n")):
             snapshot = root / ".snapshots" / str(row["number"]) / "snapshot"
             saved = snapshot / data.relative_to(root)
             assert saved.read_text() == expected
-            assert not (snapshot / skipped.relative_to(root)).exists()
+            assert (snapshot / cache.relative_to(root)).read_text() == cached
             try:
                 saved.write_text("must remain read-only\n")
             except OSError as error:
                 assert error.errno == errno.EROFS, error
             else:
                 raise AssertionError("Snapshot accepted a write")
-        print("Native hooks: paired content, read-only snapshots, nested exclusion and changed exit cwd passed.")
+        print("Native hooks: paired content, read-only snapshots, covered caches and changed exit cwd passed.")
     finally:
         # Retire only this check's tagged snapshots; user retention stays manual.
         numbers = [str(row["number"]) for row in snapshots()]
