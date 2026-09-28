@@ -160,6 +160,15 @@
             "timeout": 60
           }
         ]
+      },
+      {
+        "matcher": "startup|resume|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -c 'if (.session_title // \"\") == \"\" then {hookSpecificOutput: {hookEventName: \"SessionStart\", sessionTitle: (.cwd | sub(\".*/(?=.)\"; \"\"))}} else empty end'"
+          }
+        ]
       }
     ],
     "SessionEnd": [
