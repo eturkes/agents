@@ -1,8 +1,8 @@
 #!/bin/sh
 # Claude Code context gauge + rate limits + prompt-cache warmth.
 # Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
-# Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens;
-# transcript fallback uses the same sum.
+# Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens =
+# CC's last-executor-iteration figure; transcript fallback applies the same rule (ctx).
 # Gauge denominator: ACW set ⇒ min(JSON context_window_size, ACW) - 33K = the
 # compaction trigger for every model; unset ⇒ MAIN's raw window (collapse-managed). Red = rounded ≥92% ≈ CC's `warn` (trigger - 20K)
 # at a 240K trigger; on a raw 1M window it opens at 915K.
@@ -14,13 +14,14 @@ j=""
 $(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .transcript_path // "", .effort.level // ""' 2>/dev/null)
 EOF
 # Real API turn = non-sidechain assistant record carrying usage; shared by the gauge fallback + cache anchor.
+ctx='def ctx: (.input_tokens//0) as $i | (.cache_creation_input_tokens//0) as $c | (.cache_read_input_tokens//0) as $r | (.output_tokens//0) as $o | ([.iterations[]?|select(type!="object" or (.type!="advisor_message" and .type!="compaction"))]|last) as $x | if $i+$c+$r>0 and (.iterations|type)=="array" and ($x|type)=="object" and ($x.type=="message" or $x.type=="fallback_message") and ([$x.input_tokens,$x.output_tokens,$x.cache_creation_input_tokens,$x.cache_read_input_tokens]|all(type=="number" and (isinfinite or isnan|not) and .>=0)) and $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens>0 then $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens+$x.output_tokens else $i+$c+$r+$o end;'
 api='.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object"'
 if [ -n "$u" ]; then c=1
 else
   transcript_root="$HOME/.claude/projects"
   f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name "$CLAUDE_CODE_SESSION_ID.jsonl" -print -quit 2>/dev/null)
   [ -n "$f" ] || f=$(find "$transcript_root" -mindepth 2 -maxdepth 2 -type f -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d ' ' -f 2- | head -1)
-  u=$(jq -n "last(inputs|select($api)|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens)//empty" "$f" 2>/dev/null)
+  u=$(jq -n "$ctx last(inputs|select($api)|.message.usage|ctx)//empty" "$f" 2>/dev/null)
   w=1000000  # MAIN's first-party window
   c=0
 fi

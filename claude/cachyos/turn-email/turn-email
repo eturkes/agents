@@ -26,6 +26,7 @@ resp=$(printf '%s' "$IN" | jq -r '(.last_assistant_message // "")[0:100000]' 2>/
 # One streaming reduce extracts prompt/model/context with bounded memory.
 # Sidechain entries skip; textless tool_result entries fall through empty-text gate.
 meta=$(jq -cn '
+  def ctx: (.input_tokens//0) as $i | (.cache_creation_input_tokens//0) as $c | (.cache_read_input_tokens//0) as $r | (.output_tokens//0) as $o | ([.iterations[]?|select(type!="object" or (.type!="advisor_message" and .type!="compaction"))]|last) as $x | if $i+$c+$r>0 and (.iterations|type)=="array" and ($x|type)=="object" and ($x.type=="message" or $x.type=="fallback_message") and ([$x.input_tokens,$x.output_tokens,$x.cache_creation_input_tokens,$x.cache_read_input_tokens]|all(type=="number" and (isinfinite or isnan|not) and .>=0)) and $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens>0 then $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens+$x.output_tokens else $i+$c+$r+$o end;
   def txt: if type == "string" then .
            else [.[]? | select(.type == "text") | .text] | join("\n") end;
   reduce inputs as $e ({};
@@ -37,9 +38,7 @@ meta=$(jq -cn '
     elif $e.type == "assistant" and $e.message.model != "<synthetic>" then
       .model = ($e.message.model // .model)
       | if ($e.message.usage | type) == "object" then
-          .ctx = ($e.message.usage
-                  | .input_tokens + .cache_creation_input_tokens
-                    + .cache_read_input_tokens + .output_tokens)
+          .ctx = ($e.message.usage | ctx)
         else . end
     else . end)' "$tp" 2>/dev/null)
 

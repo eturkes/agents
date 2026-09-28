@@ -37,6 +37,19 @@ def teammate(total):
     return assistant(total, model="gpt-6-astra", sidechain=True)
 
 
+def advisor_turn(before, after):
+    """Advisor call: top-level usage sums both executor passes; context = the last message iteration."""
+
+    def iteration(total, kind="message"):
+        return {"type": kind, "input_tokens": 1, "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": total - 1, "output_tokens": 0}
+
+    record = assistant(before + after)
+    record["message"]["usage"]["iterations"] = [
+        iteration(before), dict(iteration(18000, "advisor_message"), model="claude-fable-5-1"), iteration(after)]
+    return record
+
+
 def streaming_stub(total):
     return {
         "type": "assistant",
@@ -212,6 +225,21 @@ class ContextAlert(unittest.TestCase):
         records = [assistant(900000), streaming_stub(960000), assistant(0, model="<synthetic>")]
         with scenario(records) as (payload, env, _):
             self.assertEqual(self.invoke(payload, env), output(f"Context 900K/1M — 100K left. {NOTICE_MAIN}"))
+
+    def test_advisor_turn_reads_last_message_iteration(self):
+        for (before, after), expected in (
+            ((480000, 485000), ""),
+            ((905000, 910000), output(f"Context 910K/1M — 90K left. {NOTICE_MAIN}")),
+        ):
+            with self.subTest(after=after), scenario([advisor_turn(before, after)]) as (payload, env, _):
+                self.assertEqual(self.invoke(payload, env), expected)
+
+    def test_invalid_last_executor_keeps_top_level_sum(self):
+        record = assistant(950000)
+        record["message"]["usage"]["iterations"] = [{"type": "message", "input_tokens": 0, "output_tokens": 0,
+                                                    "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}]
+        with scenario([record]) as (payload, env, _):
+            self.assertEqual(self.invoke(payload, env), output(f"Context 950K/1M — 50K left. {FINAL_MAIN}"))
 
     def test_main_skips_sidechain_records(self):
         with scenario([assistant(925000), assistant(960000, sidechain=True)]) as (payload, env, _):

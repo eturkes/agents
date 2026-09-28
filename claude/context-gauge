@@ -1,8 +1,9 @@
 #!/bin/sh
 # Context gauge = assistant usage sum: input + cache creation/read + output.
 # Output: "N% used/<window>". Cached system/tool/instruction + hidden-reasoning
-# input can exceed transcript-visible text; server tools can bill each internal
-# iteration. Denominator: teammate = CLAUDE_CODE_MAX_CONTEXT_TOKENS (unknown model)
+# input can exceed transcript-visible text; an advisor/compaction turn sums every
+# executor pass into top-level usage → ctx = last executor iteration (CC's rule).
+# Denominator: teammate = CLAUDE_CODE_MAX_CONTEXT_TOKENS (unknown model)
 # - 33K = its compaction trigger ⇒ 100% = compaction; MAIN = raw 1M, collapse-
 # managed; ACW set ⇒ min(raw, ACW) - 33K for both.
 # POSIX sh + utilities except jq. Globs pin transcript depth; `ls -t` ranks mtime.
@@ -72,7 +73,7 @@ fi
      or (.name=="Bash" and ((.input.command // "")|test("git commit|git add|>>|\\btee\\b"))))]
   | length as $n | ([to_entries[]|select(.value)|.key]|last) as $i
   | "tail \(if $i==null then $n else $n-1-$i end)/\($n)"' "$f"; exit; }
-u=$(jq -n --argjson a "$agent" '[inputs|select(.type=="assistant" and ($a or .isSidechain!=true) and .message.model!="<synthetic>" and (.message.usage|type)=="object" and (.message.usage.cache_read_input_tokens|type)=="number")|.message.usage|.input_tokens+.cache_creation_input_tokens+.cache_read_input_tokens+.output_tokens]|select(length>0)|if $a then max else .[-1] end' "$f" 2>/dev/null)
+u=$(jq -n --argjson a "$agent" 'def ctx: (.input_tokens//0) as $i | (.cache_creation_input_tokens//0) as $c | (.cache_read_input_tokens//0) as $r | (.output_tokens//0) as $o | ([.iterations[]?|select(type!="object" or (.type!="advisor_message" and .type!="compaction"))]|last) as $x | if $i+$c+$r>0 and (.iterations|type)=="array" and ($x|type)=="object" and ($x.type=="message" or $x.type=="fallback_message") and ([$x.input_tokens,$x.output_tokens,$x.cache_creation_input_tokens,$x.cache_read_input_tokens]|all(type=="number" and (isinfinite or isnan|not) and .>=0)) and $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens>0 then $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens+$x.output_tokens else $i+$c+$r+$o end; [inputs|select(.type=="assistant" and ($a or .isSidechain!=true) and .message.model!="<synthetic>" and (.message.usage|type)=="object" and (.message.usage.cache_read_input_tokens|type)=="number")|.message.usage|ctx]|select(length>0)|if $a then max else .[-1] end' "$f" 2>/dev/null)
 w=1000000  # MAIN; a teammate runs the model CC reads as unknown, so its window is declared
 [ "$agent" = true ] && w=${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-200000}
 acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
