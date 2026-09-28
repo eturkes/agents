@@ -8,7 +8,7 @@ Start a session with:
 ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --effort <level>
 ```
 
-`wrap` passes `--effort` to Claude Code, and teammates run at the same level. The [phase prompts](../../../claude/prompts/README.md) name the level for each phase.
+`wrap` passes `--effort` and the other options that it does not own to Claude Code. You choose the effort level for each session, and teammates run at the same level.
 
 `--code-memory none` keeps `wrap` from registering the Serena MCP server. Code intelligence comes from Claude Code's LSP plugins instead.
 

@@ -1,6 +1,6 @@
 # Migrate
 
-One pass per project running the retired roadmap flow (`.claude/commands/session-*.md`, `.agent/roadmap.md`, `polish.md`, `memory.md`, `contracts/`, `review-*.md`). Copy `CLAUDE.project.md` over the repo's `CLAUDE.md` first; then, in a fresh session at the project root launched with `--effort xhigh`, paste everything below the rule.
+One pass per project running the retired roadmap flow (`.claude/commands/session-*.md`, `.agent/roadmap.md`, `polish.md`, `memory.md`, `contracts/`, `review-*.md`). Copy `CLAUDE.project.md` over the repo's `CLAUDE.md` first; then, in a fresh session at the project root, paste everything below the rule.
 
 ---
 

@@ -1,6 +1,6 @@
 # Refresh
 
-Phase-flow repo on an older template. At the project root, run `cp ~/.local/app/agents/claude/CLAUDE.project.md CLAUDE.md`, start a fresh session with `--effort xhigh`, and paste everything below the rule. One session per repo.
+Phase-flow repo on an older template. At the project root, run `cp ~/.local/app/agents/claude/CLAUDE.project.md CLAUDE.md`, start a fresh session, and paste everything below the rule. One session per repo.
 
 ---
 

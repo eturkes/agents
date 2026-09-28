@@ -1,6 +1,6 @@
 # Implement
 
-My go after ITERATE. Fresh session at the project root, launched with `--effort xhigh`; paste everything below the rule.
+My go after ITERATE. Fresh session at the project root; paste everything below the rule.
 
 ---
 
