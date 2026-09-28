@@ -173,10 +173,17 @@
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
   "preferredNotifChannel": "notifications_disabled",
-  "switchModelsOnFlag": false,
+  "switchModelsOnFlag": true,
   "fileCheckpointingEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
   "crossSessionInbound": "accept",
-  "useAutoModeDuringPlan": false
+  "useAutoModeDuringPlan": false,
+  "pluginConfigs": {
+    "agents-md@builtin": {
+      "options": {
+        "instructionFiles": "claude-md"
+      }
+    }
+  }
 }
