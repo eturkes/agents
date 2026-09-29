@@ -10,7 +10,7 @@ from pathlib import Path
 
 def read(path):
     value = configparser.ConfigParser(interpolation=None)
-    value.optionxform = str
+    value.optionxform = lambda optionstr: optionstr
     with path.open() as stream:
         value.read_file(stream)
     return value

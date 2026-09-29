@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 SOURCE = Path(__file__).resolve().with_name("ac-loss-suspend")
 SPEC = importlib.util.spec_from_loader("ac_loss", importlib.machinery.SourceFileLoader("ac_loss", str(SOURCE)))
+assert SPEC and SPEC.loader
 POLICY = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(POLICY)
 

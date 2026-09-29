@@ -13,6 +13,7 @@ from unittest.mock import patch
 SPEC = importlib.util.spec_from_file_location(
     "update_workspace", Path(__file__).with_name("update-workspace.py")
 )
+assert SPEC and SPEC.loader
 operator = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(operator)
 
@@ -24,7 +25,8 @@ def sha(path):
 class Controller:
     def __init__(self, module, tenant):
         self.m, self.tenant = module, tenant
-        self.events, self.failure = [], None
+        self.events = []
+        self.failure: str | None = None
         self.snapshots = {"1"}
         self._versions = [{"id": "v_old", "parent_id": None,
                            "source_sha256": self._tree_hash(self.current()),

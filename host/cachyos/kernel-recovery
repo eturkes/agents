@@ -205,7 +205,8 @@ def capture():
     for key, value in properties:
         if key in {"path", "module_path"}:
             match = re.fullmatch(r"boot\(\):(/[^#]+)#([0-9a-fA-F]{128})", value)
-            require(match is not None, f"expected a local BLAKE2b-verified path: {value}")
+            if match is None:
+                raise RuntimeError(f"expected a local BLAKE2b-verified path: {value}")
             source = (BOOT / match[1].lstrip("/")).resolve()
             require(source.is_relative_to(BOOT) and source.is_file(), f"invalid boot source: {source}")
             require(digest(source, "blake2b") == match[2].lower(), f"source Limine hash mismatch: {source}")

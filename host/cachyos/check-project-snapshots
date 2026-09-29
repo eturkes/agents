@@ -80,6 +80,7 @@ class ProjectSnapshots(unittest.TestCase):
         source = Path(__file__).resolve().with_name("project-snapshots")
         loader = importlib.machinery.SourceFileLoader("project_snapshots", str(source))
         spec = importlib.util.spec_from_loader(loader.name, loader)
+        assert spec
         self.module = importlib.util.module_from_spec(spec)
         loader.exec_module(self.module)
         directory = tempfile.TemporaryDirectory(prefix="project-snapshots-check-", dir=source.parent)

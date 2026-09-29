@@ -58,7 +58,7 @@ def atomic_json(path, value, indent=None):
 
 
 def hook_group(event):
-    group = {"hooks": [{"type": "command", "command": COMMAND, "timeout": 60}]}
+    group: dict = {"hooks": [{"type": "command", "command": COMMAND, "timeout": 60}]}
     if event == "SessionStart":
         group["matcher"] = "startup|resume|clear|fork"
     return group
@@ -235,6 +235,7 @@ class ProjectSnapshots:
         if not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session):
             raise SnapshotError("Hook input must contain a valid session_id.")
         path = self.state_path(session)
+        cwd = None
         if event == "SessionStart":
             if data.get("source") not in ("startup", "resume", "clear", "fork"):
                 raise SnapshotError("SessionStart source must be startup, resume, clear, or fork.")

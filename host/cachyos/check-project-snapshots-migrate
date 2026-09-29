@@ -8,10 +8,12 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name("project-snapshots-migrate")
 loader = importlib.machinery.SourceFileLoader("migration", str(SCRIPT))
 spec = importlib.util.spec_from_loader(loader.name, loader)
+assert spec
 migration = importlib.util.module_from_spec(spec)
 loader.exec_module(migration)
 
@@ -122,8 +124,7 @@ class Migration(unittest.TestCase):
             exchange(first, second)
             after_exchange(Path(second))
 
-        migration.exchange = racing
-        self.addCleanup(setattr, migration, "exchange", exchange)
+        self.enterContext(patch.object(migration, "exchange", racing))
         return cache, self.source / "cache.snapshot-fold"
 
     def test_same_second_late_rewrite_keeps_original_subvolume(self):

@@ -71,7 +71,8 @@ def scan(path):
                 r["summary_report"] = REPORT in text_of(m)
                 continue
             if e.get("type") == "user":
-                for b in (m.get("content") if isinstance(m.get("content"), list) else []):
+                c = m.get("content")
+                for b in (c if isinstance(c, list) else []):
                     if isinstance(b, dict) and b.get("type") == "tool_result":
                         pending.discard(b.get("tool_use_id"))
                 continue

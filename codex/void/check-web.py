@@ -9,7 +9,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 class NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, *args):
+    def redirect_request(self, *args, **kwargs):
         return None
 
 

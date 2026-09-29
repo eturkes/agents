@@ -213,6 +213,7 @@ class ContextAlert(unittest.TestCase):
                 for _ in range(16)
             ]
             for run in runs:
+                assert run.stdin
                 run.stdin.write(json.dumps(payload))
                 run.stdin.close()
             results = [(run.communicate()[0], run.returncode) for run in runs]

@@ -9,6 +9,7 @@ import json
 import sys
 import tokenize
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent
 ENGINE = ROOT.parents[2] / "eturkes.com/ops/prompt-history-agent-update.py"
@@ -117,8 +118,9 @@ def build_stage(vm, controller, project, chat, engine, workspace=None):
         raise ValueError("transaction has no changed files")
 
     tree = ast.parse(engine)
-    targets = next(node.value for node in tree.body if isinstance(node, ast.AnnAssign)
-                   and isinstance(node.target, ast.Name) and node.target.id == "TARGETS")
+    # ENGINE_SHA256 pins this literal's shape.
+    targets: Any = next(node.value for node in tree.body if isinstance(node, ast.AnnAssign)
+                        and isinstance(node.target, ast.Name) and node.target.id == "TARGETS")
     target = next(value for key, value in zip(targets.keys, targets.values)
                   if ast.literal_eval(key) == vm)
     file_nodes = next(item.value.elts for item in target.keywords if item.arg == "files")

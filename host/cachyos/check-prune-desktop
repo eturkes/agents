@@ -31,7 +31,9 @@ def probe(command):
 
 
 remove_dead_launchers = runpy.run_path(str(Path(__file__).with_name("prune-desktop")))["remove_dead_launchers"]
-program = Path(shutil.which("true")).resolve()
+true_path = shutil.which("true")
+assert true_path
+program = Path(true_path).resolve()
 missing = str(program) + ".prune-check-missing"
 assert shutil.which(program.name, path=str(program.parent)) == str(program)
 assert shutil.which(program.name, path="") is None

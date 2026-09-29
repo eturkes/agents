@@ -10,19 +10,20 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.dont_write_bytecode = True
 SOURCE = Path(__file__).with_name("repair")
 loader = importlib.machinery.SourceFileLoader("repair_under_test", str(SOURCE))
 spec = importlib.util.spec_from_loader(loader.name, loader)
+assert spec
 REPAIR = importlib.util.module_from_spec(spec)
 loader.exec_module(REPAIR)
 
 
 def manifest(directories, inherits="hicolor"):
     value = configparser.ConfigParser(interpolation=None)
-    value.optionxform = str
+    value.optionxform = lambda optionstr: optionstr
     value["Icon Theme"] = {"Directories": ",".join(directories), "Inherits": inherits}
     for directory in directories:
         value[directory] = {"Size": "16", "Scale": "1", "Type": "Fixed"}
@@ -57,11 +58,11 @@ class RepairChecks(unittest.TestCase):
         def fixture_path(value):
             return self.system if value == "/usr/share/icons" else Path(value)
 
-        fixture_path.home = lambda: self.home_path
         original_cwd = Path.cwd()
         output = io.StringIO()
-        with (patch.object(REPAIR, "Path", fixture_path), patch.object(sys, "argv", ["repair", "--apply"]),
-              patch.dict(os.environ), contextlib.redirect_stdout(output), contextlib.redirect_stderr(output)):
+        with (patch.object(REPAIR, "Path", Mock(wraps=fixture_path, home=lambda: self.home_path)),
+              patch.object(sys, "argv", ["repair", "--apply"]), patch.dict(os.environ),
+              contextlib.redirect_stdout(output), contextlib.redirect_stderr(output)):
             if data_home is None:
                 os.environ.pop("XDG_DATA_HOME", None)
             else:

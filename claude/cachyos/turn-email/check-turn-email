@@ -2,7 +2,7 @@
 """Exercise turn-email mail bodies: pending vs answered AskUserQuestion, Stop mail."""
 
 import base64
-import email
+import email.header
 import json
 import os
 import subprocess
@@ -57,7 +57,7 @@ class TurnEmail(unittest.TestCase):
             time.sleep(0.05)
         self.assertTrue(self.out.exists(), "no mail reached the msmtp stub")
         message = email.message_from_bytes(self.out.read_bytes())
-        body = base64.b64decode(message.get_payload()).decode()
+        body = base64.b64decode(str(message.get_payload())).decode()
         subject = str(email.header.make_header(email.header.decode_header(message["Subject"])))
         return subject, body
 

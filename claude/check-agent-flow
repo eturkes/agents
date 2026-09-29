@@ -190,7 +190,7 @@ class AgentFlow(unittest.TestCase):
         )
 
     @staticmethod
-    def write_candidate(path="/x/REPORT.md", tool_id="t1", content=REJECTION):
+    def write_candidate(path="/x/REPORT.md", tool_id="t1", content: str | list = REJECTION):
         return [
             {
                 "type": "assistant",

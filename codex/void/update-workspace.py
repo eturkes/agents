@@ -26,7 +26,7 @@ PACKAGES = {"nanoha": "apex", "naoto": "tau", "rehab": "rehab"}
 
 
 class UpdateError(RuntimeError):
-    def __init__(self, message, *, committed=False):
+    def __init__(self, message, *, committed: bool | None = False):
         super().__init__(message)
         self.committed = committed
 
@@ -281,7 +281,7 @@ def transition(module, controller, tenant, source, expected, summary):
                        or controller._snapshot_numbers() != snapshots)
             # A partial snapshot keeps its release + marker for native recovery.
             if not pending:
-                for path in {stage, release} - {None}:
+                for path in {item for item in (stage, release) if item is not None}:
                     if path.exists() and path != current_tree(controller, tenant):
                         if tenant == "rehab":
                             cleanup = (controller._discard_candidate if path.parent == module.CANDIDATES
@@ -382,7 +382,7 @@ def main():
             raise UpdateError("installed controller differs from approved SHA-256")
         sys.path.insert(0, str(root))
         module = importlib.import_module(f"{package}.orchestrator")
-        if Path(module.__file__).resolve() != controller_path:
+        if module.__file__ is None or Path(module.__file__).resolve() != controller_path:
             raise UpdateError("controller import escaped installed path")
         result = update(module, args.tenant, args.instructions, args.sha256, args.summary)
         print(json.dumps(result, sort_keys=True))

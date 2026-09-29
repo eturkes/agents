@@ -17,6 +17,7 @@ from unittest.mock import patch
 sys.dont_write_bytecode = True
 loader = importlib.machinery.SourceFileLoader("kernel_recovery_regressions", str(Path(__file__).with_name("kernel-recovery")))
 spec = importlib.util.spec_from_loader(loader.name, loader)
+assert spec
 recovery = importlib.util.module_from_spec(spec)
 loader.exec_module(recovery)
 RELEASE = "test-release"
@@ -64,7 +65,7 @@ def fixture(captured=True, controls="default_entry: 1\n"):
                      "/sys/firmware/efi/efivars": root / "efivars",
                      "/etc/default/limine": defaults,
                      "/etc/boot/hooks/post.d/90-limine-enroll-config": enrollment}
-        paths = {"STATE": state, "BOOT": boot, "CONFIG": config, "MODULES": modules, "HOOK": hook}
+        paths: dict = {"STATE": state, "BOOT": boot, "CONFIG": config, "MODULES": modules, "HOOK": hook}
         with patch.multiple(recovery, **paths), \
                 patch.object(recovery, "Path", lambda value: redirects.get(str(value), Path(value))), \
                 patch.object(Path, "is_mount", lambda value: value == boot), \

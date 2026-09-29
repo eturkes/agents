@@ -17,6 +17,7 @@ CHAT = b"# Read-only chat\n\n- Inspect relevant files.\n"
 
 def load(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
@@ -50,7 +51,7 @@ def values(source):
             target = node.target
         else:
             continue
-        if isinstance(target, ast.Name):
+        if isinstance(target, ast.Name) and node.value:
             result[target.id] = ast.literal_eval(node.value)
     return result
 
@@ -136,7 +137,7 @@ class RuntimePolicyTest(unittest.TestCase):
                 manifest = json.loads(artifacts["manifest.json"])
                 self.assertEqual(manifest["transaction_id"], updater.TRANSACTION_ID)
                 self.assertEqual(manifest["engine_sha256"], hashlib.sha256(engine).hexdigest())
-                if vm == "rehab":
+                if workspace is not None:
                     self.assertEqual(payload["workspace-instructions"], PROJECT)
                     self.assertEqual(target.files[1].preimage, hashlib.sha256(workspace).hexdigest())
                 changed = self.policy.build_stage(vm, before, PROJECT + b"\n", CHAT, engine, workspace)
