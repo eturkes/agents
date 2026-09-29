@@ -99,7 +99,11 @@ class AgentFlow(unittest.TestCase):
                 )
                 payload = {**payload, "agent_transcript_path": str(transcript)}
             result = subprocess.run(
-                [FLOW], input=json.dumps(payload), text=True, capture_output=True
+                [FLOW],
+                input=json.dumps(payload),
+                text=True,
+                capture_output=True,
+                check=False,
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
@@ -154,6 +158,7 @@ class AgentFlow(unittest.TestCase):
                     text=True,
                     capture_output=True,
                     env={**os.environ, "HOME": str(home)},
+                    check=False,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 outputs.append(result.stdout)
