@@ -11,7 +11,7 @@ Resume this repo's open work. `.agent/spec.md` `Intent` outranks everything here
 3. Carried work — uncommitted changes, teammate + snapshot branches, claims in notes — earns trust once you rerun the checks that grade it; build on it after they pass.
 4. Continue by phase:
    - PROTOTYPE, IMPLEMENT, MAINTAIN → the open `Tasks` units in order, under the body that opened the work (its copy in a prior transcript, else `~/.local/app/agents/claude/prompts/<phase>.md`), until the finish line holds.
-   - ITERATE → run every prototype entry in `Artifacts`, refresh its proof, report what changed since the last session + what needs my call, then work my feedback; the phase advances on my go alone.
+   - ITERATE → run every prototype entry in `Artifacts`, report what changed since the last session + what needs my call, then work my feedback; the phase advances on my go alone.
 5. Map each template structure — in this prompt and in the body you resume under — onto what this repo runs: `Artifacts`, the gate command + ledgers its `.claude/rules/` name; a structure a rule retired, or one the repo never had, stays out.
 6. `cmp CLAUDE.md ~/.local/app/agents/claude/CLAUDE.project.md` differs → name the drift in your first message; `refresh.md` closes it in a session of its own.
 
