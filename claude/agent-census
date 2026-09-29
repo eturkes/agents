@@ -13,14 +13,19 @@ Section -> the rule it measures:
 Compaction record = a `type=system` entry carrying `compactMetadata` (`durationMs` = summarizer
 cost) + the following `isCompactSummary` user entry holding the summary.
 """
-import json, os, re, sys, glob, statistics
+import glob
+import json
+import os
+import re
+import statistics
+import sys
 from datetime import datetime
 
 DONE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*-DONE-[0-9]+")
 REPORT = ".scratch/agents/"
 WRITE_TOOLS = {"Write", "Edit", "NotebookEdit"}
 BASH_DURABLE = re.compile(r"git commit|git add|>>|\btee\b")
-CONTEXT_ERR = re.compile(r"prompt is too long|context (?:window|limit)|prompt_too_long", re.I)
+CONTEXT_ERR = re.compile(r"prompt is too long|context (?:window|limit)|prompt_too_long", re.IGNORECASE)
 
 
 def durable(b):
@@ -43,8 +48,8 @@ def text_of(m):
 
 
 def scan(path):
-    r = dict(path=path, tools=0, durable=0, tail=0, peak=0, cut=False, done=False,
-             secs=[], summary_report=False, post_tools=0, post_reports=0, err="")
+    r = {"path": path, "tools": 0, "durable": 0, "tail": 0, "peak": 0, "cut": False, "done": False,
+         "secs": [], "summary_report": False, "post_tools": 0, "post_reports": 0, "err": ""}
     compacted = False
     pending = set()
     last_text = ""
@@ -146,7 +151,8 @@ def lead_stops(path):
 
 def teammate(path):
     """Brief, marker time, turn state per record time, write times, last durable write per marker."""
-    t: dict = dict(brief="", marker=None, states=[], times=[], last_write=None, gap=None, calls=0)
+    t: dict = {"brief": "", "marker": None, "states": [], "times": [], "last_write": None, "gap": None,
+               "calls": 0}
     for e, m in records(path):
         ts = e.get("timestamp") or ""
         if ts:

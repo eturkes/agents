@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Materialize policy-only controller deltas + pinned guest transactions locally."""
 
 import argparse
@@ -7,10 +6,9 @@ import base64
 import hashlib
 import io
 import json
-from pathlib import Path
 import sys
 import tokenize
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 ENGINE = ROOT.parents[2] / "eturkes.com/ops/prompt-history-agent-update.py"
@@ -56,8 +54,9 @@ def bindings(tree, allowed):
                 continue
             if len(targets) != 1 or target.id in found:
                 raise ValueError(f"ambiguous policy assignment: {target.id}")
+            # ValueError = malformed source; main + tests catch ValueError.
             if not isinstance(node.value, ast.Constant) or not isinstance(node.value.value, str):
-                raise ValueError(f"policy assignment must be a literal string: {target.id}")
+                raise ValueError(f"policy assignment must be a literal string: {target.id}")  # noqa: TRY004
             found[target.id] = node
     if set(found) != allowed:
         raise ValueError(f"missing policy assignments: {sorted(allowed - found.keys())}")

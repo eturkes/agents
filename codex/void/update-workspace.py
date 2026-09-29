@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Instruction-only child version; run as root with Python -I -B, services stopped.
 
 Runtime-policy installation belongs to the caller. Existing controller gates own
@@ -16,13 +15,12 @@ import hashlib
 import importlib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import stat
 import subprocess
 import sys
-
+from pathlib import Path
 
 PACKAGES = {"nanoha": "apex", "naoto": "tau", "rehab": "rehab"}
 
@@ -392,7 +390,7 @@ def main():
     except UpdateError as error:
         print(json.dumps({"error": str(error), "committed": error.committed}), file=sys.stderr)
         return 3 if error.committed is not False else 1
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001
         print(json.dumps({"error": type(error).__name__, "committed": None}), file=sys.stderr)
         return 3
 

@@ -1,16 +1,14 @@
 """Operator contracts; synthetic trees/controllers, no VMs or model calls."""
-import contextlib
 import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
 import shutil
 import tempfile
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import patch
-
 
 SPEC = importlib.util.spec_from_file_location(
     "update_workspace", Path(__file__).with_name("update-workspace.py")
@@ -299,9 +297,11 @@ class OperatorTests(unittest.TestCase):
         for tenant in ("naoto", "rehab"):
             m, c, source = self.fixture(tenant)
             c.failure = "source"
-            with patch.object(operator.grp, "getgrnam", return_value=types.SimpleNamespace(gr_gid=os.getgid())):
-                with self.assertRaises(operator.UpdateError):
-                    operator.transition(m, c, tenant, source, sha(source), "Align instructions")
+            with (
+                patch.object(operator.grp, "getgrnam", return_value=types.SimpleNamespace(gr_gid=os.getgid())),
+                self.assertRaises(operator.UpdateError),
+            ):
+                operator.transition(m, c, tenant, source, sha(source), "Align instructions")
             self.assertNotIn("switch", c.events)
             self.assertNotIn("commit", c.events)
 
@@ -323,9 +323,11 @@ class OperatorTests(unittest.TestCase):
                 with self.subTest(tenant=tenant, failure=failure):
                     m, c, source = self.fixture(tenant)
                     c.failure = failure
-                    with patch.object(operator.grp, "getgrnam", return_value=types.SimpleNamespace(gr_gid=os.getgid())):
-                        with self.assertRaises(operator.UpdateError) as caught:
-                            operator.transition(m, c, tenant, source, sha(source), "Align instructions")
+                    with (
+                        patch.object(operator.grp, "getgrnam", return_value=types.SimpleNamespace(gr_gid=os.getgid())),
+                        self.assertRaises(operator.UpdateError) as caught,
+                    ):
+                        operator.transition(m, c, tenant, source, sha(source), "Align instructions")
                     self.assertFalse(caught.exception.committed)
                     self.assertEqual(c.current().name, "old")
                     self.assertIn("rollback", c.events)
@@ -334,9 +336,11 @@ class OperatorTests(unittest.TestCase):
         for tenant in ("naoto", "rehab"):
             m, c, source = self.fixture(tenant)
             c.failure = "postcommit"
-            with patch.object(operator.grp, "getgrnam", return_value=types.SimpleNamespace(gr_gid=os.getgid())):
-                with self.assertRaises(operator.UpdateError) as caught:
-                    operator.transition(m, c, tenant, source, sha(source), "Align instructions")
+            with (
+                patch.object(operator.grp, "getgrnam", return_value=types.SimpleNamespace(gr_gid=os.getgid())),
+                self.assertRaises(operator.UpdateError) as caught,
+            ):
+                operator.transition(m, c, tenant, source, sha(source), "Align instructions")
             self.assertTrue(caught.exception.committed)
             self.assertNotIn("rollback", c.events)
             self.assertNotIn("discard", c.events)
@@ -365,10 +369,8 @@ class OperatorTests(unittest.TestCase):
             path = Path(directory) / "lock"
             path.touch(mode=0o600)
             os.chown(path, -1, os.getegid())
-            with operator.exclusive(path):
-                with self.assertRaises(operator.UpdateError):
-                    with operator.exclusive(path):
-                        self.fail("second lifetime lock admitted")
+            with operator.exclusive(path), self.assertRaises(operator.UpdateError), operator.exclusive(path):
+                self.fail("second lifetime lock admitted")
 
     def test_absent_native_operation_lock_is_created_and_excluded(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -383,9 +385,8 @@ class OperatorTests(unittest.TestCase):
                 self.assertEqual(info.st_mode & 0o7777, 0o600)
                 self.assertEqual((info.st_uid, info.st_gid, info.st_nlink),
                                  (os.geteuid(), os.getegid(), 1))
-                with self.assertRaisesRegex(operator.UpdateError, "holds its lock"):
-                    with operator.exclusive(path, opener=native_open):
-                        self.fail("second operation lock admitted")
+                with self.assertRaisesRegex(operator.UpdateError, "holds its lock"), operator.exclusive(path, opener=native_open):
+                    self.fail("second operation lock admitted")
             with operator.exclusive(path, opener=native_open):
                 self.assertEqual(path.stat().st_ino, info.st_ino)
 
@@ -402,9 +403,8 @@ class OperatorTests(unittest.TestCase):
             unsafe.chmod(0o777)
             for parent in (linked, unsafe):
                 with self.subTest(parent=parent.name), patch.object(operator.os, "open") as opened:
-                    with self.assertRaisesRegex(operator.UpdateError, "parent"):
-                        with operator.exclusive(parent / "operations.lock", opener=opened):
-                            self.fail("unsafe runtime parent admitted")
+                    with self.assertRaisesRegex(operator.UpdateError, "parent"), operator.exclusive(parent / "operations.lock", opener=opened):
+                        self.fail("unsafe runtime parent admitted")
                     opened.assert_not_called()
 
     def test_native_operation_lock_keeps_file_boundaries(self):
@@ -426,9 +426,8 @@ class OperatorTests(unittest.TestCase):
                     path.chmod(0o644)
                 native_open = lambda p: os.open(
                     p, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
-                with self.assertRaises((operator.UpdateError, OSError)):
-                    with operator.exclusive(path, opener=native_open):
-                        self.fail("unsafe operation lock admitted")
+                with self.assertRaises((operator.UpdateError, OSError)), operator.exclusive(path, opener=native_open):
+                    self.fail("unsafe operation lock admitted")
                 self.assertEqual(retained.read_text(), "preserve existing bytes\n")
 
     def test_quiescence_rejects_running_daemon_or_busy_store(self):
@@ -437,13 +436,17 @@ class OperatorTests(unittest.TestCase):
             m = types.SimpleNamespace(STORE_PATH=root / "store", SOCKET_PATH=root / "socket")
             m.STORE_PATH.write_text('{"state":{"busy":false,"stage":"ready"}}')
             m.STORE_PATH.chmod(0o600)
-            with patch.object(operator.subprocess, "run", return_value=types.SimpleNamespace(returncode=0, stdout=b"run: service: (pid 1) 10s\n")):
-                with self.assertRaises(operator.UpdateError):
-                    operator.require_quiescent(m, "naoto")
+            with (
+                patch.object(operator.subprocess, "run", return_value=types.SimpleNamespace(returncode=0, stdout=b"run: service: (pid 1) 10s\n")),
+                self.assertRaises(operator.UpdateError),
+            ):
+                operator.require_quiescent(m, "naoto")
             m.STORE_PATH.write_text('{"state":{"busy":true,"stage":"render"}}')
-            with patch.object(operator.subprocess, "run", return_value=types.SimpleNamespace(returncode=0, stdout=b"down: service: 10s\n")):
-                with self.assertRaises(operator.UpdateError):
-                    operator.require_quiescent(m, "naoto")
+            with (
+                patch.object(operator.subprocess, "run", return_value=types.SimpleNamespace(returncode=0, stdout=b"down: service: 10s\n")),
+                self.assertRaises(operator.UpdateError),
+            ):
+                operator.require_quiescent(m, "naoto")
 
 
 if __name__ == "__main__":

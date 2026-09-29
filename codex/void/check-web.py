@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Check authenticated VM pages, report identity and the Rehab application."""
 import argparse
 import base64

@@ -59,7 +59,7 @@ def refresh(cred):
 def main():
     try:
         cred = load()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"gmail-oauth-token: cannot read {CRED}: {exc}", file=sys.stderr)
         return 1
     try:
@@ -70,7 +70,7 @@ def main():
                 cred = load()
                 if not fresh(cred):
                     cred = refresh(cred)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"gmail-oauth-token: refresh failed: {exc}", file=sys.stderr)
         return 1
     print(cred["access_token"])
