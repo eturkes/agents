@@ -4,6 +4,12 @@
 - Filesystem = active project root + user-scoped targets; install/configure project-local. Task-serving environment + agent-stack changes (skills/plugins/software) = in scope.
 - Direct user instructions > `AGENTS.md` + skill guidelines.
 
+## Task routing
+
+- Fresh chats + unqualified requests → `/run/host/home/eturkes/Projects/thesis-work/`; explicit target overrides.
+- Relative task paths → selected workspace; shell commands → explicit `cd` to that workspace or affected repo.
+- Thesis workspace spans independent repos → read applicable `AGENTS.md` + task-relevant source/docs; inspect `git status` in each affected repo before edits.
+
 ## Collaboration
 
 - Ground claims in evidence + state uncertainty. Answer directly for a technically proficient user; chat = blockers + essentials, each point once.
