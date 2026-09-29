@@ -1,6 +1,6 @@
 # VM instruction maintenance
 
-- Live controller policy → `../../../promptvm/promptvm/deployment/` profiles; release policy changes as one verified PromptVM wheel through `../../../promptvm/scripts/deploy-vms`. Procedure → [shared release](../../../promptvm/docs/deployed-vms.md).
+- Live controller policy → `../../../promptvm/promptvm/deployment/` profiles; release policy changes as one verified PromptVM wheel through `../../../promptvm/scripts/deploy-vms`. Procedure → `../../../promptvm/docs/deployed-vms.md`.
 - Frozen runtimes: preserve controller code; pinned tools = receipt verification + native instruction-only linked-child/no-op operations. Live code rollout = PromptVM releases.
 - Canonical guest payloads: `{nanoha,naoto,rehab}/AGENTS.md` = edit policy; `AGENTS.chat.md` = shared read-only chat policy.
 - Maintain policy text here; derive controller constants + `eturkes.com/ops/{vm}/project-AGENTS.md` through `runtime-policy.py`. Preserve installation constants, Naoto placeholders + normalized nonpolicy AST.

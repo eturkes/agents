@@ -2,7 +2,7 @@
 
 - Cadence = weekly + security-relevant updates; active agent, foreground PTY, cwd=repo root.
 - Scope = package/tool updates, config merges, cache pruning + local kernel retention. Keep backup/restore drills, access restrictions, monitoring/isolation + reboot/watchdog operations outside this workflow.
-- Package ownership + grading rules → [AGENTS.md](AGENTS.md).
+- Package ownership + grading rules → [AGENTS.md](./AGENTS.md).
 
 ## Execute
 
