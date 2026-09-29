@@ -50,6 +50,7 @@
 - Shell/tool calls = native + uncompressed + unrewritten. `rg` = ripgrep; `grep` = GNU grep (BRE); `find` = GNU find. Byte-exact/clean → `command grep` | `/usr/bin/rg` | `/usr/bin/find`.
 - Recursive search = `rg <pat> <path>`; `-r` = replacement. Name dot-dirs explicitly; explicit file paths bypass hidden/ignore filtering; tree sweep → `--hidden`, including ignored paths → `-uu` (`--hidden --no-ignore`).
 - `pgrep -f`/`pkill -f` → one bracketed pattern (`index[.]js`) to exclude the shell wrapper; kill + relaunch in separate calls.
+- User terminals = `zmx` sessions; `zmx attach` inside a session switches its live client instead of nesting. Keep `zmx` use read-only (`list`, `get`, `history`, `print-env`); PTY probes → `script -q -e -c '<cmd>' <log>`.
 - `bgcmd` (`~/.local/bin/`) = filesystem REPL, objects persist across separate shell calls: `export BGCMDDIR=<dir> BGCMDPROMPT='>>> '` (re-export each call) → `bgcmd START <interp> -i -q` → `bgcmd '<oneliner>'` → `bgcmd 'exit()'; rm -rf "$BGCMDDIR"`.
 - Prove byte equality with `cmp`/`sha256sum`; inspect actual diffs with `git diff --no-index`.
 - Capture + label shell rc immediately (`cmd; rc=$?`), before another command/substitution. Empty-output findings → report rc + run a positive control.
