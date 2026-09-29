@@ -1,26 +1,29 @@
 # Phase prompts
 
-Paste one body into a fresh Claude Code session at the project root. The header of each file names its preconditions and the text to paste.
+Paste one body into a Claude Code session at the project root. The header of each file names its preconditions and the text to paste.
 
-Start each session with this command. Replace `<level>` with the effort level that you choose for the session.
+Start each fresh session with this command. Replace `<level>` with the effort level that you choose for the session.
 
 ```sh
 ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --effort <level>
 ```
 
-| Phase | File | Use |
+| Situation | File | Use |
 | --- | --- | --- |
-| PROTOTYPE | `prototype.md` | Write your `Intent` in `.agent/spec.md` first. |
-| ITERATE | none | Work in interactive sessions until you say go. |
-| IMPLEMENT | `implement.md` | Paste after you say go. |
-| MAINTAIN | `maintain.md` | Paste one body per request. |
-| Roadmap-flow repo → phase flow | `migrate.md` | Copy `CLAUDE.project.md` over `CLAUDE.md` first. |
-| Phase-flow repo on an older template | `refresh.md` | Copy `CLAUDE.project.md` over `CLAUDE.md` first. The session does the migration and nothing else. |
+| Start PROTOTYPE | `prototype.md` | Write your `Intent` in `.agent/spec.md` first. In a shipped repo, also name the scope in `Phase`. |
+| ITERATE | `resume.md` | Paste it to open each session. The phase moves on when you say go. |
+| Start IMPLEMENT | `implement.md` | Paste after you say go, or to open a new scope directly at IMPLEMENT. |
+| MAINTAIN | `maintain.md` | Paste one body per request, queue run, security review or dependency upgrade. |
+| Continue open work in any phase | `resume.md` | Paste in a fresh session after a pause, a crash or a restart. |
+| Stop now and continue later | `pause.md` | Paste into the running session. |
+| Repo on an older template | `refresh.md` | Copy `CLAUDE.project.md` over `CLAUDE.md` first. The session does the migration and nothing else. |
 
+- A phase applies to a scope: the whole product, or one surface or feature of a shipped repo.
+- The template sets default structures, for example the prototype location, CI and the review ledger. A rule in `.claude/rules/` can adapt or retire one of them for a repo, and every prompt follows that rule.
 - Teammates run at the effort level of the session.
-- The agent works on a phase body until its `Met when` condition holds. It asks you questions whenever your input can improve the work, and it continues after you answer.
+- The agent works on a body until its `Met when` condition holds. It asks you questions whenever your input can improve the work, and it continues after you answer.
 - `AskUserQuestion` holds the run until you answer. The Notification hook emails each pending question.
-- To continue an interrupted run, send `continue`. In a fresh session, paste the same body again. The agent reorients from `.agent/spec.md` and `git log`.
+- To continue an interrupted run in the same session, send `continue`. In a fresh session, paste `resume.md`.
 
 ## Advisor
 
