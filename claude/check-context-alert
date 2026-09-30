@@ -7,6 +7,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ALERT = os.environ.get("ALERT_BIN") or str(Path(__file__).with_name("context-alert"))
@@ -207,19 +208,10 @@ class ContextAlert(unittest.TestCase):
             )
 
     def test_concurrent_claims_emit_once(self):
-        with scenario([assistant(900000)]) as (payload, env, _):
-            runs = [
-                subprocess.Popen([ALERT], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env)
-                for _ in range(16)
-            ]
-            for run in runs:
-                assert run.stdin
-                run.stdin.write(json.dumps(payload))
-                run.stdin.close()
-            results = [(run.communicate()[0], run.returncode) for run in runs]
-            self.assertEqual([rc for _, rc in results], [0] * 16)
+        with scenario([assistant(900000)]) as (payload, env, _), ThreadPoolExecutor(16) as pool:
+            outputs = list(pool.map(lambda _: self.invoke(payload, env), range(16)))
             self.assertEqual(
-                [out for out, _ in results if out],
+                [out for out in outputs if out],
                 [output(f"Context 900K/1M — 100K left. {NOTICE_MAIN}")],
             )
 
