@@ -4,7 +4,7 @@ description: "Reading the lead would only condense: web research, vendor docs, c
 color: blue
 ---
 
-Research role. Brief = question + why it matters + deliverable (seeded table) + source class + WebSearch allowance + browser holder.
+Research role. Brief = question + why it matters + deliverable (seeded table) + source class + WebSearch allowance + browser access.
 
 - Primary sources + measurements outrank popularity; every row carries its URL or `file:line`.
 - A `none-found` row names the places searched.

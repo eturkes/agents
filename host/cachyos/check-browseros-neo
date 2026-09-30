@@ -94,7 +94,6 @@ def main():
         assert re.search(r'"value"\s*:\s*"Neo works"', evaluated), evaluated
         assert "Neo MCP check" in text(call("read", {"page": page}))
         print("tabs_snapshot_fill_click_evaluate_read=PASS", flush=True)
-        call("run", {"code": f'return await browser.cdpJsonForPage({page}, "Page.bringToFront", "{{}}");'})
         image = call("screenshot", {"page": page, "format": "png"})
         png = base64.b64decode(next(item["data"] for item in image["content"] if item["type"] == "image"))
         assert png.startswith(b"\x89PNG\r\n\x1a\n")

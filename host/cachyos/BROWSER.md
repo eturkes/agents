@@ -12,7 +12,7 @@
 - PSD definition = `psd-browseros-neo` → `/usr/share/psd/browsers/browseros-neo`; services = `psd.service` + `psd-resync.timer`.
 - Cache = `~/.cache/browser-claw` → `/tmp/browser-claw-home-cache`; `/etc/tmpfiles.d/browseros-neo.conf` creates the private directory.
 - MCP = `browseros-neo` → `http://127.0.0.1:9200/mcp`; Codex = `~/.codex/config.toml`. `browseros-call` reads that endpoint and supports JSON/SSE + session reuse; schemas = `browseros-call --list-tools`.
-- Captures → bring the target forward with `run`: `await browser.cdpJsonForPage(page, "Page.bringToFront", "{}")`; then `screenshot`. Signed-in headless capture → `webcap --user-data-dir ~/.config/browser-claw`.
+- Captures → `screenshot` the target tab directly; background tabs render their live DOM. Neo keeps the visible tab fixed: `Page.bringToFront` = no-op. Signed-in headless capture → `webcap --user-data-dir ~/.config/browser-claw`.
 - After MCP configuration changes, restart `codexify.service`; refresh an attached connector to load its new catalogue. New Codex sessions load the new MCP.
 
 ## Setup replay
