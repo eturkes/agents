@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Check metadata-only identity preparation and semantic push-ID comparisons."""
+import copy
+import runpy
+import unittest
+from pathlib import Path
+
+module = runpy.run_path(str(Path(__file__).with_name("browseros-neo-sync-identity")))
+prepare = module["prepare"]
+shared = module["shared_push"]
+
+
+class Identity(unittest.TestCase):
+    def test_only_copied_transport_changes(self):
+        original = {"sync": {"transport_data_per_account": {"account": {"sync.cache_guid": "original"}}}}
+        neo = {"account_info": [{"managed": True}], "credentials": "preserve", "sync": {
+            "transport_data_per_account": {"account": {"sync.cache_guid": "original"},
+                                           "other": {"sync.cache_guid": "distinct"}},
+            "local_device_guids_with_timestamp": ["past"], "encryption_bootstrap_token": "preserve"}}
+        baseline = copy.deepcopy(neo)
+        result, count = prepare(neo, original)
+        self.assertEqual(count, 1)
+        self.assertEqual(result["sync"]["transport_data_per_account"], {"other": {"sync.cache_guid": "distinct"}})
+        expected = copy.deepcopy(baseline)
+        del expected["sync"]["transport_data_per_account"]["account"]
+        expected["sync"]["local_device_guids_with_timestamp"] = []
+        self.assertEqual(result, expected)
+        self.assertEqual(neo, baseline)
+        self.assertEqual(prepare(result, original), (result, 0))
+
+    def test_distinct_identity_is_unchanged(self):
+        source = {"sync": {"transport_data_per_account": {"a": {"sync.cache_guid": "source"}}}}
+        neo = {"sync": {"transport_data_per_account": {"a": {"sync.cache_guid": "neo"}},
+                        "local_device_guids_with_timestamp": ["neo"]}}
+        self.assertEqual(prepare(neo, source), (neo, 0))
+
+    def test_same_iid_with_different_timestamp(self):
+        app = module["APP"]
+        self.assertTrue(shared({app: b"same,1"}, {app: b"same,2"}))
+
+    def test_shared_token_with_different_iid_and_timestamp(self):
+        app = module["APP"]
+        key = module["REGISTRATION"] + b"sender,GCM"
+        self.assertTrue(shared({app: b"old,1", key: b"token#1"}, {app: b"new,2", key: b"token#2"}))
+
+    def test_unrelated_push_records_are_not_shared_sync(self):
+        self.assertFalse(shared({b"website": b"same"}, {b"website": b"same"}))
+
+    def test_pending_metadata_and_corruption(self):
+        self.assertTrue(module["pending"](bytes([32, 3, 40, 2])))
+        self.assertFalse(module["pending"](bytes([32, 3, 40, 3])))
+        with self.assertRaises(ValueError):
+            module["fields"](bytes([18, 10, 1]))
+
+
+if __name__ == "__main__":
+    unittest.main()

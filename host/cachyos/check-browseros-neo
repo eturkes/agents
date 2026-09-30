@@ -51,6 +51,16 @@ def main():
     assert json.loads((profile / "Profile 3/Preferences").read_text())["signin"]["allowed"]
     print("browser_signin_eligibility=PASS", flush=True)
 
+    identity = runpy.run_path(str(Path(__file__).with_name("browseros-neo-sync-identity")))
+    neo_preferences = json.loads((profile / "Profile 3/Preferences").read_text())
+    source_preferences = json.loads((home / ".config/browser-os/Profile 3/Preferences").read_text())
+    neo_guids = identity["transport_guids"](neo_preferences)
+    assert neo_guids and not neo_guids & identity["transport_guids"](source_preferences)
+    transport = neo_preferences["sync"]["transport_data_per_account"].values()
+    assert all(item.get("sync.birthday") and item.get("sync.last_synced_time") for item in transport)
+    assert not neo_preferences["sync"].get("cached_persistent_auth_error")
+    print("distinct_sync_identity_first_cycle=PASS", flush=True)
+
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             body = b'''<!doctype html><html lang="en"><title>Neo MCP check</title>

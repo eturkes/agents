@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Regenerate copied Neo Sync identities while both browsers are closed."""
+import argparse
+import base64
+import hashlib
+import json
+import os
+import shutil
+import sqlite3
+import struct
+import subprocess
+import tempfile
+from pathlib import Path
+
+APP = b"iid1-com.google.chrome.sync.invalidations"
+REGISTRATION = b"reg1-iid-com.google.chrome.sync.invalidations,"
+
+
+def shared_push(original, neo):
+    if APP in original and APP in neo and original[APP].split(b",", 1)[0] == neo[APP].split(b",", 1)[0]:
+        return True
+    tokens = [{value.rsplit(b"#", 1)[0] for key, value in records.items() if key.startswith(REGISTRATION)}
+              for records in (original, neo)]
+    return bool(tokens[0] & tokens[1])
+
+
+def transport_guids(preferences):
+    return {value.get("sync.cache_guid") for value in preferences.get("sync", {}).get("transport_data_per_account", {}).values()} - {None, ""}
+
+
+def prepare(preferences, original):
+    result = json.loads(json.dumps(preferences))
+    source = transport_guids(original)
+    sync = result.get("sync", {})
+    entries = sync.get("transport_data_per_account", {})
+    copied = [key for key, value in entries.items() if value.get("sync.cache_guid") in source]
+    for key in copied:
+        del entries[key]
+    if copied:
+        sync["local_device_guids_with_timestamp"] = []
+    return result, len(copied)
+
+
+def fields(data):
+    offset = 0
+
+    def varint():
+        nonlocal offset
+        value = shift = 0
+        while offset < len(data) and shift < 70:
+            byte = data[offset]
+            offset += 1
+            value |= (byte & 127) << shift
+            if byte < 128:
+                return value
+            shift += 7
+        raise ValueError("Invalid protobuf varint.")
+
+    result = []
+    while offset < len(data):
+        tag = varint()
+        number, wire = tag >> 3, tag & 7
+        if wire == 0:
+            value = varint()
+        elif wire in {1, 2, 5}:
+            size = varint() if wire == 2 else (8 if wire == 1 else 4)
+            value = data[offset:offset + size]
+            offset += size
+            if len(value) != size:
+                raise ValueError("Truncated protobuf metadata.")
+        else:
+            raise ValueError("Unsupported protobuf metadata.")
+        result.append((number, wire, value))
+    return result
+
+
+def decrypt(data):
+    data = bytes(data)
+    if not data.startswith(b"v10"):
+        return data
+    key = hashlib.pbkdf2_hmac("sha1", b"peanuts", b"saltysalt", 1, 16).hex()
+    # This machine uses Chromium's basic password store; plaintext stays in memory.
+    return subprocess.run(["openssl", "enc", "-d", "-aes-128-cbc", "-K", key, "-iv", (b" " * 16).hex()],
+                          input=data[3:], capture_output=True, check=True).stdout
+
+
+def pending(data):
+    values = {number: value for number, wire, value in fields(decrypt(data)) if wire == 0}
+    return values.get(4, 0) > values.get(5, 0)
+
+
+def connect(path):
+    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+
+
+def preflight(profile):
+    with connect(profile / "Login Data For Account") as db:
+        if db.execute("select count(*) from logins").fetchone()[0]:
+            raise ValueError("Preserve account-store passwords before resetting Sync identity.")
+    account_bookmarks = json.loads((profile / "AccountBookmarks").read_text())
+
+    def urls(node):
+        return int(node.get("type") == "url") + sum(urls(child) for child in node.get("children", []))
+
+    if any(urls(node) for node in account_bookmarks.get("roots", {}).values()):
+        raise ValueError("Preserve account-store bookmarks before resetting Sync identity.")
+    with connect(profile / "Account Web Data") as db:
+        for (table,) in db.execute("select name from sqlite_master where type='table'"):
+            if table == "meta" or table.startswith("sqlite_"):
+                continue
+            quoted = '"' + table.replace('"', '""') + '"'
+            if db.execute("select count(*) from " + quoted).fetchone()[0]:
+                raise ValueError("Preserve account-store autofill data before resetting Sync identity.")
+    metadata = []
+    with connect(profile / "Login Data") as db:
+        metadata.extend(row[0] for row in db.execute("select cast(metadata as blob) from sync_entities_metadata"))
+        for (value,) in db.execute("select password_value from logins"):
+            if value:
+                decrypt(value).decode("utf-8")
+    with connect(profile / "Web Data") as db:
+        metadata.extend(row[0] for row in db.execute("select cast(value as blob) from autofill_sync_metadata"))
+    bookmarks = json.loads((profile / "Bookmarks").read_text())
+    for number, wire, value in fields(base64.b64decode(bookmarks.get("sync_metadata", ""))):
+        if number == 2 and wire == 2:
+            metadata.extend(value for number, wire, value in fields(value) if number == 2 and wire == 2)
+    if any(pending(value) for value in metadata):
+        raise ValueError("Finish pending Sync commits before resetting identity.")
+    print(f"account_caches_empty=true pending_entities=0 metadata_entities={len(metadata)}")
+
+
+def snapshot(path):
+    data = path.read_bytes()
+    offset = 0
+    result = {}
+    while offset < len(data):
+        key_size, value_size = struct.unpack_from("<QQ", data, offset)
+        offset += 16
+        key = data[offset:offset + key_size]
+        offset += key_size
+        result[key] = data[offset:offset + value_size]
+        offset += value_size
+    if offset != len(data):
+        raise ValueError("Invalid GCM snapshot.")
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true")
+    args = parser.parse_args()
+    home = Path.home()
+    original = (home / ".config/browser-os").resolve()
+    neo = (home / ".config/browser-claw").resolve()
+    if original == neo:
+        raise ValueError("Browser profiles must remain separate.")
+    processes = subprocess.run(["pgrep", "-x", "browserclaw|browseros"], capture_output=True, text=True, check=False)
+    if processes.returncode != 1:
+        raise ValueError("Close both browsers before changing Sync metadata.")
+    path = neo / "Profile 3/Preferences"
+    old = json.loads(path.read_text())
+    source = json.loads((original / "Profile 3/Preferences").read_text())
+    new, copied = prepare(old, source)
+    if copied:
+        preflight(neo / "Profile 3")
+    here = Path(__file__).resolve().parent
+    with tempfile.TemporaryDirectory(prefix="neo-sync-identity-") as directory:
+        scratch = Path(directory)
+        tool = scratch / "gcm-sync-records"
+        subprocess.run(["g++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror", str(here / "gcm-sync-records.cc"), "-lleveldb", "-o", str(tool)], check=True)
+        copies = []
+        for label, root in [("original", original), ("neo", neo)]:
+            target = scratch / label
+            shutil.copytree(root / "Profile 3/GCM Store", target)
+            output = scratch / (label + ".bin")
+            subprocess.run([str(tool), str(target), str(output)], check=True)
+            copies.append(snapshot(output))
+        shared = shared_push(*copies)
+        print(f"copied_sync_accounts={copied} shared_sync_push_id={shared} apply={args.apply}")
+        if not args.apply:
+            return
+        if shared:
+            subprocess.run([str(tool), str(neo / "Profile 3/GCM Store"), str(scratch / "before.bin"), "--apply"], check=True)
+        if copied:
+            descriptor, temporary = tempfile.mkstemp(prefix=".sync-identity-", dir=path.parent)
+            try:
+                with os.fdopen(descriptor, "w") as stream:
+                    json.dump(new, stream, separators=(",", ":"))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.chmod(temporary, path.stat().st_mode & 0o777)
+                os.replace(temporary, path)
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+        print("neo_identity_prepared=true original_profile_unchanged=true")
+
+
+if __name__ == "__main__":
+    main()

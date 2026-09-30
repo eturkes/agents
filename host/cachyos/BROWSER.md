@@ -6,7 +6,7 @@
 - Launch = `browseros-neo` → `~/.local/bin/browseros-neo` → `host/cachyos/browseros-neo`; desktop = `browserclaw.desktop`.
 - Neo launcher = desktop environment + PSD readiness + cache directory + `Profile 3` + `--password-store=basic`. `browseros-neo-signin` reuses Google OAuth settings from the private BrowserOS desktop entry; keep credentials outside tracked files and logs.
 - Managed profiles require configured OAuth clients at startup. Preserve account/management metadata; verify Chromium's `Signin.SigninAllowed` histogram and the native desktop UI.
-- BrowserOS keeps browser sync; Neo uses `--disable-sync` because the copied profiles share a sync cache GUID. Neo retains local data and website sessions.
+- Browser sync = enabled in both; each has its own Sync GUID + Sync FCM InstanceID/token. Preserve BrowserOS's identity; regenerate copied Neo metadata before enabling sync.
 - Launch the native binary through the machine wrapper; the AUR doctor deletes applied OTA migrations against its older bundled server.
 - Profile = `~/.config/browser-claw`; PSD = `BROWSERS=(browseros-neo)`, overlay + suspend sync. Original BrowserOS data = `~/.config/browser-os` → `chromium`; use a separate profile copy for each browser.
 - PSD definition = `psd-browseros-neo` → `/usr/share/psd/browsers/browseros-neo`; services = `psd.service` + `psd-resync.timer`.
@@ -31,15 +31,31 @@ Set `Local State.browseros.server.proxy_port=9200`; active sidecar/CDP ports →
 Set the user `browserclaw.desktop` Exec to `/home/eturkes/.local/bin/browseros-neo %U`.
 Then enable PSD: `systemctl --user enable --now psd.service`.
 
+## Sync identity replay
+
+Close both browsers and preserve offline profile backups first.
+Dependencies = `leveldb`, `g++`, `openssl`; run from this repository root:
+
+```bash
+python -B host/cachyos/browseros-neo-sync-identity
+python -B host/cachyos/browseros-neo-sync-identity --apply
+```
+
+The recipe clears copied Neo transport metadata/history + only the Sync app's copied GCM IID/registration. Chromium generates fresh identities at startup.
+Other preferences, account/management state, model files and non-Sync GCM records remain intact. Prepared/distinct identities make replay a no-op.
+Guards = empty account caches, no pending metadata commits, decryptable basic-store passwords. Profile/model files remain in place; native first downloads rebuild server caches.
+Verify first sync, distinct identities, bookmarks/passwords and wallet cache values before using the repaired profile.
+
 ## Checks
 
 ```bash
 python -B bin/check-browseros-call -q
 python -B host/cachyos/check-browseros-neo-launcher -q
+python -B host/cachyos/check-browseros-neo-sync-identity -q
 python -B host/cachyos/check-browseros-neo
 bash -n host/cachyos/browseros-neo
 shellcheck host/cachyos/browseros-neo
-ruff check bin/browseros-call bin/check-browseros-call host/cachyos/browseros-neo-signin host/cachyos/check-browseros-neo-launcher host/cachyos/check-browseros-neo host/cachyos/prune-desktop
+ruff check bin/browseros-call bin/check-browseros-call host/cachyos/browseros-neo-signin host/cachyos/browseros-neo-sync-identity host/cachyos/check-browseros-neo-launcher host/cachyos/check-browseros-neo-sync-identity host/cachyos/check-browseros-neo host/cachyos/prune-desktop
 codex/cachyos/check-instructions
 codex/cachyos/deploy-instructions
 ```
