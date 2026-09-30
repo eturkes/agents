@@ -1,8 +1,13 @@
-# BrowserOS Neo
+# Browsers
 
-- Package = AUR `browseros-neo-bin`; retain `profile-sync-daemon`.
+- Roles = BrowserOS for the user; BrowserOS Neo for agents. Retain both packages and independent profiles.
+- Packages = AUR `browseros-bin` + `browseros-neo-bin`; retain `profile-sync-daemon`.
+- BrowserOS launch = existing private `~/.local/share/applications/browseros.desktop`; original profile + sign-in settings remain intact.
 - Launch = `browseros-neo` → `~/.local/bin/browseros-neo` → `host/cachyos/browseros-neo`; desktop = `browserclaw.desktop`.
-- Launcher = desktop environment + PSD readiness + cache directory + `Profile 3` + `--password-store=basic`. It runs the native binary directly; the AUR doctor deletes applied OTA migrations against its older bundled server.
+- Neo launcher = desktop environment + PSD readiness + cache directory + `Profile 3` + `--password-store=basic`. `browseros-neo-signin` reuses Google OAuth settings from the private BrowserOS desktop entry; keep credentials outside tracked files and logs.
+- Managed profiles require configured OAuth clients at startup. Preserve account/management metadata; verify Chromium's `Signin.SigninAllowed` histogram and the native desktop UI.
+- BrowserOS keeps browser sync; Neo uses `--disable-sync` because the copied profiles share a sync cache GUID. Neo retains local data and website sessions.
+- Launch the native binary through the machine wrapper; the AUR doctor deletes applied OTA migrations against its older bundled server.
 - Profile = `~/.config/browser-claw`; PSD = `BROWSERS=(browseros-neo)`, overlay + suspend sync. Original BrowserOS data = `~/.config/browser-os` → `chromium`; use a separate profile copy for each browser.
 - PSD definition = `psd-browseros-neo` → `/usr/share/psd/browsers/browseros-neo`; services = `psd.service` + `psd-resync.timer`.
 - Cache = `~/.cache/browser-claw` → `/tmp/browser-claw-home-cache`; `/etc/tmpfiles.d/browseros-neo.conf` creates the private directory.
@@ -30,13 +35,15 @@ Then enable PSD: `systemctl --user enable --now psd.service`.
 
 ```bash
 python -B bin/check-browseros-call -q
+python -B host/cachyos/check-browseros-neo-launcher -q
 python -B host/cachyos/check-browseros-neo
 bash -n host/cachyos/browseros-neo
 shellcheck host/cachyos/browseros-neo
-ruff check bin/browseros-call bin/check-browseros-call host/cachyos/check-browseros-neo host/cachyos/prune-desktop
+ruff check bin/browseros-call bin/check-browseros-call host/cachyos/browseros-neo-signin host/cachyos/check-browseros-neo-launcher host/cachyos/check-browseros-neo host/cachyos/prune-desktop
 codex/cachyos/check-instructions
 codex/cachyos/deploy-instructions
 ```
 
-Login reuse → inspect GitHub Settings + Google Account in Neo; both must stay signed in.
-Restart → stop Neo and its sidecar, prove ports quiescent, relaunch, rerun the live check.
+Login reuse → inspect GitHub Settings + Google Account in Neo; both must stay signed in. Inspect a desktop capture for native account-policy dialogs.
+Restart → stop Neo and its sidecar before PSD unsync; prove ports quiescent, relaunch, rerun the live check.
+Isolated sign-in checks → offline profile copy + `--disable-browseros-server` + `--disable-browseros-server-updater` + `--disable-browseros-extensions` + `--disable-sync` + separate CDP port. Compare the startup eligibility with and without the private OAuth settings; keep live profiles and MCP configuration unchanged.

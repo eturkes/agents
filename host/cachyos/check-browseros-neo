@@ -44,6 +44,13 @@ def main():
     def text(result):
         return "\n".join(item["text"] for item in result["content"] if item["type"] == "text")
 
+    eligibility = call("run", {
+        "code": 'return await browser.cdp("Browser.getHistogram", {name:"Signin.SigninAllowed"});'
+    })["structuredContent"]["value"]["histogram"]
+    assert eligibility["count"] > 0 and eligibility["sum"] == eligibility["count"], eligibility
+    assert json.loads((profile / "Profile 3/Preferences").read_text())["signin"]["allowed"]
+    print("browser_signin_eligibility=PASS", flush=True)
+
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             body = b'''<!doctype html><html lang="en"><title>Neo MCP check</title>

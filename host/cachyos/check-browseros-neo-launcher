@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Check OAuth launch settings without starting a browser or exposing secrets."""
+import runpy
+import tempfile
+import unittest
+from pathlib import Path
+
+load = runpy.run_path(str(Path(__file__).with_name("browseros-neo-signin")))["google_signin"]
+
+
+class GoogleSignin(unittest.TestCase):
+    def entry(self, command):
+        temporary = tempfile.TemporaryDirectory(prefix="neo-launcher-check-")
+        self.addCleanup(temporary.cleanup)
+        path = Path(temporary.name) / "browseros.desktop"
+        path.write_text("[Desktop Entry]\nExec=" + command + "\n")
+        return path
+
+    def test_environment_and_switches(self):
+        environment, switches = load(self.entry(
+            "env GOOGLE_DEFAULT_CLIENT_ID=env-id GOOGLE_DEFAULT_CLIENT_SECRET=env-secret "
+            "GOOGLE_API_KEY=api-key UNRELATED=drop browseros --oauth2-client-id=flag-id "
+            "--oauth2-client-secret=flag-secret --restore-last-session %U"
+        ))
+        self.assertEqual(environment, {"GOOGLE_DEFAULT_CLIENT_ID": "env-id",
+                                      "GOOGLE_DEFAULT_CLIENT_SECRET": "env-secret", "GOOGLE_API_KEY": "api-key"})
+        self.assertEqual(switches, ["--oauth2-client-id=flag-id", "--oauth2-client-secret=flag-secret"])
+
+    def test_environment_only_keeps_literal_values(self):
+        secret = 'literal $(touch unused); `false` with spaces %value'
+        environment, switches = load(self.entry(
+            "env GOOGLE_DEFAULT_CLIENT_ID=id GOOGLE_DEFAULT_CLIENT_SECRET='" + secret + "' browseros %U"
+        ))
+        self.assertEqual(environment["GOOGLE_DEFAULT_CLIENT_SECRET"], secret)
+        self.assertEqual(switches, [])
+
+    def test_switches_only(self):
+        environment, switches = load(self.entry("browseros --oauth2-client-id=id --oauth2-client-secret=secret"))
+        self.assertEqual(environment, {})
+        self.assertEqual(switches, ["--oauth2-client-id=id", "--oauth2-client-secret=secret"])
+
+    def test_incomplete_credentials_fail_before_launch(self):
+        with self.assertRaises(ValueError):
+            load(self.entry("env GOOGLE_DEFAULT_CLIENT_ID=id browseros"))
+
+    def test_empty_switch_cannot_hide_behind_environment(self):
+        with self.assertRaises(ValueError):
+            load(self.entry(
+                "env GOOGLE_DEFAULT_CLIENT_ID=id GOOGLE_DEFAULT_CLIENT_SECRET=secret "
+                "browseros --oauth2-client-id="
+            ))
+
+
+if __name__ == "__main__":
+    unittest.main()
