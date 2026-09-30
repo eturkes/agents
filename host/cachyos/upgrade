@@ -201,7 +201,7 @@ postflight() {
     nvidia-smi --query-gpu=name,driver_version,memory.used,display_active --format=csv
   check 'Codex executable' 'Check the Codex installation and PATH.' show codex --version
   check_codexify
-  check 'BrowserOS connection' 'Start BrowserOS. Then run upgrade --check again.' hide \
+  check 'BrowserOS Neo connection' 'Run browseros-neo. Then run upgrade --check again.' hide \
     browseros-call tabs '{"action":"list"}'
   check_configs
   check 'Project snapshot storage' 'Run project-snapshots report. Resolve the reported error.' show \

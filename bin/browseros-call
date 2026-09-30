@@ -1,18 +1,107 @@
 #!/usr/bin/env python3
-"""Call a BrowserOS MCP tool and print its text content.
+"""Call the configured BrowserOS MCP and print tool text.
 
 Usage: browseros-call <tool> '<json-args>'
        browseros-call tabs '{"action":"list"}'
        browseros-call snapshot '{"page":2}'
+       browseros-call --list-tools
 """
 
+import hashlib
 import json
+import os
 import sys
+import urllib.error
 import urllib.request
+from pathlib import Path
 
-# BrowserOS pairs each text tool with a stub structuredContent; a client rendering that
-# alone drops content[] → snapshot/read/grep/run arrive empty through the tool path.
-ENDPOINT = "http://127.0.0.1:9000/mcp"
+import tomllib
+
+
+def endpoint() -> str:
+    config = Path.home() / ".codex/config.toml"
+    servers = tomllib.loads(config.read_text()).get("mcp_servers", {}) if config.exists() else {}
+    server = servers.get("browseros-neo", servers.get("browseros", {}))
+    return os.environ.get("BROWSEROS_MCP_URL", server.get("url", "http://127.0.0.1:9000/mcp"))
+
+
+def decode(body: str) -> dict | None:
+    if body.lstrip().startswith("{"):
+        return json.loads(body)
+    # Streamable HTTP delivers JSON-RPC as SSE data, with optional empty events.
+    for event in body.replace("\r\n", "\n").split("\n\n"):
+        data = "\n".join(line[5:].lstrip() for line in event.splitlines() if line.startswith("data:"))
+        if data:
+            message = json.loads(data)
+            if "result" in message or "error" in message:
+                return message
+    return None
+
+
+def call(url: str, method: str, params: dict, session: str | None = None):
+    body = {"jsonrpc": "2.0", "method": method, "params": params}
+    if not method.startswith("notifications/"):
+        body["id"] = 1
+    headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+    if session:
+        headers.update({"Mcp-Session-Id": session, "Mcp-Protocol-Version": "2025-03-26"})
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers)
+    with urllib.request.urlopen(req, timeout=120) as response:
+        if response.headers.get_content_type() == "text/event-stream":
+            event = []
+            # Return on the JSON-RPC response; an SSE connection can remain open.
+            for raw in response:
+                line = raw.decode().rstrip("\r\n")
+                event.append(line)
+                if not line:
+                    payload = decode("\n".join(event))
+                    if payload is not None:
+                        return payload, response.headers.get("Mcp-Session-Id")
+                    event = []
+            raise ValueError("MCP stream ended without a result")
+        content = response.read().decode()
+        return decode(content) if content.strip() else {}, response.headers.get("Mcp-Session-Id")
+
+
+def invoke(method: str, params: dict) -> dict:
+    url = endpoint()
+    key = hashlib.sha256((url + os.environ.get("CODEX_THREAD_ID", "cli")).encode()).hexdigest()[:24]
+    cache = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / f"browseros-call-{key}.json"
+    state = json.loads(cache.read_text()) if cache.exists() else {}
+    session = state.get("transport")
+    explicit = "session" in params.get("arguments", {})
+    expired = False
+    if method == "tools/call" and state.get("browser"):
+        params["arguments"].setdefault("session", state["browser"])
+
+    def persist(payload):
+        browser_session = payload.get("result", {}).get("_meta", {}).get("com.browseros.neo/session")
+        if browser_session:
+            state["browser"] = browser_session
+        cache.write_text(json.dumps(state))
+        cache.chmod(0o600)
+        return payload
+
+    if session:
+        try:
+            return persist(call(url, method, params, session)[0])
+        except urllib.error.HTTPError as error:
+            if error.code not in {404, 422}:
+                raise
+            expired = True
+    initialized, session = call(url, "initialize", {
+        "protocolVersion": "2025-03-26", "capabilities": {},
+        "clientInfo": {"name": "codex-cli", "version": "1"},
+    })
+    if "error" in initialized:
+        return initialized
+    call(url, "notifications/initialized", {}, session)
+    state["transport"] = session
+    if expired:
+        state.pop("browser", None)
+    if expired and not explicit:
+        params.get("arguments", {}).pop("session", None)
+    return persist(call(url, method, params, session)[0])
 
 
 def main() -> int:
@@ -21,20 +110,16 @@ def main() -> int:
         return 2
     name = sys.argv[1]
     args = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
-    body = json.dumps(
-        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}}
-    ).encode()
-    req = urllib.request.Request(
-        ENDPOINT,
-        data=body,
-        headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+    payload = invoke("tools/list", {}) if name == "--list-tools" else invoke(
+        "tools/call", {"name": name, "arguments": args}
     )
-    with urllib.request.urlopen(req, timeout=120) as response:
-        payload = json.loads(response.read().decode())
     if "error" in payload:
         print(json.dumps(payload["error"]), file=sys.stderr)
         return 1
     result = payload.get("result", {})
+    if name == "--list-tools":
+        print(json.dumps(result, indent=2))
+        return 0
     for item in result.get("content", []):
         if item.get("type") == "text":
             print(item["text"])

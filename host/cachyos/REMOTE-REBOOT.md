@@ -57,31 +57,9 @@ sudo -n systemctl is-active intel-graphics-rollback.timer
 sudo -n systemctl restart sddm.service
 ```
 
-BrowserOS restart must select the existing synced profile (`Profile 3`). An unqualified launch can stop at the native profile picker.
-The picker is a CDP `browser_ui` target, not a normal tab; a healthy MCP socket can still report no browser window.
-Preserve the private desktop entry's launch options; keep its credentials out of logs. Refresh only the four desktop environment keys.
-
-```bash
-python - <<'PY'
-import configparser
-import os
-import shlex
-import subprocess
-from pathlib import Path
-
-env = os.environ.copy()
-for line in subprocess.check_output(['systemctl', '--user', 'show-environment'], text=True).splitlines():
-    key, _, value = line.partition('=')
-    if key in {'DISPLAY', 'XAUTHORITY', 'XDG_SESSION_TYPE', 'XDG_CURRENT_DESKTOP'}:
-        env[key] = value
-entry = configparser.ConfigParser(interpolation=None)
-entry.read(Path.home() / '.local/share/applications/browseros.desktop')
-args = [arg for arg in shlex.split(entry['Desktop Entry']['Exec']) if arg not in {'%U', '%u', '%F', '%f'}]
-subprocess.Popen([*args, '--profile-directory=Profile 3', '--restore-last-session'], env=env,
-                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                 start_new_session=True)
-PY
-```
+Browser restart → `browseros-neo --restore-last-session`.
+The machine launcher selects `Profile 3`, starts PSD and imports the four desktop environment keys.
+Profile/cache setup + browser checks → [BROWSER.md](BROWSER.md).
 
 After autologin, verify rendering, CUDA, HDMI, VNC and a real browser WebGL renderer before cancelling the timer:
 

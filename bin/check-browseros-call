@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Check JSON/SSE transport, session reuse and text extraction with local HTTP."""
+import http.server
+import json
+import os
+import subprocess
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+
+
+class Transport(unittest.TestCase):
+    def probe(self, streaming):
+        calls = []
+        release = threading.Event()
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                message = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                calls.append((message, self.headers.get("Mcp-Session-Id")))
+                method = message["method"]
+                if method.startswith("notifications/"):
+                    self.send_response(202)
+                    self.end_headers()
+                    return
+                if method == "initialize":
+                    result = {"protocolVersion": "2025-03-26", "capabilities": {},
+                              "serverInfo": {"name": "test", "version": "1"}}
+                elif method == "tools/list":
+                    result = {"tools": []}
+                else:
+                    result = {"content": [{"type": "text", "text": "actual text"}],
+                              "structuredContent": {"page": 1},
+                              "_meta": {"com.browseros.neo/session": "browser-session"}}
+                body = json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": result})
+                self.send_response(200)
+                if streaming:
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Mcp-Session-Id", "transport-session")
+                    body = "data: \n\n: heartbeat\n\ndata: " + body + "\n\n"
+                else:
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body.encode())))
+                self.end_headers()
+                self.wfile.write(body.encode())
+                self.wfile.flush()
+                if streaming:
+                    release.wait(5)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            with tempfile.TemporaryDirectory(prefix="browseros-call-check-") as directory:
+                environment = os.environ | {
+                    "BROWSEROS_MCP_URL": f"http://127.0.0.1:{server.server_port}/mcp",
+                    "XDG_RUNTIME_DIR": directory, "CODEX_THREAD_ID": "transport-check",
+                }
+                script = os.environ.get("BROWSEROS_CALL_SCRIPT", str(Path(__file__).with_name("browseros-call")))
+                for args in (["tabs", '{"action":"list"}'], ["tabs", '{"action":"list"}'], ["--list-tools"]):
+                    completed = subprocess.run(["python", script, *args], env=environment,
+                                               capture_output=True, text=True, timeout=3, check=False)
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout.strip(), '{\n  "tools": []\n}' if args[0].startswith("--") else "actual text")
+                tool_calls = [(body, session) for body, session in calls if body["method"] == "tools/call"]
+                self.assertEqual(tool_calls[1][0]["params"]["arguments"]["session"], "browser-session")
+                if streaming:
+                    self.assertEqual(sum(body["method"] == "initialize" for body, _ in calls), 1)
+                    self.assertTrue(all(session == "transport-session" for _, session in tool_calls))
+        finally:
+            release.set()
+            server.shutdown()
+            server.server_close()
+
+    def test_json(self):
+        self.probe(False)
+
+    def test_open_sse(self):
+        self.probe(True)
+
+
+if __name__ == "__main__":
+    unittest.main()

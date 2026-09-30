@@ -22,7 +22,7 @@ Busy uv cache → skip pruning (`UV_LOCK_TIMEOUT=0`), preserve active processes;
 `upgrade` runs postflight after successful or failed update stages; later update stages stop on failure.
 `upgrade --check` runs the same read-only checks from any directory, without updates or cleanup.
 
-- Coverage = stock `pacman -Dk`, bcachefs + NVIDIA DKMS for every installed kernel, recovery checkpoint, system/user failed units, crash policy, NVIDIA access, Codex, Codexify, BrowserOS, configuration files + project snapshot storage.
+- Coverage = stock `pacman -Dk`, bcachefs + NVIDIA DKMS for every installed kernel, recovery checkpoint, system/user failed units, crash policy, NVIDIA access, Codex, Codexify, BrowserOS Neo, configuration files + project snapshot storage.
 - Status = `PASS` check succeeded; `REVIEW` manual decision; `FAIL` action required. Exit = `0` clear, `1` failure, `2` review, `64` usage/PTY.
 - Failed units → compare with the pre-update baseline; standalone checks label current failures without attributing them to updates.
 - `CACHY_UPDATE_NOTICE` alone → review; other package-record errors → failure. Preserve the marker and stock check.

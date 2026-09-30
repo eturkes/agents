@@ -11,10 +11,11 @@ REMOVE = {
     "spotify", "pcsx2-latest-bin", "kmail", "kdeconnect", "caprine-bin",
     "electron29-bin", "signal-desktop", "simplenote-electron-bin",
     "wasistlos-appimage", "nordvpn-gui",
-    "firefox", "google-chrome", "profile-sync-daemon",
+    "firefox", "google-chrome",
 }
 KEEP = {
     "thunderbird", "rstudio-desktop-bin", "r", "browseros-bin", "openai-codex-bin",
+    "browseros-neo-bin", "profile-sync-daemon",
     "tailscale", "nordvpn-bin", "qt6-base", "kwallet", "kwallet-pam",
     "libreoffice-fresh", "inkscape", "ffmpeg", "poppler", "python", "uv", "pnpm",
 }
@@ -81,8 +82,6 @@ def main():
         if ({"firefox", "google-chrome"} & set(selected)
                 and output("xdg-settings", "get", "default-web-browser") != ["browseros.desktop"]):
             raise SystemExit("Set BrowserOS as the default browser before removal.")
-        if "profile-sync-daemon" in selected:
-            subprocess.run(["systemctl", "--user", "disable", "--now", "psd.service"], check=True)
         for unit in ("app-org.kde.kalendarac@autostart.service", "app-org.kde.kdeconnect.daemon@autostart.service"):
             if output("systemctl", "--user", "show", unit, "-p", "LoadState", "--value") == ["loaded"]:
                 subprocess.run(["systemctl", "--user", "stop", unit], check=True)

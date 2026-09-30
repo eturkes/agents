@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Check the machine profile, PSD, cache and live Neo MCP with a local form."""
+import argparse
+import base64
+import http.server
+import json
+import re
+import runpy
+import subprocess
+import threading
+from pathlib import Path
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--artifacts", type=Path, help="Save the test screenshot in this directory.")
+    args = parser.parse_args()
+    home = Path.home()
+    subprocess.run(["pacman", "-Q", "browseros-neo-bin", "profile-sync-daemon"], check=True)
+    for unit in ("psd.service", "psd-resync.timer"):
+        subprocess.run(["systemctl", "--user", "is-active", "--quiet", unit], check=True)
+    profile = home / ".config/browser-claw"
+    assert profile.is_symlink() and "/psd/" in str(profile.resolve())
+    filesystem = subprocess.check_output(["findmnt", "-n", "-T", str(profile), "-o", "FSTYPE"], text=True).strip()
+    assert filesystem == "fuse.fuse-overlayfs", filesystem
+    assert json.loads((profile / "Local State").read_text())["profile"]["last_used"] == "Profile 3"
+    cache = home / ".cache/browser-claw"
+    assert cache.is_symlink() and cache.resolve() == Path("/tmp/browser-claw-home-cache")
+    print("profile_psd_cache=PASS", flush=True)
+
+    helper = runpy.run_path(str(Path(__file__).resolve().parents[2] / "bin/browseros-call"))
+    assert helper["endpoint"]() == "http://127.0.0.1:9200/mcp"
+    initialized, _ = helper["call"](helper["endpoint"](), "initialize", {
+        "protocolVersion": "2025-03-26", "capabilities": {},
+        "clientInfo": {"name": "neo-machine-check", "version": "1"},
+    })
+    assert initialized["result"]["serverInfo"]["name"] == "browseros-neo"
+
+    def call(name, arguments):
+        result = helper["invoke"]("tools/call", {"name": name, "arguments": arguments})["result"]
+        assert not result.get("isError"), result
+        return result
+
+    def text(result):
+        return "\n".join(item["text"] for item in result["content"] if item["type"] == "text")
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = b'''<!doctype html><html lang="en"><title>Neo MCP check</title>
+<body style="font:20px sans-serif;padding:2rem"><main><h1>Neo MCP check</h1>
+<label>Name <input aria-label="Name"></label><button onclick="document.querySelector('output').textContent=document.querySelector('input').value">Apply</button>
+<output aria-live="polite"></output></main></body></html>'''
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *arguments):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    page = None
+    try:
+        result = call("tabs", {"action": "new", "url": f"http://127.0.0.1:{server.server_port}/"})
+        page = int(re.search(r"opened page (\d+)", text(result))[1])
+        snapshot = text(call("snapshot", {"page": page}))
+        refs = {}
+        for line in snapshot.splitlines():
+            if 'textbox "Name"' in line:
+                refs["name"] = re.search(r"\b(e\d+)\b", line)[1]
+            if 'button "Apply"' in line:
+                refs["apply"] = re.search(r"\b(e\d+)\b", line)[1]
+        call("act", {"page": page, "kind": "fill", "ref": refs["name"], "value": "Neo works"})
+        call("act", {"page": page, "kind": "click", "ref": refs["apply"]})
+        evaluated = text(call("evaluate", {"page": page, "code": "return {value:document.querySelector('output').textContent};"}))
+        assert re.search(r'"value"\s*:\s*"Neo works"', evaluated), evaluated
+        assert "Neo MCP check" in text(call("read", {"page": page}))
+        print("tabs_snapshot_fill_click_evaluate_read=PASS", flush=True)
+        call("run", {"code": f'return await browser.cdpJsonForPage({page}, "Page.bringToFront", "{{}}");'})
+        image = call("screenshot", {"page": page, "format": "png"})
+        png = base64.b64decode(next(item["data"] for item in image["content"] if item["type"] == "image"))
+        assert png.startswith(b"\x89PNG\r\n\x1a\n")
+        if args.artifacts:
+            args.artifacts.mkdir(parents=True, exist_ok=True)
+            (args.artifacts / "neo-mcp-check.png").write_bytes(png)
+        pdf = text(call("pdf", {"page": page}))
+        pdf_path = Path(re.search(r"(/[^\n`]*\.pdf)", pdf)[1])
+        assert pdf_path.read_bytes().startswith(b"%PDF-")
+        pdf_path.unlink()
+        print("run_screenshot_pdf=PASS", flush=True)
+    finally:
+        if page is not None:
+            call("tabs", {"action": "close", "page": page})
+        server.shutdown()
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

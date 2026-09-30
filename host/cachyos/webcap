@@ -120,7 +120,7 @@ let page;
 // running.
 //
 // Copy lands beside the original = the only place --reflink could share
-// extents; psd's fuse-overlayfs forces a real copy (~1.4G, ~1s). realpath first, since ~/.config/browser-os is a
+// extents; psd's fuse-overlayfs forces a real copy (~1.4G, ~1s). realpath first, since ~/.config/browser-claw is a
 // symlink into /run and `cp -a` would copy the link alone. Singleton* name the
 // live instance's socket → a copy keeping them forwards the capture into that
 // browser.

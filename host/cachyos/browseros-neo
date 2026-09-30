@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+
+while IFS='=' read -r key value; do
+  case "$key" in
+    DISPLAY|XAUTHORITY|XDG_SESSION_TYPE|XDG_CURRENT_DESKTOP) export "$key=$value" ;;
+  esac
+done < <(systemctl --user show-environment)
+
+systemctl --user start psd.service
+install -d -m700 /tmp/browser-claw-home-cache
+export LD_LIBRARY_PATH="/usr/lib/browserclaw${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# The AUR doctor deletes applied OTA migrations using the older bundled binary.
+exec /usr/lib/browserclaw/browserclaw --password-store=basic --profile-directory="Profile 3" "$@"
