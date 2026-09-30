@@ -29,7 +29,7 @@ ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --e
 
 The advisor lets the agent consult Fable 5.1 while it works. Each consultation uses part of your Fable usage limit. The advisor is off until you turn it on.
 
-- To use the advisor for one session, add `--advisor claude-fable-5-1` to the start command.
+- To use the advisor for one session, add `--advisor claude-fable-5-1` to the start command. Put `CLAUDE_CODE_FOOTER_INDICATOR=adv` in front of the command. The footer then shows `◆ adv`.
 - To turn on the advisor from inside a session, send `/advisor claude-fable-5-1` as a message of its own. Then paste the body in a new message. This setting also applies to new sessions until you send `/advisor off`.
 
 Claude Code reads a whole message that starts with `/advisor` as the advisor model name. Thus, a body in the same message does not get to the agent.
