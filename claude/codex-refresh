@@ -1,0 +1,36 @@
+#!/bin/sh
+# Refresh Codex (ChatGPT plan) usage cache when age >=180s; same detached locked
+# poll as oauth-refresh. Cache path = $1, default ~/.claude/.codex_usage.json.
+# Consumer = statusline. Credentials = ~/.codex/auth.json → CLIProxyAPI Codex
+# entries; first response carrying .rate_limit wins.
+uc="${1:-${CODEX_USAGE_FILE:-$HOME/.claude/.codex_usage.json}}"
+lk="$uc.lock"
+now=$(date +%s)
+
+ca=$(stat -c %Y "$uc" 2>/dev/null || echo 0)
+[ "$(( now - ca ))" -ge 180 ] || exit 0
+lm=$(stat -c %Y "$lk" 2>/dev/null || echo 0)     # reap stale-fetch lock
+[ "$lm" -gt 0 ] && [ "$(( now - lm ))" -ge 60 ] && rmdir "$lk" 2>/dev/null
+mkdir "$lk" 2>/dev/null || exit 0                # live fetch owns lock
+
+# Header lines per credential file; `.tokens // .` spans Codex CLI + proxy
+# shapes, non-Codex proxy entries emit nothing.
+hd='(.tokens // .) as $t
+  | select((.type // "codex") == "codex" and .disabled != true and ($t.access_token // "") != "")
+  | "Authorization: Bearer \($t.access_token)", ($t.account_id // empty | "ChatGPT-Account-Id: \(.)")'
+
+# Headers = child-local variable → curl stdin (-H @-): process listings show
+# command structure alone. dl = 50s + a request only with >8s (its --max-time)
+# left ⇒ the loop ends inside the 60s stale-lock reap.
+setsid -f sh -c '
+  uc=$1 lk=$2 hd=$3; shift 3
+  dl=$(( $(date +%s) + 50 ))
+  for f in "$@"; do
+    h=$(jq -r "$hd" "$f" 2>/dev/null)
+    [ -n "$h" ] || continue
+    [ "$(( dl - $(date +%s) ))" -gt 8 ] || break
+    r=$(printf "%s\n" "$h" | curl -fsS --max-time 8 -H @- https://chatgpt.com/backend-api/wham/usage 2>/dev/null)
+    [ -n "$r" ] && printf %s "$r" | jq -e .rate_limit >/dev/null 2>&1 && printf %s "$r" >"$uc.tmp" && mv "$uc.tmp" "$uc" && break
+  done
+  rmdir "$lk" 2>/dev/null
+' _ "$uc" "$lk" "$hd" "${CODEX_AUTH_FILE:-$HOME/.codex/auth.json}" "${CLI_PROXY_AUTH_DIR:-$HOME/.cli-proxy-api}"/*.json </dev/null >/dev/null 2>&1 &
