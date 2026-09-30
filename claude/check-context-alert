@@ -34,7 +34,7 @@ def assistant(total, *, model="claude-opus-5-5", sidechain=False):
 
 
 def teammate(total):
-    return assistant(total, model="gpt-6-astra", sidechain=True)
+    return assistant(total, model="gpt-6.1-sol", sidechain=True)
 
 
 def advisor_turn(before, after):
