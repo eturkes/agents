@@ -49,7 +49,7 @@ class Transport(unittest.TestCase):
                 if streaming:
                     release.wait(5)
 
-            def log_message(self, *args):
+            def log_message(self, format, *args):
                 pass
 
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
