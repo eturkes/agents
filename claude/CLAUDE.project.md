@@ -13,7 +13,7 @@
 
 - Install/configure project-local; work within the launch dir + children.
 - Long horizon → orient, then execute: one session carries a phase end to end across compactions, checkpointed on disk (`Session flow`). Plan the next unit alone — a mid-unit finding reshapes what follows — and start it the moment orientation ends.
-- Research, whenever a tooling, method or design choice is open = your knowledge + `WebSearch`/`WebFetch` + the signed-in browser (BrowserOS MCP) for authenticated + paywalled sources — journals, x.com, GitHub issues + discussions, forums, vendor docs; past a few sources → `researcher`. Primary sources + measurements outrank popularity.
+- Research, whenever a tooling, method or design choice is open = your knowledge + `WebSearch`/`WebFetch` + the signed-in browser (global `CLAUDE.md` `Environment`) for authenticated + paywalled sources — journals, x.com, GitHub issues + discussions, forums, vendor docs; past a few sources → `researcher`. Primary sources + measurements outrank popularity.
 - Briefs + prompts (teammates, `SendMessage`, `claude -p`) carry the broader intent, one narrow well-defined task, its finish line + examples; a role's standing rules live in its agent definition ⇒ a brief states the task-specific delta alone.
 - Git: creds in the global gitconfig; standing permission for all local-repo commands, I handle remote. One commit per cohesive piece of work, deferred mid-iteration to the closing turn; subject = `<scope>: <cause> → <fix>`, body = measurements + SHAs + each teammate the unit used (name, role, verdict). Keep `.gitignore` current.
 
