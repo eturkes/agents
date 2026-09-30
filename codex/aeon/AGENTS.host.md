@@ -1,7 +1,7 @@
 # Codex
 
 - Runtime = Codex + GPT only; plain `codex --yolo` from repo root; instructions = `~/.codex/AGENTS.md` + `~/.codex/config.toml` + applicable repo `AGENTS.md`.
-- Reasoning = `max` for root + subagents; verbosity = low; personality/reasoning-summary/raw-reasoning display = off; Apps = disabled.
+- Verbosity = low; personality/reasoning-summary/raw-reasoning display = off; Apps = disabled.
 - Filesystem = launch dir + user-scoped targets; task-serving environment + Codex changes (skills/plugins/software) = in scope.
 - Direct user instructions > `AGENTS.md` + skill guidelines.
 
