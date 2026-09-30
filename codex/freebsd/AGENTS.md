@@ -43,7 +43,7 @@
 - Corruption = unresolved; related failures → `/var/log/corruption-events.md`. Append dated symptoms, evidence paths, checks/results, repair + validation. Preserve evidence before repair; separate observations/hypotheses + service recovery/root-cause resolution.
 - Preserve accounts/keys + browser credentials. SSH = TCP `9993` + public keys; PF public ingress = host SSH + Caddy HTTP/HTTPS; VM SSH = LAN-only.
 - System maintenance → inspect `zpool status -v` + `/var/log/{daily,weekly,monthly}.log`. Package updates → refresh signed indexes/audits + review exact transactions/reverse dependencies. Stage one host/guest at a time; verify SSH, Caddy/jail/VM + backend health between stages.
-- Recovery = encrypted, restore-tested off-host user/VM data + config/secrets. Retain boot/jail/VM rollback points through post-change validation + verified backup; local ZFS snapshots share the pool.
+- Maintenance recovery → create task-scoped boot/jail/VM rollback points before relevant changes; retain them through post-change validation. Local ZFS snapshots share the pool.
 - Home snapshots = `/usr/local/sbin/home-snapshot` via `/etc/cron.d/home-snapshot`; recover selected files from `~/.zfs/snapshot/`.
 - ZFS repair → record errors, objects + retaining snapshots → repair verified targets → check readability/checksums → clear errors. Delete snapshots by exact full name; monitor validating scrub to completion.
 - Firmware → match installed 51nb board/revision + verify image checksums; arrange console access, stable power + bootable recovery before flashing.
