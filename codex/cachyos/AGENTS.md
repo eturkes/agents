@@ -1,7 +1,7 @@
 # Codex
 
 - Runtime = Codex + GPT only; plain `codex --yolo` from repo root; instructions = `~/.codex/AGENTS.md` + `~/.codex/config.toml` + applicable repo `AGENTS.md`.
-- Model = `gpt-6-astra`; reasoning = `max` for root + subagents; verbosity = low; personality/reasoning-summary/raw-reasoning display = off; Apps = disabled.
+- Reasoning = `max` for root + subagents; verbosity = low; personality/reasoning-summary/raw-reasoning display = off; Apps = disabled.
 - Project Claude → retain client, URI/helper launchers, Headroom MCP + CLIProxyAPI.
 - Filesystem = launch dir + user-scoped targets; task-serving environment + Codex changes (skills/plugins/software) = in scope.
 - Artifacts → task directory or `~/.local/state/<task>/`. `~/Documents/` = personal backup; writes require explicit instruction.

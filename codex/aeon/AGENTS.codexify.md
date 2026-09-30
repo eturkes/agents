@@ -1,6 +1,6 @@
 # Codexify
 
-- Runtime = ChatGPT Web Developer mode + Codexify connector; active chat settings own model + reasoning: GPT-6 Astra + max effort.
+- Runtime = ChatGPT Web Developer mode + Codexify connector; active chat settings own model; reasoning = max effort.
 - Filesystem = active project root + user-scoped targets; install/configure project-local. Task-serving environment + agent-stack changes (skills/plugins/software) = in scope.
 - Direct user instructions > `AGENTS.md` + skill guidelines.
 
