@@ -29,7 +29,9 @@
 # (disableAllHooks also keeps the fork off this hook + turn-email); MAIN's effort;
 # context window lifted past the settings-env 305K teammate pin.
 IN=""
-[ -t 0 ] || IN=$(cat)   # hooks always pipe the payload; a bare terminal run exits quiet
+# Hooks always pipe the payload; a bare terminal run exits quiet. rebut reads no
+# stdin: the Bash tool's stays open + unwritten.
+[ "${1-}" = rebut ] || [ -t 0 ] || IN=$(cat)
 model=gpt-6-astra
 state_dir=$HOME/.claude/cache/astra-advisor
 settings='{"disableAllHooks":true,"advisorModel":"","env":{"CLAUDE_CODE_MAX_CONTEXT_TOKENS":"1000000"}}'
@@ -114,12 +116,13 @@ case $ev in PreToolUse|Stop) ;; *) exit 0 ;; esac
 command grep -q '"type":"advisor_tool"' "$tp" || exit 0
 # Hooks fire ~0.3 s before CC flushes the current message ⇒ an advisor() call in it
 # stays invisible until then. Wait (≤5 s) for the flush: PreToolUse = the call's own
-# tool_use record; Stop = the current turn's last text ends last_assistant_message.
+# tool_use record; Stop = the final response's last text (after the last user record)
+# ends last_assistant_message.
 flushed() {
   case $ev in
     PreToolUse) [ -n "$(batch_of "$tp" "$tid")" ] ;;
-    Stop) [ -z "$lam" ] || tail -n 200 "$tp" | jq -n -e --arg l "$lam" "$human"'
-      reduce (inputs | objects) as $r (null; if $r | human then null elif $r.type == "assistant" then
+    Stop) [ -z "$lam" ] || tail -n 200 "$tp" | jq -n -e --arg l "$lam" '
+      reduce (inputs | objects) as $r (null; if $r.type == "user" then null elif $r.type == "assistant" then
         ([$r.message.content[]? | objects | select(.type == "text") | .text | strings | select(length > 0)] | last) // .
         else . end)
       | . as $t | $t != null and ($l | rtrim | endswith($t | rtrim))' >/dev/null 2>&1 ;;
@@ -143,7 +146,8 @@ own=$(batch_of "$tp" "$tid")
 sibling() {
   [ "$ev" = PreToolUse ] && [ -n "$own" ] && [ "$ping" != true ] || exit 0
   if [ ! -e "$done_f" ]; then
-    [ -n "$(find "$claim" -mmin -10 2>/dev/null)" ] && [ "$(cat "$claim" 2>/dev/null)" = "$own" ] || exit 0
+    [ -n "$(find "$claim" -mmin -10 2>/dev/null)" ] && [ "$(cat "$claim" 2>/dev/null)" = "$own" ] ||
+      [ -e "$done_f" ] || exit 0
     i=0
     while [ ! -e "$done_f" ] && [ "$i" -lt 560 ]; do sleep 1; i=$((i + 1)); done
   fi
@@ -164,9 +168,11 @@ find "$state_dir" -maxdepth 1 -type f -mtime +30 -delete 2>/dev/null
 cut=$(cut_before "$tp" "$id")   # none → no verdict; an uncut fork would show astra Fable's aftermath
 out=""
 [ -n "$cut" ] && out=$(ask "$sid" "${cwd:-$PWD}" "$effort" "$cut" "Second advisor: the transcript above ends where the agent called its advisor tool, another model; that call and its reply are cut off by design, so judge independently. Use no tools. Review the task, the evidence in the tool results, and the agent's latest stated plan and doubt. Reply in under 300 words: your verdict on the current direction; each error, risk or gap with its evidence (file:line, command output or transcript fact); the next step you recommend.")
+# .done first: the claim names the batch until .done does.
 b=""
-if [ -n "$out" ]; then printf '%s\n' "$out" > "$claim"; b=$own; else : > "$claim"; fi
+[ -n "$out" ] && b=$own
 printf '%s' "$b" > "$done_f.tmp" && mv -f "$done_f.tmp" "$done_f"
+if [ -n "$out" ]; then printf '%s\n' "$out" > "$claim"; else : > "$claim"; fi
 
 head="Second advisor ($model, blind to your advisor() reply) reviewed the session up to that call:
 $out

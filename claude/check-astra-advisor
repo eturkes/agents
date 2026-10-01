@@ -28,6 +28,11 @@ TIMEOUT_SHIM = f"""#!/bin/sh
 printf '%s\\n' "$*" >> "$TIMEOUT_LOG"
 exec {shutil.which("timeout")} "$@"
 """
+# Shim `mv`: MV_SLEEP pauses before the move = the window before .done publishes.
+MV_SHIM = f"""#!/bin/sh
+sleep "${{MV_SLEEP:-0}}"
+exec {shutil.which("mv")} "$@"
+"""
 
 # Stub `claude`: records argv + cwd per call, answers like `claude -p --output-format json`.
 STUB = f"""#!{sys.executable}
@@ -94,7 +99,7 @@ def scenario(records, *, event="PreToolUse", mode="ok", sleep="0", result=VERDIC
         home, stubs, cwd = root / "home", root / "bin", root / "work"
         for d in (home, stubs, cwd):
             d.mkdir()
-        for name, body in (("claude", STUB), ("timeout", TIMEOUT_SHIM)):
+        for name, body in (("claude", STUB), ("timeout", TIMEOUT_SHIM), ("mv", MV_SHIM)):
             (stubs / name).write_text(body, encoding="utf-8")
             (stubs / name).chmod(0o755)
         tp = home / ".claude" / "projects" / "-work" / f"{SESSION}.jsonl"
@@ -227,6 +232,12 @@ class AstraAdvisor(unittest.TestCase):
             self.assertEqual(self.late_flush(payload, env, [*prev, text("Plan: ship."), *advisor(), text("Done.")]),
                              BLOCK)
 
+    def test_late_flush_ignores_identical_earlier_response_same_turn(self):
+        prev = [prompt(), text("Done."), tool_use(), tool_result()]
+        with scenario(prev, event="Stop", last_assistant_message="Plan: x.\n\nDone.") as (payload, env, _):
+            self.assertEqual(self.late_flush(payload, env, [*prev, text("Plan: x."), *advisor(), text("Done.")]),
+                             BLOCK)
+
     def test_fork_has_hard_time_bound(self):
         with scenario(TURN) as (payload, env, root):
             self.invoke(payload, env)
@@ -353,6 +364,20 @@ class AstraAdvisor(unittest.TestCase):
                              [VERDICT_DENY, deny(HOLD), None])
             self.assertEqual(len(calls(root)), 1)
 
+    def test_sibling_held_while_verdict_publishes(self):
+        with scenario([*TURN, tool_use("toolu_2")]) as (payload, env, _):
+            env["MV_SLEEP"] = "2"
+            state = Path(env["HOME"]) / ".claude" / "cache" / "astra-advisor"
+            claimer = subprocess.Popen([ADVISOR], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env)
+            assert claimer.stdin is not None
+            claimer.stdin.write(json.dumps(payload))
+            claimer.stdin.close()
+            deadline = time.monotonic() + 10
+            while not (state / f"{CALL}.done.tmp").exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertEqual(self.invoke(payload, env, tool_use_id="toolu_2"), deny(HOLD))
+            self.assertEqual(json.loads(claimer.communicate(timeout=30)[0]), VERDICT_DENY)
+
     def test_delayed_serial_sibling_still_held(self):
         with scenario([*TURN, tool_use("toolu_2"), tool_result(), tool_result("toolu_2")]) as (payload, env, _):
             self.invoke(payload, env)
@@ -407,6 +432,19 @@ class AstraAdvisor(unittest.TestCase):
                                     capture_output=True, env=env, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("Your earlier verdict:\n(none recorded)", calls(root)[1]["argv"][-1])
+
+    def test_rebut_ignores_open_stdin(self):
+        with scenario(TURN) as (payload, env, root):
+            self.invoke(payload, env)
+            r, w = os.pipe()   # Bash tool stdin: open, never written, never closed
+            try:
+                result = subprocess.run([ADVISOR, "rebut", "Fable: x."], stdin=r, text=True, capture_output=True,
+                                        env=env, check=False, timeout=15)
+            finally:
+                os.close(r)
+                os.close(w)
+            self.assertEqual((result.returncode, result.stdout), (0, f"{VERDICT}\n"), result.stderr)
+            self.assertEqual(len(calls(root)), 2)
 
     def test_rebut_requires_gist(self):
         with scenario(TURN) as (_, env, root):
