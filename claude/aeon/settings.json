@@ -93,6 +93,27 @@
             "command": "$HOME/.claude/agent-flow"
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/astra-advisor",
+            "timeout": 600
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/astra-advisor",
+            "timeout": 600
+          }
+        ]
       }
     ],
     "PreCompact": [

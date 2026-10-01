@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+"""Exercise astra-advisor triggers, flush waits, claims, fork cut + arguments, batch holds and rebut mode."""
+
+import contextlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+ADVISOR = os.environ.get("ADVISOR_BIN") or str(Path(__file__).with_name("astra-advisor"))
+SESSION = "session-1"
+CALL = "srvtoolu_01AAA"
+VERDICT = "Direction holds; the fixture lacks a red run."
+HEAD = ("Second advisor (gpt-6-astra, blind to your advisor() reply) reviewed the session up to that call:\n"
+        f"{VERDICT}\n\nRule on each point where the two advisors disagree by your own check")
+REBUT = "On a substantive disagreement, run `~/.claude/astra-advisor rebut '<the advisor gist + the open question>'` once."
+HOLD = "Held with its batch for the second advisor; the verdict arrived on a sibling call. Re-issue this call if it still stands."
+FAILED = "Second advisor (gpt-6-astra) gave no verdict for this advisor() call; continue on the advisor() reply alone."
+ADVISOR_ON = {"type": "attachment", "attachment": {"type": "advisor_tool"}}
+# Shim `timeout`: records its argv, then runs the real one.
+TIMEOUT_SHIM = f"""#!/bin/sh
+printf '%s\\n' "$*" >> "$TIMEOUT_LOG"
+exec {shutil.which("timeout")} "$@"
+"""
+
+# Stub `claude`: records argv + cwd per call, answers like `claude -p --output-format json`.
+STUB = f"""#!{sys.executable}
+import json, os, sys, time
+with open(os.environ["STUB_LOG"], "a", encoding="utf-8") as f:
+    f.write(json.dumps({{"argv": sys.argv[1:], "cwd": os.getcwd()}}) + "\\n")
+time.sleep(float(os.environ.get("STUB_SLEEP", "0")))
+mode = os.environ.get("STUB_MODE", "ok")
+if mode == "crash":
+    sys.exit(1)
+print(json.dumps({{"type": "result", "is_error": mode == "error", "result": os.environ.get("STUB_RESULT", "")}}))
+"""
+
+
+def prompt(text="Go."):
+    return {"type": "user", "origin": {"kind": "human"}, "message": {"role": "user", "content": text}}
+
+
+def said(block, mid="msg_A"):
+    return {"type": "assistant", "effort": "xhigh", "message": {"id": mid, "role": "assistant", "content": [block]}}
+
+
+def text(t="Plan: ship; doubt: the cut."):
+    return said({"type": "text", "text": t})
+
+
+def thinking():
+    return said({"type": "thinking", "thinking": "", "signature": "s"})
+
+
+def tool_use(tid="toolu_1", mid="msg_B"):
+    return said({"type": "tool_use", "id": tid, "name": "Bash", "input": {}}, mid)
+
+
+def tool_result(tid="toolu_1", body="ok"):
+    return {"type": "user", "toolUseResult": {}, "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": tid, "content": body}]}}
+
+
+def advisor(call=CALL, sidechain=False):
+    """One advisor() call as CC stores it: server_tool_use + encrypted result records."""
+    use = said({"type": "server_tool_use", "id": call, "name": "advisor", "input": {}})
+    result = said({"type": "advisor_tool_result", "tool_use_id": call,
+                   "content": {"type": "advisor_redacted_result", "encrypted_content": "x", "stop_reason": "end_turn"}})
+    for r in (use, result):
+        r["isSidechain"] = sidechain
+    return [use, result]
+
+
+def write(path, records, advisor_on=True):
+    """Chain records like CC: uuid u<index>, parentUuid = the previous entry; advisor_tool attachment unchained."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps(ADVISOR_ON, separators=(",", ":")) + "\n"] if advisor_on else []
+    for i, r in enumerate(records):
+        r = dict(r, uuid=f"u{i}", parentUuid=f"u{i - 1}" if i else None)
+        lines.append(json.dumps(r, separators=(",", ":")) + "\n")
+    path.write_text("".join(lines), encoding="utf-8")
+
+
+@contextlib.contextmanager
+def scenario(records, *, event="PreToolUse", mode="ok", sleep="0", result=VERDICT, advisor_on=True, **extra):
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        home, stubs, cwd = root / "home", root / "bin", root / "work"
+        for d in (home, stubs, cwd):
+            d.mkdir()
+        for name, body in (("claude", STUB), ("timeout", TIMEOUT_SHIM)):
+            (stubs / name).write_text(body, encoding="utf-8")
+            (stubs / name).chmod(0o755)
+        tp = home / ".claude" / "projects" / "-work" / f"{SESSION}.jsonl"
+        write(tp, records, advisor_on)
+        payload: dict = {"hook_event_name": event, "session_id": SESSION, "transcript_path": str(tp), "cwd": str(cwd),
+                         "effort": {"level": "max"}}
+        if event == "PreToolUse":
+            payload.update(tool_use_id="toolu_1", tool_name="Bash", tool_input={"command": "make"})
+        else:
+            payload["stop_hook_active"] = False
+        payload.update(extra)
+        env = os.environ.copy()
+        env.update(HOME=str(home), PATH=f"{stubs}{os.pathsep}{env['PATH']}", STUB_LOG=str(root / "calls.jsonl"),
+                   TIMEOUT_LOG=str(root / "timeout.log"),
+                   STUB_MODE=mode, STUB_SLEEP=sleep, STUB_RESULT=result, CLAUDE_CODE_SESSION_ID=SESSION)
+        yield payload, env, root
+
+
+def calls(root):
+    log = root / "calls.jsonl"
+    return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
+
+
+def flag(argv, name):
+    return argv[argv.index(name) + 1]
+
+
+def deny(reason):
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                   "permissionDecisionReason": reason}}
+
+
+HINT = "Right after each advisor() call, run `echo second-advisor` alone: it returns this verdict without a refused call."
+VERDICT_DENY = deny(f"{HEAD}, then re-issue this call if it still stands. {REBUT} {HINT}")
+PING = {"tool_input": {"command": " echo second-advisor\n"}}
+VERDICT_ATTACHED = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": f"{HEAD}, then continue. {REBUT}"}}
+BLOCK = {"decision": "block", "reason": f"{HEAD}, then finish. {REBUT}"}
+TURN = [prompt(), text(), thinking(), *advisor(), tool_use()]   # cut = u1 (text), past the thinking-only u2
+
+
+class AstraAdvisor(unittest.TestCase):
+    def invoke(self, payload, env, timeout=None, **override):
+        result = subprocess.run([ADVISOR], input=json.dumps(dict(payload, **override)), text=True,
+                                capture_output=True, env=env, check=False, timeout=timeout)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout) if result.stdout.strip() else None
+
+    def late_flush(self, payload, env, records):
+        """Hook starts before CC flushes the message holding the advisor() call."""
+        proc = subprocess.Popen([ADVISOR], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, env=env)
+        assert proc.stdin is not None
+        proc.stdin.write(json.dumps(payload))
+        proc.stdin.close()
+        time.sleep(0.4)
+        write(Path(payload["transcript_path"]), records)
+        out, err = proc.communicate(timeout=30)
+        self.assertEqual(proc.returncode, 0, err)
+        return json.loads(out) if out.strip() else None
+
+    def test_no_advisor_call_is_quiet(self):
+        with scenario([prompt(), tool_use(), tool_result()]) as (payload, env, root):
+            self.assertIsNone(self.invoke(payload, env))
+            self.assertEqual(calls(root), [])
+
+    def test_advisor_off_is_quiet_without_wait(self):
+        with scenario(TURN, advisor_on=False, tool_use_id="toolu_9") as (payload, env, root):
+            start = time.monotonic()
+            self.assertIsNone(self.invoke(payload, env))
+            self.assertLess(time.monotonic() - start, 1)
+            self.assertEqual(calls(root), [])
+
+    def test_next_call_held_with_blind_fork_verdict(self):
+        with scenario(TURN) as (payload, env, root):
+            self.assertEqual(self.invoke(payload, env), VERDICT_DENY)
+            [call] = calls(root)
+            argv = call["argv"]
+            self.assertEqual(call["cwd"], payload["cwd"])
+            for name, value in (("--resume", SESSION), ("--resume-session-at", "u1"), ("--model", "gpt-6-astra"),
+                                ("--effort", "max"), ("--tools", ""), ("--output-format", "json")):
+                self.assertEqual(flag(argv, name), value, name)
+            for name in ("-p", "--fork-session", "--no-session-persistence", "--strict-mcp-config"):
+                self.assertIn(name, argv)
+            settings = json.loads(flag(argv, "--settings"))
+            self.assertIs(settings["disableAllHooks"], True)
+            self.assertEqual(settings["advisorModel"], "")
+            self.assertIn("cut off by design", argv[-1])
+
+    def test_placeholder_runs_with_verdict_attached(self):
+        with scenario(TURN) as (payload, env, root):
+            self.assertEqual(self.invoke(payload, env, **PING), VERDICT_ATTACHED)
+            self.assertEqual(len(calls(root)), 1)
+
+    def test_placeholder_review_spares_later_call_and_stop(self):
+        records = [*TURN, tool_result(), tool_use("toolu_2", "msg_C"), tool_result("toolu_2"), text("Done.")]
+        with scenario(records) as (payload, env, root):
+            self.assertEqual(
+                [self.invoke(payload, env, **PING), self.invoke(payload, env, tool_use_id="toolu_2"),
+                 self.invoke({k: v for k, v in payload.items() if k not in ("tool_use_id", "tool_input")}, env,
+                             hook_event_name="Stop", stop_hook_active=False)],
+                [VERDICT_ATTACHED, None, None])
+            self.assertEqual(len(calls(root)), 1)
+
+    def test_placeholder_sibling_and_idle_placeholder_pass(self):
+        with scenario([*TURN, tool_use("toolu_2"), tool_result()]) as (payload, env, root):
+            self.assertEqual([self.invoke(payload, env), self.invoke(payload, env, tool_use_id="toolu_2", **PING)],
+                             [VERDICT_DENY, None])
+        with scenario([prompt(), tool_use()]) as (payload, env, root):
+            self.assertIsNone(self.invoke(payload, env, **PING))
+            self.assertEqual(calls(root), [])
+
+    def test_late_flush_still_holds_first_call(self):
+        with scenario([prompt()]) as (payload, env, root):
+            self.assertEqual(self.late_flush(payload, env, TURN), VERDICT_DENY)
+            self.assertEqual(len(calls(root)), 1)
+
+    def test_late_flush_still_blocks_stop(self):
+        with scenario([prompt()], event="Stop", last_assistant_message="Plan: ship.\n\nDone.") as (payload, env, _):
+            self.assertEqual(self.late_flush(payload, env, [prompt(), text("Plan: ship."), *advisor(), text("Done.")]),
+                             BLOCK)
+
+    def test_late_flush_past_preflushed_plan_blocks_stop(self):
+        head = [prompt(), text("Plan: ship.")]
+        with scenario(head, event="Stop", last_assistant_message="Plan: ship.\n\nDone.") as (payload, env, _):
+            self.assertEqual(self.late_flush(payload, env, [*head, *advisor(), text("Done.")]), BLOCK)
+
+    def test_late_flush_ignores_identical_previous_turn_text(self):
+        prev = [prompt(), text("Done."), prompt("Again.")]
+        with scenario(prev, event="Stop", last_assistant_message="Plan: ship.\n\nDone.") as (payload, env, _):
+            self.assertEqual(self.late_flush(payload, env, [*prev, text("Plan: ship."), *advisor(), text("Done.")]),
+                             BLOCK)
+
+    def test_fork_has_hard_time_bound(self):
+        with scenario(TURN) as (payload, env, root):
+            self.invoke(payload, env)
+            self.assertRegex((root / "timeout.log").read_text(encoding="utf-8"), r"^-k \d+ 540 claude ")
+
+    def test_missing_cwd_forks_from_root(self):
+        with scenario(TURN, cwd="/nonexistent/astra-advisor") as (payload, env, root):
+            self.assertEqual(self.invoke(payload, env), VERDICT_DENY)
+            self.assertEqual(calls(root)[0]["cwd"], "/")
+
+    def test_missing_transcript_or_session_is_quiet(self):
+        for override in ({"transcript_path": "/nonexistent/astra-advisor.jsonl"}, {"session_id": ""}):
+            with self.subTest(override=override), scenario(TURN) as (payload, env, root):
+                self.assertIsNone(self.invoke(payload, env, **override))
+                self.assertEqual(calls(root), [])
+
+    def test_cut_at_tool_result_when_call_opens_message(self):
+        with scenario([prompt(), tool_use("toolu_0", "msg_A"), tool_result("toolu_0"), *advisor(), tool_use()]) as (
+                payload, env, root):
+            self.invoke(payload, env)
+            self.assertEqual(flag(calls(root)[0]["argv"], "--resume-session-at"), "u2")
+
+    def test_one_opinion_per_call(self):
+        with scenario([*TURN, tool_result(), tool_use("toolu_2", "msg_C")]) as (payload, env, root):
+            self.assertEqual([self.invoke(payload, env), self.invoke(payload, env, tool_use_id="toolu_2")],
+                             [VERDICT_DENY, None])
+            self.assertEqual(len(calls(root)), 1)
+
+    def test_next_call_gets_its_own_opinion(self):
+        with scenario(TURN) as (payload, env, root):
+            self.invoke(payload, env)
+            write(Path(payload["transcript_path"]), [*TURN, tool_result(), *advisor("srvtoolu_01BBB"),
+                                                     tool_use("toolu_2", "msg_C")])
+            self.assertEqual(self.invoke(payload, env, tool_use_id="toolu_2"), VERDICT_DENY)
+            self.assertEqual(len(calls(root)), 2)
+
+    def test_call_before_latest_prompt_is_quiet(self):
+        with scenario([*TURN, tool_result(), prompt("Next."), tool_use("toolu_2", "msg_C")],
+                      tool_use_id="toolu_2") as (payload, env, root):
+            self.assertIsNone(self.invoke(payload, env))
+            self.assertEqual(calls(root), [])
+
+    def test_tool_results_and_compaction_keep_the_turn(self):
+        summary = dict(prompt("Summary."), isCompactSummary=True)
+        with scenario([*TURN, tool_result(), summary]) as (payload, env, _):
+            self.assertEqual(self.invoke(payload, env), VERDICT_DENY)
+
+    def test_quoted_marker_in_tool_output_is_quiet(self):
+        body = '{"type":"advisor_tool_result","tool_use_id":"srvtoolu_01ZZZ"}'
+        with scenario([prompt(), tool_use(), tool_result(body=body)]) as (payload, env, root):
+            self.assertIsNone(self.invoke(payload, env))
+            self.assertEqual(calls(root), [])
+
+    def test_teammate_and_sidechain_are_quiet(self):
+        with scenario(TURN, agent_id="areviewer-1-0123") as (payload, env, root):
+            self.assertIsNone(self.invoke(payload, env))
+            self.assertEqual(calls(root), [])
+        with scenario([prompt(), *advisor(sidechain=True), tool_use()]) as (payload, env, root):
+            self.assertIsNone(self.invoke(payload, env))
+            self.assertEqual(calls(root), [])
+
+    def test_trailing_sidechain_keeps_main_call(self):
+        with scenario([*TURN[:-1], *advisor("srvtoolu_01SSS", sidechain=True), tool_use()]) as (payload, env, _):
+            self.assertEqual(self.invoke(payload, env), VERDICT_DENY)
+
+    def test_stop_blocks_with_opinion(self):
+        with scenario([prompt(), text(), *advisor(), text("Done.")], event="Stop") as (payload, env, _):
+            self.assertEqual(self.invoke(payload, env), BLOCK)
+
+    def test_stop_after_block_reviews_new_call_once(self):
+        with scenario([prompt(), text(), *advisor()], event="Stop", stop_hook_active=True) as (payload, env, root):
+            self.assertEqual([self.invoke(payload, env), self.invoke(payload, env)], [BLOCK, None])
+            self.assertEqual(len(calls(root)), 1)
+
+    def test_claimed_call_stop_is_quiet(self):
+        with scenario(TURN) as (payload, env, root):
+            self.invoke(payload, env)
+            self.assertIsNone(self.invoke({k: v for k, v in payload.items() if k != "tool_use_id"}, env,
+                                          hook_event_name="Stop", stop_hook_active=False))
+            self.assertEqual(len(calls(root)), 1)
+
+    def test_failure_passes_once(self):
+        for mode in ("error", "crash"):
+            with self.subTest(mode=mode), scenario([*TURN, tool_use("toolu_2", "msg_C")], mode=mode) as (
+                    payload, env, _):
+                self.assertEqual(self.invoke(payload, env),
+                                 {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": FAILED}})
+                self.assertIsNone(self.invoke(payload, env, tool_use_id="toolu_2"))
+        with scenario([prompt(), text(), *advisor()], event="Stop", mode="error") as (payload, env, _):
+            self.assertEqual(self.invoke(payload, env),
+                             {"systemMessage": "Second advisor (gpt-6-astra) gave no verdict for the last advisor() call."})
+
+    def test_no_fork_point_fails_closed(self):
+        with scenario([*advisor(), tool_use()]) as (payload, env, root):
+            self.assertEqual(self.invoke(payload, env),
+                             {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": FAILED}})
+            result = subprocess.run([ADVISOR, "rebut", "Fable: x."], stdin=subprocess.DEVNULL, text=True,
+                                    capture_output=True, env=env, check=False)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(calls(root), [])
+
+    def test_effort_payload_then_transcript_then_high(self):
+        bare = [{k: v for k, v in r.items() if k != "effort"} for r in (text(), *advisor(), tool_use())]
+        cases: list[tuple[dict, list, str]] = [
+            ({}, TURN, "max"), ({"effort": "low"}, TURN, "low"), ({"effort": {"level": "bogus"}}, TURN, "high"),
+            ({"effort": None}, TURN, "xhigh"), ({"effort": None}, [prompt(), *bare], "high")]
+        for extra, records, expected in cases:
+            with self.subTest(extra=extra, expected=expected), scenario(records, **extra) as (payload, env, root):
+                self.invoke(payload, env)
+                self.assertEqual(flag(calls(root)[0]["argv"], "--effort"), expected)
+
+    def test_concurrent_batch_held_together(self):
+        batch = [*TURN, tool_use("toolu_2"), tool_use("toolu_3")]
+        with scenario(batch, sleep="0.5") as (payload, env, root), ThreadPoolExecutor(3) as pool:
+            outputs = list(pool.map(lambda t: self.invoke(payload, env, tool_use_id=t), ("toolu_1", "toolu_2", "toolu_3")))
+            self.assertEqual(sorted(json.dumps(o) for o in outputs),
+                             sorted(json.dumps(o) for o in (VERDICT_DENY, deny(HOLD), deny(HOLD))))
+            self.assertEqual(len(calls(root)), 1)
+
+    def test_serial_sibling_held_reissue_passes(self):
+        records = [*TURN, tool_use("toolu_2"), tool_result(), tool_result("toolu_2"), tool_use("toolu_4", "msg_C")]
+        with scenario(records) as (payload, env, root):
+            self.assertEqual([self.invoke(payload, env, tool_use_id=t) for t in ("toolu_1", "toolu_2", "toolu_4")],
+                             [VERDICT_DENY, deny(HOLD), None])
+            self.assertEqual(len(calls(root)), 1)
+
+    def test_delayed_serial_sibling_still_held(self):
+        with scenario([*TURN, tool_use("toolu_2"), tool_result(), tool_result("toolu_2")]) as (payload, env, _):
+            self.invoke(payload, env)
+            old = time.time() - 180
+            for f in (Path(env["HOME"]) / ".claude" / "cache" / "astra-advisor").iterdir():
+                os.utime(f, (old, old))
+            self.assertEqual(self.invoke(payload, env, tool_use_id="toolu_2"), deny(HOLD))
+
+    def test_orphan_claim_never_stalls_later_work(self):
+        cases = {"later turn": [*TURN, tool_result(), prompt("Next."), tool_use("toolu_2", "msg_C")],
+                 "other batch": [*TURN, tool_result(), tool_use("toolu_2", "msg_C")]}
+        for name, records in cases.items():
+            with self.subTest(name), scenario(records, tool_use_id="toolu_2") as (payload, env, root):
+                state = Path(env["HOME"]) / ".claude" / "cache" / "astra-advisor"
+                state.mkdir(parents=True)
+                (state / CALL).write_text("msg_B", encoding="utf-8")   # live claim of batch msg_B, no .done
+                start = time.monotonic()
+                self.assertIsNone(self.invoke(payload, env, timeout=15))
+                self.assertLess(time.monotonic() - start, 8)
+                self.assertEqual(calls(root), [])
+
+    def test_stale_claim_never_waits(self):
+        with scenario(TURN) as (payload, env, root):
+            state = Path(env["HOME"]) / ".claude" / "cache" / "astra-advisor"
+            state.mkdir(parents=True)
+            (state / CALL).touch()
+            old = time.time() - 900
+            os.utime(state / CALL, (old, old))
+            start = time.monotonic()
+            self.assertIsNone(self.invoke(payload, env))
+            self.assertLess(time.monotonic() - start, 5)
+            self.assertEqual(calls(root), [])
+
+    def test_rebut_relays_gist_and_earlier_verdict(self):
+        with scenario(TURN) as (payload, env, root):
+            self.invoke(payload, env)
+            env["STUB_RESULT"] = "I concede the cache point."
+            result = subprocess.run([ADVISOR, "rebut", "Fable: the cache is cold."], stdin=subprocess.DEVNULL,
+                                    text=True, capture_output=True, env=env, cwd=payload["cwd"], check=False)
+            self.assertEqual((result.returncode, result.stdout), (0, "I concede the cache point.\n"), result.stderr)
+            argv = calls(root)[1]["argv"]
+            self.assertEqual([flag(argv, "--resume"), flag(argv, "--resume-session-at"), flag(argv, "--effort")],
+                             [SESSION, "u1", "xhigh"])
+            self.assertIn("Fable: the cache is cold.", argv[-1])
+            self.assertIn(VERDICT, argv[-1])
+
+    def test_rebut_after_failed_review_has_no_earlier_verdict(self):
+        with scenario(TURN, mode="error") as (payload, env, root):
+            self.invoke(payload, env)
+            env["STUB_MODE"] = "ok"
+            result = subprocess.run([ADVISOR, "rebut", "Fable: x."], stdin=subprocess.DEVNULL, text=True,
+                                    capture_output=True, env=env, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Your earlier verdict:\n(none recorded)", calls(root)[1]["argv"][-1])
+
+    def test_rebut_requires_gist(self):
+        with scenario(TURN) as (_, env, root):
+            result = subprocess.run([ADVISOR, "rebut"], stdin=subprocess.DEVNULL, text=True,
+                                    capture_output=True, env=env, check=False)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(calls(root), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
