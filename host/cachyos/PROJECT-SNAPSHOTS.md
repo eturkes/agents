@@ -67,8 +67,10 @@ The migration folds every idle subvolume, lists each skipped one and then exits 
 An interrupted fold leaves a path with a `.snapshot-fold` suffix beside the cache.
 An ordinary directory there is an incomplete copy; delete it before the next run.
 A subvolume there is the original. Compare it with the folded path, then delete it with `bcachefs subvolume delete`.
-The full copy rewrites NoCoW data with data checksums.
-It also ends extent sharing with files outside Projects, such as the uv cache, so disk use can grow by up to the folded size.
+Before the final equality check, the migration clears NoCoW settings on both compared trees.
+This correction preserves other file options and attributes.
+The full copy ends extent sharing with files outside Projects, such as the uv cache.
+Disk use can grow by up to the folded size.
 A native Projects subvolume needs only the folds; its other paths can stay in use.
 Open file, working-directory or mapped-file references stop activation.
 Only previously active units restart. The verified duplicate retires after the exchange.
@@ -77,6 +79,23 @@ An interrupted preparation keeps the original Projects tree active and retains i
 
 Setup installs the manual-retention Snapper config and merges Claude hooks while preserving other settings.
 Tracked Claude profiles carry the same hooks; the native Claude launcher and Headroom remain unchanged.
+
+## Correct legacy NoCoW settings
+
+Older cache migrations can leave NoCoW settings on ordinary directories and inherited settings on files.
+From the agents repository, run:
+
+```bash
+host/cachyos/project-snapshots-migrate --clear-nocow
+bcachefs reconcile status /
+host/cachyos/project-snapshots check
+```
+
+The correction visits the live Projects tree, parent first.
+It skips `.snapshots`, symlinks and other filesystems.
+It clears only NoCoW settings; files, other attributes and snapshot retention remain unchanged.
+New files inherit CoW policy from their corrected parents.
+Changing settings does not prove that existing extents have checksums.
 
 ## Checks
 

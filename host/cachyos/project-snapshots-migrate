@@ -3,10 +3,12 @@
 
 import argparse
 import ctypes
+import errno
 import fcntl
 import json
 import os
 import shutil
+import stat
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
@@ -119,6 +121,97 @@ def exchange(first, second):
         raise OSError(code, os.strerror(code))
 
 
+def nocow(path):
+    try:
+        if isinstance(path, int):
+            return os.getxattr(path, "bcachefs_effective.nocow") == b"1"
+        return os.getxattr(path, "bcachefs_effective.nocow", follow_symlinks=False) == b"1"
+    except OSError as error:
+        if error.errno != errno.ENODATA:
+            raise
+        return False
+
+
+def clear_nocow(path, *, skip=()):
+    """Restore CoW policy parent-first without replacing files or following symlinks."""
+    path = path.absolute()
+    if path.is_symlink() or path.resolve() != path:
+        raise ValueError("NoCoW correction requires a resolved directory.")
+    device = path.stat().st_dev
+    counts = {"examined": 0, "cleared": 0, "vanished": 0}
+    directories = set()
+
+    def disable(descriptor, parent):
+        if not nocow(descriptor):
+            try:
+                explicit = os.getxattr(descriptor, "bcachefs.nocow")
+            except OSError as error:
+                if error.errno != errno.ENODATA:
+                    raise
+                return
+            if explicit != b"0" or nocow(parent):
+                return
+        os.removexattr(descriptor, "bcachefs.nocow")
+        # A folded inner cache can still have a NoCoW parent outside this tree.
+        if nocow(descriptor):
+            os.setxattr(descriptor, "bcachefs.nocow", b"0")
+        if nocow(descriptor):
+            raise RuntimeError("NoCoW remained enabled after correction.")
+        counts["cleared"] += 1
+
+    def walk_error(error):
+        if error.errno != errno.ENOENT:
+            raise error
+        counts["vanished"] += 1
+
+    for current, dirs, files, descriptor in os.fwalk(path, follow_symlinks=False, onerror=walk_error):
+        relative = Path(current).relative_to(path)
+        info = os.fstat(descriptor)
+        identity = (info.st_dev, info.st_ino)
+        if str(relative) in skip or info.st_dev != device or identity in directories:
+            dirs.clear()
+            continue
+        directories.add(identity)
+        counts["examined"] += 1
+        parent = os.open("..", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+        try:
+            disable(descriptor, parent)
+        finally:
+            os.close(parent)
+        for name in files:
+            # The parent fd anchors lookup; O_NOFOLLOW pins the inode before mutation.
+            anchored = f"/proc/self/fd/{descriptor}/{name}"
+            counts["examined"] += 1
+            try:
+                if not nocow(anchored):
+                    try:
+                        explicit = os.getxattr(anchored, "bcachefs.nocow", follow_symlinks=False)
+                    except OSError as error:
+                        if error.errno != errno.ENODATA:
+                            raise
+                        continue
+                    if explicit != b"0":
+                        continue
+                info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+                if not stat.S_ISREG(info.st_mode):
+                    continue
+                flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+                child = os.open(name, flags, dir_fd=descriptor)
+                try:
+                    info = os.fstat(child)
+                    if info.st_dev == device and stat.S_ISREG(info.st_mode):
+                        disable(child, descriptor)
+                finally:
+                    os.close(child)
+            except FileNotFoundError:
+                counts["vanished"] += 1
+            except OSError as error:
+                if error.errno != errno.ELOOP:
+                    raise
+                # A concurrent replacement became a symlink; leave it alone.
+    return counts
+
+
 def fold(path):
     # Staging stays beside the cache: renameat2 exchange across subvolumes fails with EXDEV.
     staged = path.with_name(path.name + ".snapshot-fold")
@@ -131,7 +224,7 @@ def fold(path):
     require_idle(path)
     staged.mkdir()
     try:
-        # A full copy rewrites NoCoW extents, which carry no data checksums.
+        # Full copies break external reflinks; cp -a also preserves NoCoW inode options.
         run("cp", "-a", "--reflink=never", "--", str(path) + "/.", str(staged) + "/")
         delta = run("rsync", "-aHAXnci", "--delete", "--", str(path) + "/", str(staged) + "/")
         if delta:
@@ -148,6 +241,9 @@ def fold(path):
         shutil.rmtree(staged)
         raise
     # From here staged = the original subvolume; every exit keeps it until the late comparison passes.
+    # Both compared trees receive the same policy correction; retain the complete equality guard.
+    clear_nocow(path)
+    clear_nocow(staged)
     # Checksums: the quick check accepts an equal-size rewrite within the same second.
     late = run("rsync", "-aHAXnci", "--delete", "--", str(staged) + "/", str(path) + "/")
     if late:
@@ -218,13 +314,19 @@ def migrate(source, state, units=()):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pause-unit", action="append", default=[], help="Stop an active user unit during migration. Restart it after migration.")
+    parser.add_argument("--clear-nocow", action="store_true", help="Clear live Projects NoCoW settings without migrating or deleting snapshots.")
     args = parser.parse_args()
     home = Path.home().resolve()
     state = home / ".local/state/project-snapshots"
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (state / "migration.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        migrate(home / "Projects", state / "migration", args.pause_unit)
+        if args.clear_nocow:
+            result = clear_nocow(home / "Projects", skip=(".snapshots",))
+            print(f"Projects CoW policy: {result['cleared']} settings cleared; "
+                  f"{result['examined']} entries examined; {result['vanished']} vanished during traversal.")
+        else:
+            migrate(home / "Projects", state / "migration", args.pause_unit)
 
 
 if __name__ == "__main__":

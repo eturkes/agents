@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise migration and subvolume folding on disposable native bcachefs trees."""
 
+import errno
 import importlib.machinery
 import importlib.util
 import os
@@ -91,6 +92,94 @@ class Migration(unittest.TestCase):
         self.assertEqual(migration.archive_hash(self.source), before)
         self.assertEqual(project.stat().st_mtime_ns, times.st_mtime_ns)
         self.assert_folded(cache)
+
+    def test_fold_clears_explicit_and_inherited_nocow_for_future_children(self):
+        self.source.rmdir()
+        migration.run("bcachefs", "subvolume", "create", str(self.source))
+        cache = self.source / "cache"
+        migration.run("bcachefs", "subvolume", "create", str(cache))
+        migration.run("bcachefs", "set-file-option", "--nocow=1", str(cache))
+        child = cache / "inherited directory"
+        child.mkdir()
+        payload = child / "payload"
+        payload.write_bytes(os.urandom(16384))
+        os.setxattr(payload, "user.keep", b"unrelated attribute")
+        os.setxattr(child, "bcachefs.data_checksum", b"crc64")
+        explicit = cache / "explicit"
+        explicit.write_text("explicit NoCoW\n")
+        os.setxattr(explicit, "bcachefs.nocow", b"1")
+        before = migration.archive_hash(self.source)
+        migration.migrate(self.source, self.state)
+        self.assertEqual(migration.archive_hash(self.source), before)
+        for path in (cache, child, payload, explicit):
+            self.assertFalse(self.nocow(path), str(path))
+        future = child / "created after folding"
+        future.write_text("future data\n")
+        self.assertFalse(self.nocow(future))
+        self.assertEqual(os.getxattr(payload, "user.keep"), b"unrelated attribute")
+        self.assertEqual(os.getxattr(child, "bcachefs.data_checksum"), b"crc64")
+
+    def test_correction_skips_snapshots_symlinks_and_is_idempotent(self):
+        os.setxattr(self.source, "bcachefs.nocow", b"1")
+        child = self.source / "inherited"
+        child.mkdir()
+        payload = child / "payload"
+        payload.write_bytes(os.urandom(16384))
+        os.link(payload, child / "hardlink")
+        os.setxattr(payload, "user.keep", b"unrelated attribute")
+        snapshots = self.source / ".snapshots"
+        snapshots.mkdir()
+        preserved = snapshots / "historical"
+        preserved.write_text("preserved NoCoW policy\n")
+        outside = self.base / "outside"
+        outside.write_text("outside tree\n")
+        os.setxattr(outside, "bcachefs.nocow", b"1")
+        (self.source / "symlink").symlink_to(outside)
+        before = migration.archive_hash(self.source)
+        result = migration.clear_nocow(self.source, skip=(".snapshots",))
+        self.assertEqual(result["cleared"], 3)
+        self.assertEqual(migration.archive_hash(self.source), before)
+        for path in (self.source, child, payload):
+            self.assertFalse(self.nocow(path), str(path))
+        self.assertTrue(self.nocow(preserved))
+        self.assertTrue(self.nocow(outside))
+        self.assertEqual(os.getxattr(payload, "user.keep"), b"unrelated attribute")
+        future = child / "future"
+        future.write_text("future data\n")
+        self.assertFalse(self.nocow(future))
+        self.assertEqual(migration.clear_nocow(self.source, skip=(".snapshots",))["cleared"], 0)
+
+    def test_fold_disables_nocow_beneath_a_nocow_parent(self):
+        parent = self.source / "outer"
+        parent.mkdir()
+        os.setxattr(parent, "bcachefs.nocow", b"1")
+        cache = parent / "inner"
+        migration.run("bcachefs", "subvolume", "create", str(cache))
+        payload = cache / "payload"
+        payload.write_text("inherited NoCoW\n")
+        self.assertTrue(self.nocow(payload))
+        before = migration.archive_hash(cache)
+        migration.fold(cache)
+        self.assertEqual(migration.archive_hash(cache), before)
+        self.assertFalse(self.nocow(cache))
+        self.assertFalse(self.nocow(payload))
+        future = cache / "future"
+        future.write_text("future data\n")
+        self.assertFalse(self.nocow(future))
+        migration.clear_nocow(self.source)
+        with self.assertRaises(OSError) as removed:
+            os.getxattr(cache, "bcachefs.nocow")
+        self.assertEqual(removed.exception.errno, errno.ENODATA)
+        self.assertEqual(migration.clear_nocow(self.source)["cleared"], 0)
+
+    @staticmethod
+    def nocow(path):
+        try:
+            return os.getxattr(path, "bcachefs_effective.nocow", follow_symlinks=False) == b"1"
+        except OSError as error:
+            if error.errno != errno.ENODATA:
+                raise
+            return False
 
     def test_open_file_blocks_fold_and_preserves_subvolume(self):
         cache = self.cache_subvolume(self.source)
