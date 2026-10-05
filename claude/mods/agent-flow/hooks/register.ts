@@ -79,16 +79,17 @@ export const register: Register = on => {
   })
 
   // Agent({ name }) spawns a teammate past agent.spawn ⇒ its brief = its first user row, seen before any other event of its loop.
+  // A loop tracked before this hook loaded (hot reload) gains its name on its next row, never the note.
   on('session.append', async ($, e, next) => {
     if (e.agentId === undefined || e.message.type !== 'user') return next(e)
     const id = e.agentId
     const marker = lastMarker(textOf(e.message.content))
-    const isFirst = (await read($, agents))[id] === undefined
-    const teammate = isFirst ? (await $.agent.list()).find(x => x.id === id && x.type === 'teammate') : undefined
-    if (isFirst || marker !== undefined) {
-      await patch($, id, a => ({ ...a, name: teammate?.name ?? a.name, marker: marker ?? a.marker }))
+    const known = (await read($, agents))[id]
+    const teammate = known?.listed ? undefined : (await $.agent.list()).find(x => x.id === id && x.type === 'teammate')
+    if (!known?.listed || marker !== undefined) {
+      await patch($, id, a => ({ ...a, listed: true, name: teammate?.name ?? a.name, marker: marker ?? a.marker }))
     }
-    if (teammate === undefined) return next(e)
+    if (known !== undefined || teammate === undefined) return next(e)
     return next({ ...e, message: { ...e.message, content: [...e.message.content, { type: 'text', text: SPAWN_NOTE }] } })
   })
 

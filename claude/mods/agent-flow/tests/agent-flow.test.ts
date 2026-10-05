@@ -14,6 +14,7 @@ type World = {
   status: (string | undefined)[]
   mkdirs: string[]
   agents: AgentInfo[]
+  lists: number
   rows: ApiContentBlock[][]
   answer: (e: { tool: string }) => ToolCallResult
 }
@@ -27,6 +28,7 @@ function world(on: On): World {
     status: [],
     mkdirs: [],
     agents: [],
+    lists: 0,
     rows: [],
     answer: () => ({ result: 'ok', text: 'ok' }),
   }
@@ -57,7 +59,10 @@ function world(on: On): World {
     w.mkdirs.push(e.argv.join(' '))
     return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
-  on('agent.list', () => ({ value: w.agents }))
+  on('agent.list', () => {
+    w.lists++
+    return { value: w.agents }
+  })
   on('session.append', (_$, e, next) => {
     w.rows.push(e.message.content)
     return next(e)
@@ -117,6 +122,18 @@ test('a teammate already tracked before its row keeps the row as sent', async ($
   await step($, 'tm-1')
   await tell($, 'tm-1', 'Also z.')
   expect(w.rows).toEqual([[{ type: 'text', text: 'Also z.' }]])
+})
+
+test('a teammate tracked before its row gains its name for hold + gauge, looked up once', async ($, on) => {
+  const w = world(on)
+  w.agents = [{ id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
+  await step($, 'tm-1')
+  await tell($, 'tm-1', 'Also z.')
+  await tell($, 'tm-1', 'And w.')
+  await step($, 'tm-1')
+  expect(w.lists).toBe(1)
+  expect(w.status).toEqual(['teammates: tm-1 50%', 'teammates: rev-3 50%'])
+  expect(await taskStop($, 'rev-3@team')).toEqual({ deny: stopHold('rev-3', undefined, []) })
 })
 
 test('compaction carries the deliverable line beside any typed instructions', async ($, on) => {
