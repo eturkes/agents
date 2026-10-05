@@ -1,6 +1,0 @@
-{
-  "name": "astra-advisor",
-  "version": "1.0.0",
-  "description": "Second advisor: gpt-6-astra reviews a blind fork cut before each advisor() call",
-  "types": "./types/index.d.ts"
-}

@@ -35,5 +35,3 @@ The advisor lets the agent consult Fable 5.1 while it works. Each consultation u
 Claude Code reads a whole message that starts with `/advisor` as the advisor model name. Thus, a body in the same message does not get to the agent.
 
 The transcript can keep the advice in encrypted form. For this reason, the final message restates each consultation and the decision of the agent.
-
-After a consultation, a hook also gets a second opinion from GPT-6 Astra. Astra reads a copy of the session up to the consultation, but not the Fable reply. The agent waits for the opinion before its next step. Consultations in a row get one opinion, on the last one. If Astra gives no opinion, the hook tells the agent, and the agent continues with the Fable reply alone. Each opinion takes about 10 to 60 seconds and uses part of your Codex usage limit.
