@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, MockClock } from 'claude-code/testing'
-import type { On, ToolCallResult } from 'claude-code'
+import type { AgentInfo, ApiContentBlock, On, ToolCallResult } from 'claude-code'
 
 import { COMPACT_NOTE, SPAWN_NOTE, stopHold, wroteNothing } from '../hooks/text'
 
@@ -13,6 +13,8 @@ type World = {
   instructions: (string | undefined)[]
   status: (string | undefined)[]
   mkdirs: string[]
+  agents: AgentInfo[]
+  rows: ApiContentBlock[][]
   answer: (e: { tool: string }) => ToolCallResult
 }
 
@@ -24,6 +26,8 @@ function world(on: On): World {
     instructions: [],
     status: [],
     mkdirs: [],
+    agents: [],
+    rows: [],
     answer: () => ({ result: 'ok', text: 'ok' }),
   }
   mock.env(on, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
@@ -52,6 +56,11 @@ function world(on: On): World {
   on('process.run', (_$, e) => {
     w.mkdirs.push(e.argv.join(' '))
     return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('agent.list', () => ({ value: w.agents }))
+  on('session.append', (_$, e, next) => {
+    w.rows.push(e.message.content)
+    return next(e)
   })
   on('ui.status', (_$, e) => {
     w.status.push(e.text)
@@ -84,6 +93,30 @@ test('the brief carries the deliverable note', async ($, on) => {
   const w = world(on)
   await spawn($, 'rev-1', 'Audit x.')
   expect(w.prompts).toEqual([`Audit x.\n\n${SPAWN_NOTE}`])
+})
+
+test('a teammate brief carries the note once; the TaskStop hold knows it by name', async ($, on) => {
+  const w = world(on)
+  const sub = await spawn($, 'rev-1', 'Audit x.')
+  w.agents = [{ id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
+  await tell($, sub, 'Audit x.')
+  await tell($, 'tm-1', 'Audit y; end with rev-3-DONE-1.')
+  await tell($, 'tm-1', 'Also z.')
+  expect(w.rows).toEqual([
+    [{ type: 'text', text: 'Audit x.' }],
+    [{ type: 'text', text: 'Audit y; end with rev-3-DONE-1.' }, { type: 'text', text: SPAWN_NOTE }],
+    [{ type: 'text', text: 'Also z.' }],
+  ])
+  await step($, 'tm-1')
+  expect(await taskStop($, 'rev-3@team')).toEqual({ deny: stopHold('rev-3', 'rev-3-DONE-1', []) })
+})
+
+test('a teammate already tracked before its row keeps the row as sent', async ($, on) => {
+  const w = world(on)
+  w.agents = [{ id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
+  await step($, 'tm-1')
+  await tell($, 'tm-1', 'Also z.')
+  expect(w.rows).toEqual([[{ type: 'text', text: 'Also z.' }]])
 })
 
 test('compaction carries the deliverable line beside any typed instructions', async ($, on) => {

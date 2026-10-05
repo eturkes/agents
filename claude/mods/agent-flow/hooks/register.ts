@@ -78,12 +78,18 @@ export const register: Register = on => {
     return r
   })
 
+  // Agent({ name }) spawns a teammate past agent.spawn ⇒ its brief = its first user row, seen before any other event of its loop.
   on('session.append', async ($, e, next) => {
-    if (e.agentId !== undefined && e.message.type === 'user') {
-      const marker = lastMarker(textOf(e.message.content))
-      if (marker !== undefined) await patch($, e.agentId, a => ({ ...a, marker }))
+    if (e.agentId === undefined || e.message.type !== 'user') return next(e)
+    const id = e.agentId
+    const marker = lastMarker(textOf(e.message.content))
+    const isFirst = (await read($, agents))[id] === undefined
+    const teammate = isFirst ? (await $.agent.list()).find(x => x.id === id && x.type === 'teammate') : undefined
+    if (isFirst || marker !== undefined) {
+      await patch($, id, a => ({ ...a, name: teammate?.name ?? a.name, marker: marker ?? a.marker }))
     }
-    return next(e)
+    if (teammate === undefined) return next(e)
+    return next({ ...e, message: { ...e.message, content: [...e.message.content, { type: 'text', text: SPAWN_NOTE }] } })
   })
 
   on('turn.step', async function* ($, e, next) {
