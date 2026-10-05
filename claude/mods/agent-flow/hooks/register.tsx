@@ -4,13 +4,13 @@ import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 import type { AgentFlowAgent } from '../types'
 import {
   COMPACT_NOTE, QUIET_MS, REISSUE_MS, REPORT_REJECTION, SPAWN_NOTE, WROTE_NOTHING_MIN,
-  gauge, isDurable, lastMarker, stopHold, trigger, wroteNothing,
+  bandRows, isDurable, lastMarker, stopHold, trigger, wroteNothing,
 } from './text'
 
 const agents = atom({ plugin: 'agent-flow', key: 'agents' } as const, {})
-// A quiet teammate emits no event ⇒ a timer re-reads the gauge; unchanged text is not redrawn.
-const GAUGE_EVERY_MS = 60_000
-let shown: string | undefined
+// The band redraws on each record write; a finish or kill writes none ⇒ a poll of the running set redraws on change.
+const LIST_EVERY_MS = 5_000
+let listKey: string | undefined
 
 function total(u: ModelUsage): number {
   return u.input_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens + u.output_tokens
@@ -31,15 +31,19 @@ async function patch($: EngineInterface, id: string, change: (a: AgentFlowAgent)
   return all[id]!
 }
 
-async function refreshGauge($: EngineInterface): Promise<void> {
-  const now = await $.clock.now()
+/** Teammate compaction trigger = the band's denominator. */
+async function compactAt($: EngineInterface): Promise<number> {
   const window = Number(await $.env.get('CLAUDE_CODE_MAX_CONTEXT_TOKENS')) || 200_000
   const acw = Number(await $.env.get('CLAUDE_CODE_AUTO_COMPACT_WINDOW')) || 0
-  const rows = Object.entries(await read($, agents))
-    .filter(([, a]) => a.inTurn && a.used !== undefined && now - a.activeAt < QUIET_MS)
-    .map(([id, a]) => ({ name: a.name ?? id.slice(0, 8), used: a.used ?? 0 }))
-  const text = gauge(rows, trigger(window, acw))
-  if (text !== shown) $.ui.status((shown = text))
+  return trigger(window, acw)
+}
+
+async function pollList($: EngineInterface): Promise<void> {
+  const key = (await $.agent.list()).map(x => `${x.id}:${x.status}`).join(' ')
+  if (key !== listKey) {
+    listKey = key
+    $.ui.invalidate('ui.render')
+  }
 }
 
 /** CC refused the write by basename alone ⇒ perform it, answering as Write does. */
@@ -68,8 +72,27 @@ async function holdStop($: EngineInterface, asked: string): Promise<string | und
 
 export const register: Register = on => {
   on('session.start', ($, e, next) => {
-    $.clock.every(GAUGE_EVERY_MS, () => void refreshGauge($))
+    $.clock.every(LIST_EVERY_MS, () => void pollList($))
     return next(e)
+  })
+
+  // One line above the prompt: each running agent's context against its compaction trigger, statusline-styled.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) return next(e)
+    const rows = bandRows(await $.agent.list(), await read($, agents), await compactAt($), e.props.view.agentId)
+    if (rows.length === 0) return next(e)
+    const { Text } = $.ui.resolve(e)
+    return (
+      <Text wrap="wrap">
+        <Text dimColor>agents</Text>
+        {rows.flatMap((r, i) => [
+          i === 0 ? ' ' : <Text dimColor> · </Text>,
+          <Text bold={r.isViewed} dimColor={r.isIdle}>{r.isViewed ? '▸' : ''}{r.name}{r.isIdle ? ' idle' : ''}</Text>,
+          ' ',
+          r.color === undefined ? <Text>{r.gauge}</Text> : <Text color={r.color}>{r.gauge}</Text>,
+        ])}
+      </Text>
+    )
   })
 
   on('agent.spawn', async ($, e, next) => {
@@ -101,16 +124,12 @@ export const register: Register = on => {
     if (r.usage) {
       const used = total(r.usage)
       await patch($, id, a => ({ ...a, used }))
-      await refreshGauge($)
     }
     return r
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId !== undefined) {
-      await patch($, e.agentId, a => ({ ...a, inTurn: false }))
-      await refreshGauge($)
-    }
+    if (e.agentId !== undefined) await patch($, e.agentId, a => ({ ...a, inTurn: false }))
     return next(e)
   })
 

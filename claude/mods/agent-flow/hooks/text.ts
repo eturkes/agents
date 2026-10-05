@@ -1,3 +1,7 @@
+import type { AgentInfo } from 'claude-code'
+
+import type { AgentFlowAgent } from '../types'
+
 // Every subagent system prompt ends with the Notes line "Do NOT Write report/summary/
 // findings/analysis .md files …", whose own exception reads "Files written as input to
 // another tool are fine". The brief files the deliverable under that exception.
@@ -45,7 +49,33 @@ export function trigger(window: number, acw: number): number {
   return (acw > 0 ? Math.min(window, acw) : window) - 33_000
 }
 
-export function gauge(rows: readonly { name: string; used: number }[], at: number): string | undefined {
-  if (rows.length === 0) return undefined
-  return `teammates: ${rows.map(r => `${r.name} ${Math.round((r.used * 100) / at)}%`).join(' · ')}`
+/** Statusline `h`: ≥1M ⇒ one-decimal M, `.0` dropped; else rounded K. An exact x.x5M tie rounds up where awk's rounds to even. */
+export function human(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+  return `${Math.floor(n / 1000 + 0.5)}K`
+}
+
+/** Statusline gauge colours on the rounded percent. */
+export function tint(pct: number): string | undefined {
+  return pct >= 92 ? 'red' : pct >= 75 ? 'yellow' : pct >= 50 ? 'green' : undefined
+}
+
+export type BandRow = { name: string; isIdle: boolean; isViewed: boolean; gauge: string; color?: string }
+
+/** Band = engine-listed running agents (idle teammates included), in list order; usage + turn state from agent-flow's record. */
+export function bandRows(list: readonly AgentInfo[], agents: Readonly<Record<string, AgentFlowAgent>>, at: number, viewed?: string): BandRow[] {
+  return list
+    .filter(x => x.status === 'running')
+    .map(x => {
+      const a = agents[x.id]
+      const used = a?.used
+      const pct = used === undefined ? undefined : Math.round((used * 100) / at)
+      return {
+        name: x.name ?? a?.name ?? x.description,
+        isIdle: a?.inTurn !== true,
+        isViewed: x.id === viewed,
+        gauge: used === undefined || pct === undefined ? `? ?/${human(at)}` : `${pct}% ${human(used)}/${human(at)}`,
+        color: pct === undefined ? undefined : tint(pct),
+      }
+    })
 }

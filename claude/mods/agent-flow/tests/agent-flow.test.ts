@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, MockClock } from 'claude-code/testing'
-import type { AgentInfo, ApiContentBlock, On, ToolCallResult } from 'claude-code'
+import type { AgentInfo, ApiContentBlock, On, RenderPropsOf, ToolCallResult } from 'claude-code'
 
 import { COMPACT_NOTE, SPAWN_NOTE, stopHold, wroteNothing } from '../hooks/text'
 
@@ -11,11 +11,11 @@ type World = {
   files: Map<string, string>
   prompts: string[]
   instructions: (string | undefined)[]
-  status: (string | undefined)[]
   mkdirs: string[]
   agents: AgentInfo[]
   lists: number
   rows: ApiContentBlock[][]
+  used: number
   answer: (e: { tool: string }) => ToolCallResult
 }
 
@@ -25,11 +25,11 @@ function world(on: On): World {
     files: new Map(),
     prompts: [],
     instructions: [],
-    status: [],
     mkdirs: [],
     agents: [],
     lists: 0,
     rows: [],
+    used: 136_000,
     answer: () => ({ result: 'ok', text: 'ok' }),
   }
   mock.env(on, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
@@ -39,7 +39,7 @@ function world(on: On): World {
   })
   on('tool.call', (_$, e) => w.answer(e))
   on('turn.step', async function* (_$, e) {
-    const usage = { input_tokens: 136_000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0, model: 'm' }
+    const usage = { input_tokens: w.used, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0, model: 'm' }
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use' as const, usage }
   })
   on('turn.complete', (_$, e) => ({ text: e.answer }))
@@ -67,12 +67,17 @@ function world(on: On): World {
     w.rows.push(e.message.content)
     return next(e)
   })
-  on('ui.status', (_$, e) => {
-    w.status.push(e.text)
-    return { value: undefined }
-  })
+  on('ui.render', () => ENGINE_BAND)
   return w
 }
+
+const ENGINE_BAND = { type: 'Text' as const, children: ['engine'] }
+const BAND: RenderPropsOf['AbovePrompt'] = { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 200, scroll: { offset: 0, bodyRows: 10 }, view: {} }
+const SURFACES = ['terminal', 'desktop'] as const
+const band = ($: Engine, surface: (typeof SURFACES)[number], props: Partial<RenderPropsOf['AbovePrompt']> = {}) =>
+  $.ui.mount({ plugin: 'agent-flow', surface, component: 'AbovePrompt', props: { ...BAND, ...props } })
+const shown = async (ui: { find: (q: { type: string }) => Promise<{ text: string } | undefined> }) => (await ui.find({ type: 'Text' }))?.text
+const running = (id: string, name?: string): AgentInfo => ({ id, description: `desc ${id}`, type: 'teammate', status: 'running', name })
 
 async function spawn($: Engine, name: string, prompt = 'Do it.'): Promise<string> {
   const r = await $.agent.spawn({ prompt, description: 'd', subagentType: 'reviewer', name } as never)
@@ -124,7 +129,7 @@ test('a teammate already tracked before its row keeps the row as sent', async ($
   expect(w.rows).toEqual([[{ type: 'text', text: 'Also z.' }]])
 })
 
-test('a teammate tracked before its row gains its name for hold + gauge, looked up once', async ($, on) => {
+test('a teammate tracked before its row gains its name for the hold, looked up once', async ($, on) => {
   const w = world(on)
   w.agents = [{ id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
   await step($, 'tm-1')
@@ -132,7 +137,6 @@ test('a teammate tracked before its row gains its name for hold + gauge, looked 
   await tell($, 'tm-1', 'And w.')
   await step($, 'tm-1')
   expect(w.lists).toBe(1)
-  expect(w.status).toEqual(['teammates: tm-1 50%', 'teammates: rev-3 50%'])
   expect(await taskStop($, 'rev-3@team')).toEqual({ deny: stopHold('rev-3', undefined, []) })
 })
 
@@ -231,22 +235,73 @@ test('TaskStop passes for an ended turn, a quiet teammate and an unknown task', 
   expect((await taskStop($, 'bash-7')).deny).toBeUndefined()
 })
 
-test('status gauge shows running teammates against the compaction trigger', async ($, on) => {
+for (const surface of SURFACES) {
+  test(`band on ${surface}: running agents against the compaction trigger, idle dimmed, viewed marked`, async ($, on) => {
+    const w = world(on)
+    const a = await spawn($, 'rev-1')
+    const b = await spawn($, 'res-2')
+    await step($, a)
+    await step($, b)
+    await done($, b)
+    w.agents = [running(a, 'rev-1'), running(b, 'res-2'), running('id-new'), { ...running('id-gone', 'old-1'), status: 'completed' }]
+    const ui = await band($, surface, { view: { agentId: a } })
+    expect(await shown(ui)).toBe('agents ▸rev-1 50% 136K/272K · res-2 idle 50% 136K/272K · desc id-new idle ? ?/272K')
+    expect(await ui.find({ type: 'Text', text: /^▸rev-1$/ })).toMatchObject({ props: { bold: true } })
+    expect(await ui.find({ type: 'Text', text: /^res-2 idle$/ })).toMatchObject({ props: { dimColor: true } })
+    expect((await ui.findAll({ type: 'Text', text: /^50% 136K\/272K$/ })).map(x => x.props.color)).toEqual(['green', 'green'])
+  })
+}
+
+test('a mounted band follows usage, turn end and the viewed transcript without a remount', async ($, on) => {
   const w = world(on)
-  const a = await spawn($, 'rev-1')
-  await step($, a)
-  const b = await spawn($, 'res-2')
-  await step($, b)
-  await done($, a)
-  await done($, b)
-  expect(w.status).toEqual(['teammates: rev-1 50%', 'teammates: rev-1 50% · res-2 50%', 'teammates: res-2 50%', undefined])
+  w.agents = [running('tm-1', 'rev-1')]
+  const ui = await band($, 'terminal')
+  expect(await shown(ui)).toBe('agents rev-1 idle ? ?/272K')
+  await step($, 'tm-1')
+  expect(await shown(ui)).toBe('agents rev-1 50% 136K/272K')
+  await done($, 'tm-1')
+  expect(await shown(ui)).toBe('agents rev-1 idle 50% 136K/272K')
+  await ui.redraw({ ...BAND, view: { agentId: 'tm-1' } })
+  expect(await shown(ui)).toBe('agents ▸rev-1 idle 50% 136K/272K')
 })
 
-test('the gauge drops a teammate gone quiet with no further events', async ($, on) => {
+test('band colours follow the statusline thresholds', async ($, on) => {
+  const w = world(on)
+  const id = await spawn($, 'rev-1')
+  w.agents = [running(id, 'rev-1')]
+  for (const [used, text, color] of [
+    [100_000, '37% 100K/272K', undefined],
+    [204_000, '75% 204K/272K', 'yellow'],
+    [250_240, '92% 250K/272K', 'red'],
+  ] as const) {
+    w.used = used
+    await step($, id)
+    const ui = await band($, 'terminal')
+    const gauge = await ui.find({ type: 'Text', text: new RegExp(`^${text}$`) })
+    expect(gauge).toBeDefined()
+    expect(gauge?.props.color).toBe(color)
+    await ui.unmount()
+  }
+})
+
+test('band yields to the engine with no running agent or under a survey', async ($, on) => {
+  const w = world(on)
+  const id = await spawn($, 'rev-1')
+  await step($, id)
+  expect(await shown(await band($, 'terminal'))).toBe('engine')
+  w.agents = [running(id, 'rev-1')]
+  expect(await shown(await band($, 'terminal', { hasSurvey: true }))).toBe('engine')
+})
+
+test('band drops a finished agent on the next list poll with no record write', async ($, on) => {
   const w = world(on)
   await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
   const id = await spawn($, 'rev-1')
   await step($, id)
-  await w.clock.advance(16 * 60_000)
-  expect(w.status).toEqual(['teammates: rev-1 50%', undefined])
+  w.agents = [running(id, 'rev-1')]
+  const ui = await band($, 'terminal')
+  expect(await shown(ui)).toBe('agents rev-1 50% 136K/272K')
+  w.agents = [{ ...running(id, 'rev-1'), status: 'completed' }]
+  await w.clock.advance(5_000)
+  expect(await shown(ui)).toBe('engine')
 })
