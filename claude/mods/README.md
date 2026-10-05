@@ -28,12 +28,17 @@ done
 
 ## Check
 
-Run these three checks for each mod before you commit a change:
+The engine writes the API types into `.claude-plugin/types/` when it loads a mod. The settings load only the deployed copies, so `tsc` needs a copy of those types in the repository folder. That folder ignores itself in git.
+
+Run these checks from the repository root for each mod before you commit a change:
 
 ```sh
+rsync -a --delete ~/.claude/mods/<name>/.claude-plugin/types/ claude/mods/<name>/.claude-plugin/types/
 claude plugin validate claude/mods/<name>
 claude plugin test claude/mods/<name>
 tsc -p claude/mods/<name>
 ```
 
-The engine writes the API types into `.claude-plugin/types/` when it loads a mod. That folder ignores itself in git. Before the first load, type-check with the `tsconfig.json` from the header of the plugin-authoring skill's `types/claude-code.d.ts`.
+If the mod is not deployed on this host, copy the types of a different deployed mod. The types are the same for all mods, except for the MCP tool types. If no mod is deployed, type-check with the `tsconfig.json` from the header of the plugin-authoring skill's `types/claude-code.d.ts`.
+
+Each mod's `tsconfig.json` sets `noEmit`. Without the types, `tsc` fails and writes no files.

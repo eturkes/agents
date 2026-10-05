@@ -1,3 +1,5 @@
 {
-  "extends": "./.claude-plugin/types/tsconfig.json"
+  // Base = engine-written; absent in the repo copy until README Check copies it in ⇒ noEmit here keeps a failed check from emitting .js.
+  "extends": "./.claude-plugin/types/tsconfig.json",
+  "compilerOptions": { "noEmit": true }
 }
