@@ -17,7 +17,8 @@
     "CLAUDE_CODE_NO_FLICKER": "0",
     "DISABLE_AUTOUPDATER": "1",
     "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS": "1",
-    "CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL": "1"
+    "CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL": "1",
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/context-alert:~/.claude/mods/astra-advisor:~/.claude/mods/agent-flow:~/.claude/mods/turn-email"
   },
   "attribution": {
     "commit": "",
@@ -73,103 +74,6 @@
     "pr": "off"
   },
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/context-alert"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "TaskStop",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/agent-flow"
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/astra-advisor",
-            "timeout": 600
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/turn-email",
-            "timeout": 15
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/astra-advisor",
-            "timeout": 600
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "permission_prompt|elicitation_dialog|agent_needs_input",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/turn-email",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/agent-flow"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/agent-flow"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/agent-flow"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "startup|resume|clear|fork",

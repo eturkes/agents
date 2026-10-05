@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Authorize Gmail OAuth2 for the turn-email hook.
+"""Authorize Gmail OAuth2 for the turn-email mod.
 
 The command starts an installed-app loopback flow. It prints an authorization URL and listens on 127.0.0.1 for the redirect. It then exchanges the code and writes ~/.config/claude-mail/oauth.json.
 

@@ -1,0 +1,6 @@
+{
+  "name": "context-alert",
+  "version": "1.0.0",
+  "description": "One closure notice per loop and tier as context nears compaction",
+  "types": "./types/index.d.ts"
+}

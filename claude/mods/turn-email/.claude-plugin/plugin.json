@@ -1,0 +1,5 @@
+{
+  "name": "turn-email",
+  "version": "1.0.0",
+  "description": "One email per completed main turn and per dialog that waits for the user"
+}

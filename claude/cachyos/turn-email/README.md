@@ -1,21 +1,18 @@
 # Per-turn email notifications on CachyOS
 
-The `Stop` hook sends one email to `emir.turkes@eturkes.com` after each completed main-thread turn. Each message contains the prompt, response, session metadata, context usage, and transcript path.
+The `turn-email` mod (`../../mods/turn-email`) sends one email to `emir.turkes@eturkes.com` after each completed main-thread turn. Each message contains the prompt, response, session metadata, context usage, and transcript path. Subagent turns, interrupted turns, and turns that end on an API error send no email.
 
-Claude Code uses `Stop` for main turns and `SubagentStop` for subagents. Therefore, this hook receives main-thread turns.
-
-The same script serves the `Notification` hook. When a dialog waits for you, it sends one email with the pending question and its options. A turn that waits at an `AskUserQuestion` dialog emits no `Stop` event, so this email is the signal that the session needs you. The matcher covers `permission_prompt`, `elicitation_dialog`, and `agent_needs_input`. The message threads under the current turn of the session.
+The mod also handles the `Notification` event. When a dialog waits for you, it sends one email with the pending question and its options. A turn that waits at an `AskUserQuestion` dialog does not end, so this email is the signal that the session needs you. The mod sends this email for `permission_prompt`, `elicitation_dialog`, and `agent_needs_input`. The message threads under the last completed turn of the session.
 
 ## Deploy
 
 | Repository file | Destination | Mode |
 | --- | --- | --- |
-| `turn-email` | `~/.claude/turn-email` | 755 |
 | `gmail-oauth-token` | `~/.claude/gmail-oauth-token` | 755 |
 | `gmail-oauth-setup` | `~/.claude/gmail-oauth-setup` | 755 |
 | `msmtprc` | `~/.msmtprc` | 600 |
 
-Install the relay with `sudo pacman -S msmtp`. The hook registrations are in `../settings.json` under `hooks.Stop` and `hooks.Notification`. After you change hook definitions, restart Claude Code.
+Install the relay with `sudo pacman -S msmtp`. Deploy the mod as `../../mods/README.md` describes. The settings `env` key `CLAUDE_CODE_PLUGIN_DIRS` in `../settings.json` loads it.
 
 ## Gmail relay
 
@@ -42,9 +39,9 @@ Save the client secret when you create the client. If the secret becomes unavail
 
 ## Delivery behavior
 
-The hook starts mail delivery in a detached process and exits with status 0. Turn completion continues during relay delays or failures.
+The mod writes each mail to a spool file and starts the relay in the background. Turn completion continues during relay delays or failures, and a relay outlives the exit of a `claude -p` process.
 
-The hook becomes a silent no-op when `msmtp` or `~/.msmtprc` is absent. You can keep the registration before credential setup.
+The mod sends nothing when `msmtp` or `~/.msmtprc` is absent. You can keep the mod loaded before credential setup.
 
 The body uses base64 `text/plain`, and the subject uses RFC 2047. These encodings preserve non-ASCII text and lines beyond SMTP's 998-character limit. `References: <cc.SESSION@eturkes.com>` threads all turns from one session.
 
@@ -52,9 +49,9 @@ A notification mail includes an `AskUserQuestion` only while that question waits
 
 The token helper caches each access token until 60 seconds before it expires. A lock file serializes refreshes, so overlapping sends share one refresh.
 
-The prompt and response limits are 4,000 and 100,000 characters. A streaming `jq` reduction bounds memory while parsing the transcript.
+The prompt and response limits are 4,000 and 100,000 characters. The `Time` line shows local time with its UTC offset.
 
-The turn counter is `~/.claude/cache/turn-email/SESSION`. The hook removes counters after seven days. Hook failures go to `~/.claude/cache/turn-email.log`. Relay results go to `~/.claude/cache/msmtp.log`, with one `smtpstatus` line per send.
+The mod keeps the turn counter and the last human prompt in its store, one key per session. A resumed session continues its count, and a turn without a typed prompt shows the last one. A prompt that you type while a turn runs becomes the prompt of that turn. The mod removes counters after seven days. Relay failures go to `~/.claude/cache/turn-email.log`. Relay results go to `~/.claude/cache/msmtp.log`, with one `smtpstatus` line per send.
 
 Environment overrides:
 
@@ -64,18 +61,18 @@ Environment overrides:
 
 ## Test
 
-Run the offline suites from this directory. They use a stub `msmtp` and a local token endpoint, so they send no mail:
+Run the offline suites from this directory. They use test doubles and a local token endpoint, so they send no mail:
 
 ```sh
-./check-turn-email
+claude plugin test ../../mods/turn-email
 ./check-gmail-oauth-token
 ```
 
 ## Disable or remove
 
-1. To pause mail while retaining the hook, move `~/.msmtprc` aside.
-2. To unregister the hooks, remove `hooks.Stop` and `hooks.Notification` from `~/.claude/settings.json` and `../settings.json`.
-3. For full removal, unregister the hook first.
-4. Run `rm -rf ~/.config/claude-mail ~/.claude/{turn-email,gmail-oauth-token,gmail-oauth-setup} ~/.msmtprc`.
+1. To pause mail while the mod stays loaded, move `~/.msmtprc` aside.
+2. To unload the mod, remove `~/.claude/mods/turn-email` from `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json` and `../settings.json`.
+3. For full removal, unload the mod first.
+4. Run `rm -rf ~/.config/claude-mail ~/.claude/{mods/turn-email,gmail-oauth-token,gmail-oauth-setup} ~/.msmtprc`.
 5. Revoke the grant at <https://myaccount.google.com/permissions>.
 6. Delete the Google Cloud project.

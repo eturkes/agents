@@ -1,0 +1,6 @@
+{
+  "name": "agent-flow",
+  "version": "1.0.0",
+  "description": "Holds each subagent's deliverable on disk across spawn, write, compaction, stop and TaskStop; teammate context gauge",
+  "types": "./types/index.d.ts"
+}

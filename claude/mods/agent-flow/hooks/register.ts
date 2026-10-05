@@ -1,0 +1,142 @@
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, ModelUsage, Register } from 'claude-code'
+
+import type { AgentFlowAgent } from '../types'
+import {
+  COMPACT_NOTE, QUIET_MS, REISSUE_MS, REPORT_REJECTION, SPAWN_NOTE, WROTE_NOTHING_MIN,
+  gauge, isDurable, lastMarker, stopHold, trigger, wroteNothing,
+} from './text'
+
+const agents = atom({ plugin: 'agent-flow', key: 'agents' } as const, {})
+// A quiet teammate emits no event ⇒ a timer re-reads the gauge; unchanged text is not redrawn.
+const GAUGE_EVERY_MS = 60_000
+let shown: string | undefined
+
+function total(u: ModelUsage): number {
+  return u.input_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens + u.output_tokens
+}
+
+function textOf(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map(b => (b?.type === 'text' && typeof b.text === 'string' ? b.text : '')).join(' ')
+}
+
+async function patch($: EngineInterface, id: string, change: (a: AgentFlowAgent) => AgentFlowAgent, isActivity = true): Promise<AgentFlowAgent> {
+  const now = await $.clock.now()
+  const all = await update($, agents, m => {
+    const a: AgentFlowAgent = m[id] ?? { targets: [], tools: 0, durable: 0, inTurn: false, activeAt: now }
+    return { ...m, [id]: change(isActivity ? { ...a, activeAt: now } : a) }
+  })
+  return all[id]!
+}
+
+async function refreshGauge($: EngineInterface): Promise<void> {
+  const now = await $.clock.now()
+  const window = Number(await $.env.get('CLAUDE_CODE_MAX_CONTEXT_TOKENS')) || 200_000
+  const acw = Number(await $.env.get('CLAUDE_CODE_AUTO_COMPACT_WINDOW')) || 0
+  const rows = Object.entries(await read($, agents))
+    .filter(([, a]) => a.inTurn && a.used !== undefined && now - a.activeAt < QUIET_MS)
+    .map(([id, a]) => ({ name: a.name ?? id.slice(0, 8), used: a.used ?? 0 }))
+  const text = gauge(rows, trigger(window, acw))
+  if (text !== shown) $.ui.status((shown = text))
+}
+
+/** CC refused the write by basename alone ⇒ perform it, answering as Write does. */
+async function writeReport($: EngineInterface, path: string, content: string) {
+  const original = (await $.fs.exists(path)) ? String(await $.fs.read(path)) : null
+  await $.process.run(['mkdir', '-p', path.slice(0, path.lastIndexOf('/')) || '/'])
+  await $.fs.write(path, content)
+  const type = original === null ? ('create' as const) : ('update' as const)
+  return { result: { type, filePath: path, content, structuredPatch: [], originalFile: original } }
+}
+
+/** A mid-turn teammate's first TaskStop is held: a stop cuts its in-flight call and rows. */
+async function holdStop($: EngineInterface, asked: string): Promise<string | undefined> {
+  const now = await $.clock.now()
+  const [found] = Object.entries(await read($, agents))
+    .filter(([id, a]) => a.name === asked || id === asked)
+    .sort(([, x], [, y]) => y.activeAt - x.activeAt)
+  if (!found) return undefined
+  const [id, a] = found
+  const isMidTurn = a.inTurn && now - a.activeAt < QUIET_MS
+  const isReissue = a.heldAt !== undefined && now - a.heldAt < REISSUE_MS
+  const held = isMidTurn && !isReissue ? now : undefined
+  await patch($, id, x => ({ ...x, heldAt: held }), false)
+  return held === undefined ? undefined : stopHold(asked, a.marker, a.targets)
+}
+
+export const register: Register = on => {
+  on('session.start', ($, e, next) => {
+    $.clock.every(GAUGE_EVERY_MS, () => void refreshGauge($))
+    return next(e)
+  })
+
+  on('agent.spawn', async ($, e, next) => {
+    const r = await next({ ...e, prompt: `${e.prompt}\n\n${SPAWN_NOTE}` })
+    if (r.agentId !== undefined) await patch($, r.agentId, a => ({ ...a, name: e.name ?? a.name, inTurn: true }))
+    return r
+  })
+
+  on('session.append', async ($, e, next) => {
+    if (e.agentId !== undefined && e.message.type === 'user') {
+      const marker = lastMarker(textOf(e.message.content))
+      if (marker !== undefined) await patch($, e.agentId, a => ({ ...a, marker }))
+    }
+    return next(e)
+  })
+
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId === undefined) return yield* next(e)
+    const id = e.agentId
+    await patch($, id, a => ({ ...a, inTurn: true }))
+    const r = yield* next(e)
+    if (r.usage) {
+      const used = total(r.usage)
+      await patch($, id, a => ({ ...a, used }))
+      await refreshGauge($)
+    }
+    return r
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId !== undefined) {
+      await patch($, e.agentId, a => ({ ...a, inTurn: false }))
+      await refreshGauge($)
+    }
+    return next(e)
+  })
+
+  on('tool.call', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      if (e.tool !== 'TaskStop') return next(e)
+      const hold = await holdStop($, (e.task_id ?? e.shell_id ?? '').replace(/@.*/s, ''))
+      return hold === undefined ? next(e) : { deny: hold }
+    }
+    const input = e as { file_path?: unknown; notebook_path?: unknown; command?: unknown }
+    const target = e.tool === 'NotebookEdit' ? input.notebook_path : e.tool === 'Write' || e.tool === 'Edit' ? input.file_path : undefined
+    const isWrite = isDurable(e.tool, input) ? 1 : 0
+    await patch($, e.agentId, a => ({
+      ...a,
+      tools: a.tools + 1,
+      durable: a.durable + isWrite,
+      targets: typeof target === 'string' ? [target, ...a.targets.filter(t => t !== target)] : a.targets,
+    }))
+    const r = await next(e)
+    if (e.tool === 'Write' && r.deny === undefined && r.isError === true && r.text?.includes(REPORT_REJECTION)) {
+      return writeReport($, e.file_path, e.content)
+    }
+    return r
+  })
+
+  on('classic.SubagentStop', async ($, e, next) => {
+    const r = await next(e)
+    if (e.stop_hook_active) return r
+    const a = (await read($, agents))[e.agent_id]
+    if (a === undefined || a.durable > 0 || a.tools < WROTE_NOTHING_MIN) return r
+    return { ...r, additionalContext: [...(r.additionalContext ?? []), wroteNothing(a.tools)] }
+  })
+
+  on('session.compact', (_$, e, next) =>
+    next({ ...e, instructions: e.instructions ? `${e.instructions}\n\n${COMPACT_NOTE}` : COMPACT_NOTE }))
+}
