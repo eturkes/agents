@@ -132,6 +132,7 @@
   "theme": "light",
   "preferredNotifChannel": "notifications_disabled",
   "switchModelsOnFlag": true,
+  "cleanupPeriodDays": 365,
   "fileCheckpointingEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,

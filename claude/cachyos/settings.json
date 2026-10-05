@@ -152,6 +152,7 @@
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
   "preferredNotifChannel": "notifications_disabled",
+  "cleanupPeriodDays": 365,
   "fileCheckpointingEnabled": false,
   "teammateMode": "in-process",
   "remoteControlAtStartup": false,
