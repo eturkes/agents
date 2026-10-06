@@ -1,10 +1,10 @@
 # Resume
 
-Any phase. Fresh session at the project root; paste everything below the rule. An optional first line names what to do next; without one, the work continues where it stopped.
+Any phase. Fresh session at the project root; paste everything below the rule. An optional first line names the next work and its end point; without one, the work continues where it stopped.
 
 ---
 
-Resume this repo's open work. `.agent/spec.md` `Intent` outranks everything here; global + project `CLAUDE.md` law applies as written, `Session flow` first.
+Resume this repo's open work. A line of mine above this body = the work + its finish line, in place of the step 2 + 4 defaults. `.agent/spec.md` `Intent` outranks everything here; global + project `CLAUDE.md` law applies as written, `Session flow` first.
 
 1. Rebuild the state from disk before acting: `Phase` (phase + scope), `Tasks` (open rows + any resume note), `git log` since the last phase or pause commit, `git status`, `git stash list`, `git worktree list` + branches (`wt/*`, `wip/*`), `.scratch/` rosters + checklists. A missing or stale resume note → the newest prior transcript of this repo (`ls -t ~/.claude/projects/"$(pwd | tr /. --)"/*.jsonl`, skipping `$CLAUDE_CODE_SESSION_ID`), read through bounded `jq` queries: its pasted body + `Met when`, its last instruction, its last assistant text.
 2. Finish line = the interrupted body's `Met when` while it still applies, else the open phase's close per `Session flow`; ask when neither fits, open work absent included. State it in your first message and write it into the resume note, where compaction keeps it.
