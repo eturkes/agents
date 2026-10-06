@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { Engine, MockClock } from 'claude-code/testing'
+import type { Engine, MockClock, Mounted } from 'claude-code/testing'
 import type { AgentInfo, ApiContentBlock, On, RenderPropsOf, ToolCallResult } from 'claude-code'
 
 import { COMPACT_NOTE, SPAWN_NOTE, stopHold, wroteNothing } from '../hooks/text'
@@ -16,6 +16,7 @@ type World = {
   lists: number
   rows: ApiContentBlock[][]
   used: number
+  model: string
   answer: (e: { tool: string }) => ToolCallResult
 }
 
@@ -30,6 +31,7 @@ function world(on: On): World {
     lists: 0,
     rows: [],
     used: 136_000,
+    model: 'gpt-6-astra',
     answer: () => ({ result: 'ok', text: 'ok' }),
   }
   mock.env(on, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
@@ -39,7 +41,7 @@ function world(on: On): World {
   })
   on('tool.call', (_$, e) => w.answer(e))
   on('turn.step', async function* (_$, e) {
-    const usage = { input_tokens: w.used, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0, model: 'm' }
+    const usage = { input_tokens: w.used, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0, model: w.model }
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use' as const, usage }
   })
   on('turn.complete', (_$, e) => ({ text: e.answer }))
@@ -67,16 +69,18 @@ function world(on: On): World {
     w.rows.push(e.message.content)
     return next(e)
   })
-  on('ui.render', () => ENGINE_BAND)
+  on('ui.render', () => ENGINE_HINT)
   return w
 }
 
-const ENGINE_BAND = { type: 'Text' as const, children: ['engine'] }
-const BAND: RenderPropsOf['AbovePrompt'] = { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 200, scroll: { offset: 0, bodyRows: 10 }, view: {} }
+const ENGINE_HINT = { type: 'Text' as const, children: ['engine'] }
+const HINT: RenderPropsOf['PromptHint'] = { isDraft: false, isWorking: true, hint: '? for shortcuts' }
 const SURFACES = ['terminal', 'desktop'] as const
-const band = ($: Engine, surface: (typeof SURFACES)[number], props: Partial<RenderPropsOf['AbovePrompt']> = {}) =>
-  $.ui.mount({ plugin: 'agent-flow', surface, component: 'AbovePrompt', props: { ...BAND, ...props } })
-const shown = async (ui: { find: (q: { type: string }) => Promise<{ text: string } | undefined> }) => (await ui.find({ type: 'Text' }))?.text
+const hint = ($: Engine, surface: (typeof SURFACES)[number] = 'terminal') =>
+  $.ui.mount({ plugin: 'agent-flow', surface, component: 'PromptHint', props: HINT })
+type Hint = Mounted<(typeof SURFACES)[number], 'PromptHint'>
+const shown = async (ui: Hint) => (await ui.find({ type: 'Text' }))?.text
+const entries = async (ui: Hint) => (await ui.findAll({ type: 'Text' })).filter(x => x.props.color === 'warning').map(x => x.text)
 const running = (id: string, name?: string): AgentInfo => ({ id, description: `desc ${id}`, type: 'teammate', status: 'running', name })
 
 async function spawn($: Engine, name: string, prompt = 'Do it.'): Promise<string> {
@@ -236,7 +240,7 @@ test('TaskStop passes for an ended turn, a quiet teammate and an unknown task', 
 })
 
 for (const surface of SURFACES) {
-  test(`band on ${surface}: running agents against the compaction trigger, idle dimmed, viewed marked`, async ($, on) => {
+  test(`agent line on ${surface}: under the engine's hint, each running agent's model against the compaction trigger`, async ($, on) => {
     const w = world(on)
     const a = await spawn($, 'rev-1')
     const b = await spawn($, 'res-2')
@@ -244,64 +248,47 @@ for (const surface of SURFACES) {
     await step($, b)
     await done($, b)
     w.agents = [running(a, 'rev-1'), running(b, 'res-2'), running('id-new'), { ...running('id-gone', 'old-1'), status: 'completed' }]
-    const ui = await band($, surface, { view: { agentId: a } })
-    expect(await shown(ui)).toBe('agents ▸rev-1 50% 136K/272K · res-2 idle 50% 136K/272K · desc id-new idle ? ?/272K')
-    expect(await ui.find({ type: 'Text', text: /^▸rev-1$/ })).toMatchObject({ props: { bold: true } })
-    expect(await ui.find({ type: 'Text', text: /^res-2 idle$/ })).toMatchObject({ props: { dimColor: true } })
-    expect((await ui.findAll({ type: 'Text', text: /^50% 136K\/272K$/ })).map(x => x.props.color)).toEqual(['green', 'green'])
+    const ui = await hint($, surface)
+    expect(await shown(ui)).toBe('engine')
+    expect(await ui.find({ type: 'Box', text: /^rev-1/ })).toMatchObject({ props: { flexWrap: 'wrap', columnGap: 1 } })
+    expect(await entries(ui)).toEqual(['rev-1 gpt-6-astra 50% 136K/272K ·', 'res-2 gpt-6-astra 50% 136K/272K ·', 'desc id-new ? ?/272K'])
   })
 }
 
-test('a mounted band follows usage, turn end and the viewed transcript without a remount', async ($, on) => {
+test('a mounted agent line follows usage and the answering model without a remount', async ($, on) => {
   const w = world(on)
   w.agents = [running('tm-1', 'rev-1')]
-  const ui = await band($, 'terminal')
-  expect(await shown(ui)).toBe('agents rev-1 idle ? ?/272K')
+  const ui = await hint($)
+  expect(await entries(ui)).toEqual(['rev-1 ? ?/272K'])
   await step($, 'tm-1')
-  expect(await shown(ui)).toBe('agents rev-1 50% 136K/272K')
-  await done($, 'tm-1')
-  expect(await shown(ui)).toBe('agents rev-1 idle 50% 136K/272K')
-  await ui.redraw({ ...BAND, view: { agentId: 'tm-1' } })
-  expect(await shown(ui)).toBe('agents ▸rev-1 idle 50% 136K/272K')
+  expect(await entries(ui)).toEqual(['rev-1 gpt-6-astra 50% 136K/272K'])
+  w.used = 250_240
+  w.model = ''
+  await step($, 'tm-1')
+  expect(await entries(ui)).toEqual(['rev-1 m 92% 250K/272K'])
 })
 
-test('band colours follow the statusline thresholds', async ($, on) => {
-  const w = world(on)
-  const id = await spawn($, 'rev-1')
-  w.agents = [running(id, 'rev-1')]
-  for (const [used, text, color] of [
-    [100_000, '37% 100K/272K', undefined],
-    [204_000, '75% 204K/272K', 'yellow'],
-    [250_240, '92% 250K/272K', 'red'],
-  ] as const) {
-    w.used = used
-    await step($, id)
-    const ui = await band($, 'terminal')
-    const gauge = await ui.find({ type: 'Text', text: new RegExp(`^${text}$`) })
-    expect(gauge).toBeDefined()
-    expect(gauge?.props.color).toBe(color)
-    await ui.unmount()
-  }
-})
-
-test('band yields to the engine with no running agent or under a survey', async ($, on) => {
+test('agent line yields to the engine with no running agent', async ($, on) => {
   const w = world(on)
   const id = await spawn($, 'rev-1')
   await step($, id)
-  expect(await shown(await band($, 'terminal'))).toBe('engine')
-  w.agents = [running(id, 'rev-1')]
-  expect(await shown(await band($, 'terminal', { hasSurvey: true }))).toBe('engine')
+  const ui = await hint($)
+  expect(await shown(ui)).toBe('engine')
+  expect(await entries(ui)).toEqual([])
+  w.agents = [{ ...running(id, 'rev-1'), status: 'killed' }]
+  expect(await entries(await hint($))).toEqual([])
 })
 
-test('band drops a finished agent on the next list poll with no record write', async ($, on) => {
+test('agent line drops a finished agent on the next list poll with no record write', async ($, on) => {
   const w = world(on)
   await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
   const id = await spawn($, 'rev-1')
   await step($, id)
   w.agents = [running(id, 'rev-1')]
-  const ui = await band($, 'terminal')
-  expect(await shown(ui)).toBe('agents rev-1 50% 136K/272K')
+  const ui = await hint($)
+  expect(await entries(ui)).toEqual(['rev-1 gpt-6-astra 50% 136K/272K'])
   w.agents = [{ ...running(id, 'rev-1'), status: 'completed' }]
   await w.clock.advance(5_000)
+  expect(await entries(ui)).toEqual([])
   expect(await shown(ui)).toBe('engine')
 })

@@ -4,11 +4,11 @@ import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 import type { AgentFlowAgent } from '../types'
 import {
   COMPACT_NOTE, QUIET_MS, REISSUE_MS, REPORT_REJECTION, SPAWN_NOTE, WROTE_NOTHING_MIN,
-  bandRows, isDurable, lastMarker, stopHold, trigger, wroteNothing,
+  agentEntries, isDurable, lastMarker, stopHold, trigger, wroteNothing,
 } from './text'
 
 const agents = atom({ plugin: 'agent-flow', key: 'agents' } as const, {})
-// The band redraws on each record write; a finish or kill writes none ⇒ a poll of the running set redraws on change.
+// The agent line redraws on each record write; a finish or kill writes none ⇒ a poll of the running set redraws on change.
 const LIST_EVERY_MS = 5_000
 let listKey: string | undefined
 
@@ -31,7 +31,7 @@ async function patch($: EngineInterface, id: string, change: (a: AgentFlowAgent)
   return all[id]!
 }
 
-/** Teammate compaction trigger = the band's denominator. */
+/** Teammate compaction trigger = the agent line's denominator. */
 async function compactAt($: EngineInterface): Promise<number> {
   const window = Number(await $.env.get('CLAUDE_CODE_MAX_CONTEXT_TOKENS')) || 200_000
   const acw = Number(await $.env.get('CLAUDE_CODE_AUTO_COMPACT_WINDOW')) || 0
@@ -76,22 +76,19 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // One line above the prompt: each running agent's context against its compaction trigger, statusline-styled.
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
-    const rows = bandRows(await $.agent.list(), await read($, agents), await compactAt($), e.props.view.agentId)
-    if (rows.length === 0) return next(e)
-    const { Text } = $.ui.resolve(e)
+  // Under the prompt hint, in the warning colour of the plugin status row: each running agent's model + context against its
+  // compaction trigger. The status row truncates to one line ⇒ this site; entries flow whole onto the next row when it fills.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const entries = agentEntries(await $.agent.list(), await read($, agents), await compactAt($))
+    if (entries.length === 0) return next(e)
+    const { Box, Text } = $.ui.resolve(e)
     return (
-      <Text wrap="wrap">
-        <Text dimColor>agents</Text>
-        {rows.flatMap((r, i) => [
-          i === 0 ? ' ' : <Text dimColor> · </Text>,
-          <Text bold={r.isViewed} dimColor={r.isIdle}>{r.isViewed ? '▸' : ''}{r.name}{r.isIdle ? ' idle' : ''}</Text>,
-          ' ',
-          r.color === undefined ? <Text>{r.gauge}</Text> : <Text color={r.color}>{r.gauge}</Text>,
-        ])}
-      </Text>
+      <Box flexDirection="column">
+        {await next(e)}
+        <Box flexWrap="wrap" columnGap={1}>
+          {entries.map((x, i) => <Text color="warning">{i < entries.length - 1 ? `${x} ·` : x}</Text>)}
+        </Box>
+      </Box>
     )
   })
 
@@ -119,11 +116,12 @@ export const register: Register = on => {
   on('turn.step', async function* ($, e, next) {
     if (e.agentId === undefined) return yield* next(e)
     const id = e.agentId
-    await patch($, id, a => ({ ...a, inTurn: true }))
+    await patch($, id, a => ({ ...a, inTurn: true, model: a.model ?? e.model }))
     const r = yield* next(e)
     if (r.usage) {
       const used = total(r.usage)
-      await patch($, id, a => ({ ...a, used }))
+      const model = r.usage.model || e.model
+      await patch($, id, a => ({ ...a, used, model }))
     }
     return r
   })

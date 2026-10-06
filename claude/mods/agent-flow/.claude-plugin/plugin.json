@@ -1,6 +1,6 @@
 {
   "name": "agent-flow",
   "version": "1.0.0",
-  "description": "Holds each subagent's deliverable on disk across spawn, write, compaction, stop and TaskStop; agent context band above the prompt",
+  "description": "Holds each subagent's deliverable on disk across spawn, write, compaction, stop and TaskStop; agent model + context line under the prompt",
   "types": "./types/index.d.ts"
 }

@@ -14,6 +14,8 @@ export type AgentFlowAgent = {
   heldAt?: number
   /** Last request's input + cache + output. */
   used?: number
+  /** Last request's model: the one the API reports answering, else the one the step named. */
+  model?: string
 }
 
 declare module 'claude-code' {

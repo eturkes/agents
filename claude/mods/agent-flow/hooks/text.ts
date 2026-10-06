@@ -55,27 +55,14 @@ export function human(n: number): string {
   return `${Math.floor(n / 1000 + 0.5)}K`
 }
 
-/** Statusline gauge colours on the rounded percent. */
-export function tint(pct: number): string | undefined {
-  return pct >= 92 ? 'red' : pct >= 75 ? 'yellow' : pct >= 50 ? 'green' : undefined
-}
-
-export type BandRow = { name: string; isIdle: boolean; isViewed: boolean; gauge: string; color?: string }
-
-/** Band = engine-listed running agents (idle teammates included), in list order; usage + turn state from agent-flow's record. */
-export function bandRows(list: readonly AgentInfo[], agents: Readonly<Record<string, AgentFlowAgent>>, at: number, viewed?: string): BandRow[] {
+/** One entry per engine-listed running agent (idle teammates included), in list order: name, model, context against the trigger. */
+export function agentEntries(list: readonly AgentInfo[], agents: Readonly<Record<string, AgentFlowAgent>>, at: number): string[] {
   return list
     .filter(x => x.status === 'running')
     .map(x => {
       const a = agents[x.id]
       const used = a?.used
-      const pct = used === undefined ? undefined : Math.round((used * 100) / at)
-      return {
-        name: x.name ?? a?.name ?? x.description,
-        isIdle: a?.inTurn !== true,
-        isViewed: x.id === viewed,
-        gauge: used === undefined || pct === undefined ? `? ?/${human(at)}` : `${pct}% ${human(used)}/${human(at)}`,
-        color: pct === undefined ? undefined : tint(pct),
-      }
+      const gauge = used === undefined ? `? ?/${human(at)}` : `${Math.round((used * 100) / at)}% ${human(used)}/${human(at)}`
+      return [x.name ?? a?.name ?? x.description, a?.model, gauge].filter(Boolean).join(' ')
     })
 }
