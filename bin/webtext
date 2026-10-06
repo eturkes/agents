@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Page text, no model in between: WebFetch returns a small model's answer → stats, quotes +
+# conclusions can arrive invented or reversed.
+set -euo pipefail
+
+help() {
+  cat <<'EOF'
+Usage: webtext <url> [--js] [trafilatura options]
+
+Print the text of a web page, with no model between the page and the reader.
+An HTML page becomes markdown. The extractor keeps tables and favors completeness (--recall).
+Markdown, plain text, JSON and XML print unchanged.
+A PDF goes to a temporary file, and webtext prints the path of that file.
+If a script builds the page, use --js. This option renders the page through webcap first.
+Other options go to trafilatura. Write them as --opt or --opt=value, for example --links.
+The --with-metadata option adds a date that trafilatura guesses.
+Standard output contains only the page text. Standard error shows the final URL, the type and warnings.
+
+Exit status: 0 = text printed, 1 = fetch failed, 2 = usage error, 3 = no text extracted,
+4 = unsupported type.
+EOF
+}
+
+usage() { echo "Usage: webtext <url> [--js] [trafilatura options]. Run webtext --help for details." >&2; exit 2; }
+url="" js=0 extra=()
+for a in "$@"; do
+  case $a in
+    --js) js=1 ;;
+    -h|--help) help; exit 0 ;;
+    -*) extra+=("$a") ;;
+    *) [[ -z $url ]] || usage; url=$a ;;
+  esac
+done
+[[ -n $url ]] || usage
+command -v trafilatura >/dev/null || { echo "webtext: trafilatura is not installed. Install it with: uv tool install trafilatura" >&2; exit 1; }
+
+UA=${WEBTEXT_UA:-"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36"}
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+if (( js )); then
+  command -v webcap >/dev/null || { echo "webtext: --js requires webcap on PATH." >&2; exit 1; }
+  webcap "$url" --dom - > "$tmp/body" || { echo "webtext: webcap could not render $url" >&2; exit 1; }
+  src=$url type=text/html
+else
+  meta=$(curl -sSL --compressed -A "$UA" -o "$tmp/body" -w '%{http_code}\t%{content_type}\t%{url_effective}' "$url") \
+    || { echo "webtext: could not fetch $url" >&2; exit 1; }
+  IFS=$'\t' read -r code type src <<<"$meta"
+  (( code < 400 )) || { echo "webtext: HTTP $code: $src" >&2; exit 1; }
+  type=${type%%;*} type=${type,,}
+  # Servers that send no type or a generic one → sniff the bytes.
+  [[ -n $type && $type != application/octet-stream ]] || type=$(file -b --mime-type "$tmp/body")
+fi
+echo "webtext: $src ($type)" >&2
+
+case $type in
+  text/html | application/xhtml+xml)
+    out=$(trafilatura --markdown --recall "${extra[@]}" < "$tmp/body") || true
+    if [[ -z ${out//[[:space:]]/} ]]; then
+      (( js )) && hint="" || hint=" If a script builds the page, retry with --js."
+      echo "webtext: no text extracted.$hint" >&2; exit 3
+    fi
+    (( js || ${#out} >= 500 )) || echo "webtext: only ${#out} characters extracted. If a script builds the page, retry with --js." >&2
+    printf '%s\n' "$out" ;;
+  application/pdf)
+    pdf=$(mktemp --suffix=.pdf "${TMPDIR:-/tmp}/webtext-XXXXXX")
+    cp "$tmp/body" "$pdf"
+    echo "webtext: saved the PDF. Open the path below with the Read tool; use pages= past 10 pages." >&2
+    printf '%s\n' "$pdf" ;;
+  text/* | application/json | application/*+json | application/xml | application/*+xml \
+    | application/yaml | application/x-yaml | application/toml | application/javascript)
+    cat "$tmp/body" ;;
+  *)
+    echo "webtext: unsupported type $type. Download it with curl -o <file>, then inspect the file." >&2; exit 4 ;;
+esac

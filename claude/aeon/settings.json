@@ -44,7 +44,8 @@
       "Bash(view:*)",
       "Bash(nano:*)",
       "Bash(emacs:*)",
-      "Bash(ed:*)"
+      "Bash(ed:*)",
+      "WebFetch"
     ],
     "defaultMode": "bypassPermissions"
   },
