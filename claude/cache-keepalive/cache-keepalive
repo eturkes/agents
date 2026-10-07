@@ -1,0 +1,349 @@
+#!/usr/bin/python3
+"""Keep the prompt cache of live Claude Code sessions warm across long waits.
+
+HTTP pass-through between Headroom and CLIProxyAPI. It stores the last
+main-thread request of each session. When a session sends no main-thread
+request for --interval seconds, the keeper sends that request again, unchanged,
+and closes the stream at message_start. The cache read renews the 1h entry.
+Claude Code's own keepalive needs a direct api.anthropic.com connection, so it
+stays off behind these proxies.
+
+Standard library only: the service must start without a package cache.
+"""
+import argparse
+import http.client
+import http.server
+import json
+import sys
+import threading
+import time
+import urllib.parse
+from dataclasses import dataclass
+from pathlib import Path
+
+HOP = frozenset({
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection",
+    "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length",
+})
+SESSION_HEADER = "X-Claude-Code-Session-Id"
+CLASS_HEADER = "x-claude-code-request-class"
+STATUS_PATH = "/_keepalive"
+NO_RETRY = frozenset({400, 401, 403, 404, 413, 422})
+
+
+def log(message):
+    print(message, flush=True)
+
+
+@dataclass(eq=False)
+class Entry:
+    session: str
+    model: str
+    path: str
+    headers: list
+    body: bytes
+    requested_at: float  # start of the last real main-thread request
+    renewed_at: float  # last cache read: that request or a touch
+    touches: int = 0
+    misses: int = 0
+    busy: bool = False
+    last: str = "armed"
+
+
+def has_1h_marker(request):
+    """True when a cache_control breakpoint asks for the 1h TTL."""
+    def marked(block):
+        control = block.get("cache_control") if isinstance(block, dict) else None
+        return isinstance(control, dict) and control.get("ttl") == "1h"
+
+    if marked(request):
+        return True
+    for key in ("system", "tools"):
+        blocks = request.get(key)
+        if isinstance(blocks, list) and any(map(marked, blocks)):
+            return True
+    for message in request.get("messages") or []:
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            inner = block.get("content") if isinstance(block, dict) else None
+            if marked(block) or isinstance(inner, list) and any(map(marked, inner)):
+                return True
+    return False
+
+
+def live_sessions(directory):
+    """Session ids whose Claude Code process runs; flag = every record was readable."""
+    live, complete = set(), True
+    for path in Path(directory).glob("*.json"):
+        try:
+            record = json.loads(path.read_text())
+            pid, session = int(record["pid"]), record["sessionId"]
+        except (OSError, ValueError, KeyError, TypeError):
+            complete = False
+            continue
+        if Path(f"/proc/{pid}").exists():
+            live.add(session)
+    return live, complete
+
+
+class Keeper:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.lock = threading.Lock()
+        self.entries = {}
+
+    def candidate(self, method, path, headers, body, now):
+        """An Entry for a streamed main-thread Claude request with a 1h breakpoint, else None."""
+        if method != "POST" or urllib.parse.urlsplit(path).path != "/v1/messages":
+            return None
+        session = headers.get(SESSION_HEADER)
+        if (headers.get(CLASS_HEADER) or "").lower() != "main" or not session:
+            return None
+        try:
+            request = json.loads(body)
+        except ValueError:
+            return None
+        model = request.get("model") if isinstance(request, dict) else None
+        if not (isinstance(model, str) and model.startswith("claude") and request.get("stream") is True):
+            return None
+        if not has_1h_marker(request):
+            return None
+        forwarded = [(k, v) for k, v in headers.items() if k.lower() not in HOP]
+        return Entry(session, model, path, forwarded, body, now, now)
+
+    def record(self, entry):
+        with self.lock:
+            known = entry.session in self.entries
+            self.entries[entry.session] = entry
+        if not known:
+            log(f"armed {entry.session[:8]} model={entry.model} bytes={len(entry.body)}")
+
+    def tick(self, now):
+        live, complete = live_sessions(self.cfg.sessions_dir)
+        due = []
+        with self.lock:
+            for session, entry in list(self.entries.items()):
+                if session not in live and complete:
+                    reason = "session ended"
+                elif now - entry.requested_at >= self.cfg.hold:
+                    reason = "hold elapsed"
+                elif now - entry.renewed_at >= self.cfg.ttl:
+                    reason = "cache lapsed"
+                else:
+                    if not entry.busy and now - entry.renewed_at >= self.cfg.interval:
+                        entry.busy = True
+                        due.append(entry)
+                    continue
+                del self.entries[session]
+                log(f"drop {session[:8]}: {reason} after {entry.touches} touches")
+        for entry in due:
+            threading.Thread(target=self.touch, args=(entry,), daemon=True).start()
+
+    def touch(self, entry):
+        started = time.time()
+        try:
+            status, detail = send_touch(self.cfg.upstream, entry, self.cfg.touch_timeout)
+        except Exception as exc:  # any failure must clear busy below
+            status, detail = None, f"{type(exc).__name__}: {exc}"
+        took = time.time() - started
+        with self.lock:
+            entry.busy = False
+            current = self.entries.get(entry.session) is entry
+            if status == 200 and isinstance(detail, dict):
+                read = detail.get("cache_read_input_tokens") or 0
+                wrote = detail.get("cache_creation_input_tokens") or 0
+                entry.renewed_at = started
+                entry.touches += 1
+                entry.misses = entry.misses + 1 if wrote > read else 0
+                entry.last = f"ok read={read} write={wrote} {took:.1f}s"
+                drop = "repeated misses" if entry.misses >= 2 else None
+            else:
+                entry.last = f"failed {status or ''} {str(detail)[:200]}".replace("\n", " ")
+                drop = f"rejected {status}" if status in NO_RETRY else None
+            if current and drop:
+                del self.entries[entry.session]
+        if current:
+            log(f"touch {entry.session[:8]} {entry.last}")
+            if drop:
+                log(f"drop {entry.session[:8]}: {drop} after {entry.touches} touches")
+
+    def status(self, now):
+        with self.lock:
+            return [{
+                "session": e.session[:8], "model": e.model, "bytes": len(e.body),
+                "idle_s": round(now - e.requested_at), "next_touch_s": round(e.renewed_at + self.cfg.interval - now),
+                "touches": e.touches, "last": e.last,
+            } for e in self.entries.values()]
+
+
+def send_touch(upstream, entry, timeout):
+    """Re-send the stored request; return (status, message_start usage | error text)."""
+    conn = http.client.HTTPConnection(upstream.hostname, upstream.port, timeout=timeout)
+    try:
+        conn.putrequest("POST", entry.path, skip_host=True, skip_accept_encoding=True)
+        conn.putheader("Host", upstream.netloc)
+        for key, value in entry.headers:
+            if key.lower() != "accept-encoding":
+                conn.putheader(key, value)
+        conn.putheader("Accept-Encoding", "identity")
+        conn.putheader("Content-Length", str(len(entry.body)))
+        conn.endheaders(entry.body)
+        resp = conn.getresponse()
+        if resp.status != 200:
+            return resp.status, resp.read(2000).decode(errors="replace")
+        event = None
+        while line := resp.readline(1 << 20):
+            line = line.strip()
+            if line.startswith(b"event:"):
+                event = line[6:].strip()
+            elif line.startswith(b"data:") and event == b"message_start":
+                return 200, json.loads(line[5:])["message"]["usage"]
+            elif line.startswith(b"data:") and event == b"error":
+                return 200, line[5:].decode(errors="replace")
+        return 200, "stream ended before message_start"
+    finally:
+        conn.close()  # closing before message_stop cancels generation upstream
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "cache-keepalive"
+
+    def log_message(self, format, *args):
+        pass
+
+    def relay(self):
+        if self.command == "GET" and self.path == STATUS_PATH:
+            return self.reply(200, {"entries": self.server.keeper.status(time.time())})
+        try:
+            body = self.read_body()
+        except ValueError:
+            self.close_connection = True
+            return self.reply(400, error("cache-keepalive: malformed request body"))
+        cfg = self.server.cfg
+        conn = http.client.HTTPConnection(cfg.upstream.hostname, cfg.upstream.port, timeout=cfg.upstream_timeout)
+        started = time.time()
+        try:
+            conn.putrequest(self.command, self.path, skip_host=True, skip_accept_encoding=True)
+            conn.putheader("Host", cfg.upstream.netloc)
+            for key, value in self.headers.items():
+                if key.lower() not in HOP:
+                    conn.putheader(key, value)
+            if body or "content-length" in self.headers or "transfer-encoding" in self.headers:
+                conn.putheader("Content-Length", str(len(body)))
+            conn.endheaders(body)
+            entry = self.server.keeper.candidate(self.command, self.path, self.headers, body, started)
+            resp = conn.getresponse()
+        except (OSError, http.client.HTTPException) as exc:
+            conn.close()
+            return self.reply(502, error(f"cache-keepalive: upstream unreachable: {exc}"))
+        try:
+            if entry is not None and resp.status == 200:
+                self.server.keeper.record(entry)
+            self.forward(resp)
+        finally:
+            conn.close()
+
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = relay
+
+    def read_body(self):
+        if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+            chunks = []
+            while True:
+                size = int(self.rfile.readline(65537).split(b";")[0], 16)
+                if size == 0:
+                    while self.rfile.readline(65537) not in (b"\r\n", b"\n", b""):
+                        pass
+                    return b"".join(chunks)
+                chunks.append(self.rfile.read(size))
+                self.rfile.readline(65537)
+        length = int(self.headers.get("Content-Length") or 0)
+        return self.rfile.read(length) if length else b""
+
+    def forward(self, resp):
+        self.send_response_only(resp.status, resp.reason)
+        for key, value in resp.getheaders():
+            if key.lower() not in HOP:
+                self.send_header(key, value)
+        length = None if resp.chunked else resp.getheader("Content-Length")
+        if self.command == "HEAD" or resp.status in (204, 304) or resp.status < 200:
+            if length is not None:
+                self.send_header("Content-Length", length)
+            return self.end_headers()
+        chunked = length is None
+        self.send_header(*(("Transfer-Encoding", "chunked") if chunked else ("Content-Length", length)))
+        self.end_headers()
+        try:
+            while data := resp.read1(65536):
+                self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data) if chunked else data)
+            if chunked:
+                self.wfile.write(b"0\r\n\r\n")
+        except (OSError, http.client.HTTPException):
+            self.close_connection = True  # either side failed mid-body: end the exchange unterminated
+
+    def reply(self, status, payload):
+        data = json.dumps(payload).encode()
+        self.send_response_only(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+def error(message):
+    return {"type": "error", "error": {"type": "api_error", "message": message}}
+
+
+class Server(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+    request_queue_size = 128
+
+    def handle_error(self, request, client_address):
+        if not isinstance(sys.exc_info()[1], ConnectionError):  # a client reset is routine
+            super().handle_error(request, client_address)
+
+
+def serve(cfg):
+    keeper = Keeper(cfg)
+    host, port = cfg.listen.rsplit(":", 1)
+    server = Server((host, int(port)), Handler)
+    server.cfg, server.keeper = cfg, keeper
+
+    def ticks():
+        while True:
+            time.sleep(cfg.tick)
+            try:
+                keeper.tick(time.time())
+            except Exception as exc:  # the loop must outlive one bad tick
+                log(f"tick failed: {exc!r}")
+
+    threading.Thread(target=ticks, daemon=True).start()
+    return server
+
+
+def parse(argv):
+    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument("--listen", default="127.0.0.1:8318")
+    p.add_argument("--upstream", default="http://127.0.0.1:8317")
+    p.add_argument("--interval", type=float, default=3300, help="seconds without a cache read before a touch")
+    p.add_argument("--ttl", type=float, default=3600, help="cache entry lifetime; past it the entry is dropped")
+    p.add_argument("--hold", type=float, default=43200, help="seconds after the last real request to stop touching")
+    p.add_argument("--tick", type=float, default=30)
+    p.add_argument("--touch-timeout", type=float, default=180)
+    p.add_argument("--upstream-timeout", type=float, default=900, help="idle read timeout on relayed requests")
+    p.add_argument("--sessions-dir", default=str(Path.home() / ".claude" / "sessions"))
+    cfg = p.parse_args(argv)
+    cfg.upstream = urllib.parse.urlsplit(cfg.upstream)
+    return cfg
+
+
+def main():
+    cfg = parse(sys.argv[1:])
+    server = serve(cfg)
+    log(f"listening {cfg.listen} → {cfg.upstream.geturl()}; touch after {cfg.interval:g}s idle, "
+        f"hold {cfg.hold:g}s, ttl {cfg.ttl:g}s")
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

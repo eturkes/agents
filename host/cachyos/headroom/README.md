@@ -1,6 +1,6 @@
 # Headroom deployment on CachyOS
 
-Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` points to CLIProxyAPI at `127.0.0.1:8317`, and its `tpm` lifts the proxy's token rate limit (see [Token rate limit](#token-rate-limit)). The Headroom proxy listens on `127.0.0.1:8787`.
+Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` points to cache-keepalive at `127.0.0.1:8318`, which relays to CLIProxyAPI at `127.0.0.1:8317` (see [cache-keepalive](../../../claude/cache-keepalive/README.md)), and its `tpm` lifts the proxy's token rate limit (see [Token rate limit](#token-rate-limit)). The Headroom proxy listens on `127.0.0.1:8787`.
 
 Start a session with:
 

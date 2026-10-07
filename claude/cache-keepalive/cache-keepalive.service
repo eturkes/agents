@@ -1,0 +1,15 @@
+[Unit]
+Description=Prompt-cache keepalive between Headroom and CLIProxyAPI
+After=cli-proxy-api.service
+
+[Service]
+ExecStart=%h/.local/bin/cache-keepalive
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
