@@ -26,7 +26,7 @@ The build provides these controls:
 - The guard limits OCR ONNX intra-operation and inter-operation threads to one.
 - The guard honors `--no-image-optimize`, `HEADROOM_NO_IMAGE_OPTIMIZE=1`, `--no-optimize`, and the per-request bypass header.
 
-The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies two commits to upstream tag `v0.40.0`: the guard, then the prompt fix described next.
+The source is `~/.local/app/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies two commits to upstream tag `v0.40.0`: the guard, then the prompt fix described next.
 
 From the second turn on, `v0.39.0` compresses the text of the newest user message. That text includes long prompts, skill bodies, `CLAUDE.md` change notices, and messages from a lead to its teammates. Upstream #3923 in `v0.40.0` fixes the case where the user message is the last message in the request. Claude Code adds system messages after the user message on most turns, so the bug remains in `v0.40.0`. The local commit `fix(router): keep the newest user prompt verbatim when system messages follow it` treats the last message before those system messages as the newest turn.
 
@@ -36,7 +36,7 @@ Upstream `v0.40.0` also kills the worker of a timed-out call (#3940). The guard 
 
 ### Build and install
 
-1. Run `nice -n 10 uv build --wheel` in `~/src/headroom`. The build writes a wheel to `~/src/headroom/dist/`.
+1. Run `nice -n 10 uv build --wheel` in `~/.local/app/headroom`. The build writes a wheel to `~/.local/app/headroom/dist/`.
 2. Install that wheel:
 
    ```sh
