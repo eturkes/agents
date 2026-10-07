@@ -41,11 +41,11 @@ lp() {
     else if(q>=50)printf "\033[32m%s %d%%\033[0m",l,q
     else printf "%s %d%%",l,q}'
 }
-# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA] ⇒ "LABEL N%EXTRA MM/DD HH:MM".
-# EXTRA = preformatted leading-space insert between used% and reset.
+# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA FMT] ⇒ "LABEL N%EXTRA MM/DD HH:MM".
+# EXTRA = preformatted leading-space insert between used% and reset; FMT = reset date format.
 seg() {
   pct=$(lp "$3" "$1")
-  dt=$(date -d "@$2" +'%m/%d %H:%M'); delta=$(( $2 - now ))
+  dt=$(date -d "@$2" +"${8:-%m/%d %H:%M}"); delta=$(( $2 - now ))
   rs=${4:-3600}; ys=${5:-7200}
   if [ "$delta" -le "$rs" ]; then dt=$(printf '\033[31m%s\033[0m' "$dt")
   elif [ "$delta" -le "$ys" ]; then dt=$(printf '\033[33m%s\033[0m' "$dt")
@@ -82,7 +82,7 @@ xs=""
 if [ -n "$xa" ]; then xs=" | $(seg "$xp" "$xa" codex 18000 36000 54000)"
 elif [ -n "$xp" ]; then xs=" | $(lp codex "$xp")"
 fi
-[ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800)"
+[ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800 "" '%H:%M')"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000 "$fx")"
 rl="$rl$xs"
 # Effort varies per launch (`--effort`) → shown beside the gauge; high/xhigh/max
