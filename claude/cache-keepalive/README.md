@@ -8,7 +8,7 @@ The keeper is an HTTP relay between Headroom and CLIProxyAPI:
 Claude Code → Headroom 127.0.0.1:8787 → cache-keepalive 127.0.0.1:8318 → CLIProxyAPI 127.0.0.1:8317
 ```
 
-It runs on CachyOS. On aeon, Headroom still points to CLIProxyAPI directly.
+On CachyOS it runs as a systemd user service. On aeon it runs in the foreground in a terminal, like CLIProxyAPI there.
 
 ## Why Claude Code needs help
 
@@ -43,6 +43,8 @@ A cache read costs one tenth of the base input price, and a 1-hour write costs t
 
 ## Install
 
+### CachyOS
+
 ```sh
 ln -sfn "$PWD/claude/cache-keepalive/cache-keepalive" ~/.local/bin/cache-keepalive
 cp claude/cache-keepalive/cache-keepalive.service ~/.config/systemd/user/
@@ -51,6 +53,24 @@ systemctl --user enable --now cache-keepalive.service
 ```
 
 Run these commands from the repository root. Then point Headroom at the keeper. `host/cachyos/headroom/settings.json` sets `anthropic_base_url` to `http://127.0.0.1:8318`. Copy it to `~/.headroom/settings.json`, and restart the Headroom proxy.
+
+### aeon
+
+aeon runs no unit. Link the script from the repository root:
+
+```sh
+ln -sfn "$PWD/claude/cache-keepalive/cache-keepalive" ~/.local/bin/cache-keepalive
+```
+
+`container/aeon/headroom/settings.json` sets `anthropic_base_url` to `http://127.0.0.1:8318`. Copy it to `~/.headroom/settings.json`. Headroom reads this file when its proxy starts, and `headroom wrap` stops the proxy it started when its last session ends. So the next `headroom wrap` picks up the change.
+
+Start the keeper in its own terminal before you start a session, and leave it running:
+
+```sh
+cache-keepalive
+```
+
+Ctrl+C stops it. While it is down, Headroom cannot reach CLIProxyAPI, and every request fails.
 
 The keeper uses only the Python standard library.
 
@@ -62,8 +82,8 @@ curl -sS http://127.0.0.1:8318/_keepalive
 journalctl --user -u cache-keepalive.service
 ```
 
-The check script runs the relay and the touch logic against a fake upstream. The status endpoint lists each stored session with its idle time, the time to the next touch, and the result of the last touch. The journal logs each stored session, each touch with its read and write token counts, and each drop.
+The check script runs the relay and the touch logic against a fake upstream. The status endpoint lists each stored session with its idle time, the time to the next touch, and the result of the last touch. The journal logs each stored session, each touch with its read and write token counts, and each drop. On aeon, the keeper's terminal shows the same lines.
 
 ## Options
 
-`--interval` (3300 s) sets the idle time before a touch. `--hold` (43200 s) sets how long after the last real request touches continue. `--ttl` (3600 s) is the cache lifetime. Use `--listen` and `--upstream` to change the addresses. To change an option, add it to `ExecStart` in the unit.
+`--interval` (3300 s) sets the idle time before a touch. `--hold` (43200 s) sets how long after the last real request touches continue. `--ttl` (3600 s) is the cache lifetime. Use `--listen` and `--upstream` to change the addresses. To change an option, add it to `ExecStart` in the unit, or on aeon to the `cache-keepalive` command.
