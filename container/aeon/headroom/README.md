@@ -18,13 +18,13 @@ ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --e
 
 The installed build adds hard termination for timed-out image-compression workers. RapidOCR and ONNX workers can otherwise accumulate until the host starves.
 
-The worker controls match the [CachyOS build](../../../host/cachyos/headroom/README.md#image-worker-termination-guard).
+The source is `~/.local/app/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies two commits to upstream tag `v0.40.0`: the guard and the prompt fix. Both commits match the [CachyOS build](../../../host/cachyos/headroom/README.md#image-worker-termination-guard), which describes the worker controls, the prompt fix, and its capture test.
 
-The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies the guard to upstream tag `v0.35.0`.
+This machine runs the proxy in token mode (`HEADROOM_MODE=token` in `~/.profile`). The prompt fix applies in token mode too.
 
 ### Build and install
 
-1. Run `CARGO_BUILD_JOBS=4 nice -n 10 uv build --wheel` in `~/src/headroom`. The build writes a wheel to `~/src/headroom/dist/`.
+1. Run `CARGO_BUILD_JOBS=4 nice -n 10 uv build --wheel` in `~/.local/app/headroom`. The build writes a wheel to `~/.local/app/headroom/dist/`.
 2. Install that wheel:
 
    ```sh
@@ -43,7 +43,7 @@ To update this build, rebase the branch onto the newest upstream tag. Rebuild th
 
 Because the guard sits on a release tag, the local build reports the same `headroom --version` value as the published package. To identify the installed build, read the receipt path, or run `rg _retire_image_pool` under the tool's `site-packages`.
 
-After an upstream release includes the guard, restore the published package:
+After an upstream release includes the guard and the prompt fix, restore the published package:
 
 ```sh
 uv tool install --force --python 3.14.5 "headroom-ai[all]"
@@ -59,7 +59,7 @@ uv tool install --force --python 3.14.5 "headroom-ai[all]"
 
 ## Verification
 
-Run the bounded suites in the checkout:
+Prepare the test environment with `CARGO_BUILD_JOBS=4 nice -n 10 uv sync --frozen --extra all --extra dev`. After the checkout moves, recreate `.venv`, because its scripts contain the old absolute path. Then run the bounded suites in the checkout:
 
 ```sh
 PYTHONPATH=$PWD .venv/bin/python -m pytest \
