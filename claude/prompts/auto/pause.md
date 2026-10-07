@@ -4,7 +4,7 @@ Any phase. Paste into the running session when you want to stop now and continue
 
 ---
 
-Pause this session for a fresh one to resume. The open finish line stays open and moves to disk; new work waits. In-flight work reaches its own end; stop early only what I name.
+Pause this session for a fresh one to resume. The open finish line stays open and moves to disk; new work waits. In-flight work reaches its own end.
 
 1. Teammates: each running one reaches its marker, then gets harvested per global `Subagents` and stopped with `TaskStop`. Each worktree ends committed on its branch; a non-empty `git -C <wt> status --porcelain` = content → commit it there.
 2. Processes you started — servers, watchers, background shells → stopped by PID, their ports free.

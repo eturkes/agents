@@ -2,6 +2,13 @@
 
 Paste one body into a Claude Code session at the project root. The header of each file names its preconditions and the text to paste.
 
+Each prompt comes in two sets with the same file names:
+
+- `auto/` runs the prescribed session flow. It has no slot for your input.
+- `steered/` starts with a `<request>` slot. Replace the slot with your request or steering before you paste. Your request outranks the rest of the body, but `Intent` outranks your request.
+
+Use `steered/resume.md` to name the next work and its end point. Use `steered/maintain.md` for a specific request or for named `.agent/deferred.md` rows. `auto/maintain.md` works every row.
+
 Start each fresh session with this command. Replace `<level>` with the effort level that you choose for the session.
 
 ```sh

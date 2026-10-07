@@ -1,0 +1,19 @@
+# Implement
+
+My go after ITERATE, or a scope I open straight at IMPLEMENT. Fresh session at the project root; replace `<request>` with your steering, then paste everything below the rule.
+
+---
+
+<request>
+
+My request above outranks the rest of this body; `Intent` outranks both — a conflict → ask me. Implement the intended software for the scope in `.agent/spec.md` `Phase`; set `Phase: IMPLEMENT — <scope>` first. `Decisions` bind; the behavioral reference (UX, outputs, aesthetics) = the approved prototype in `Artifacts`, else the shipped behavior. Global + project `CLAUDE.md` law applies as written, `Session flow` IMPLEMENT first; where a `.claude/rules/` ruling adapts or retires a structure below (gate, CI, ledger, prototype), that ruling governs the step.
+
+1. Stack: a shipped repo keeps its stack unless `Decisions` or I reopen it. An open tooling question → `researcher` past a few sources, spikes by your own hand; select for task + agent fit + SOTA over popularity; my preselection wins. One `AskUserQuestion` for the stack + every spec gap before files that encode them; ask again whenever direction is unclear. Plan the units in `Tasks`; `consultant` reviews the plan before the first code file.
+2. Foundation, for whatever the repo lacks: package metadata (project name + `LICENSE` identifier), entry point, one passing test, every gate wired — format, lint, type-check, test + the scanners below — behind one gate command whose invocation + result land in `.claude/rules/<topic>.md`. What already runs stays and is extended.
+3. Security scanning, automated + committed: dependency vulnerability audit, secret scan, static analysis for the stack, in the gate command and in CI (`.github/workflows/` or the host's equivalent), plus update automation (Dependabot/Renovate) where the host supports it.
+4. Units = the shortest path to the consumable artifact, each with its tier (`kernel` full battery, `data` validator + spot-check, `docs` consistency) and a contract of testable predicates before code. You implement every unit; a committed `kernel` contract funds `tester`, and each `kernel` diff gets `reviewer` before its commit. Gates green at every commit; one scoped commit per unit, `Tasks` ticked.
+5. Review: `reviewer` per declared lens (correctness/spec, claim soundness, guarantee-vs-claim gaps, verification integrity, `CLAUDE.md` conformance) over the whole diff, check set fixed before reading, findings returned as red tests; you adjudicate every row in `.agent/review.md` (committed as rows close); accepted fixes land before close.
+6. README in the human-facing register: install, run, configure — current for everything the scope ships. Retire each disposable prototype `Artifacts` names for this scope: `git tag prototype-<scope>`, then `git rm -r` its path, or move a still-useful aid under `tools/` and record it in `Artifacts`.
+7. `.agent/spec.md`: `Artifacts` = the implementation's entry points + run commands, `Decisions` + `Tasks` current, `Phase: MAINTAIN` with the scope folded into the whole product.
+
+Met when: the full gate command (scanners included) passes on a clean working tree at the closing commit, CI + scanning + update automation are committed, every `Decisions` entry is implemented or moved to `.agent/deferred.md` with its reason, `.agent/review.md` holds no open row, every disposable prototype of the scope is retired, `Phase: MAINTAIN` is committed — each structure a `.claude/rules/` ruling adapts or retires is met through what that ruling names — and the final message states the gate command + result with its skipped, not-run + missing checks named or `none`, the CI/scanner file paths, each teammate by name + role + verdict, each advisor call with your ruling (or `none`), what you could not confirm, the `git status` result, and the closing commit SHA.
