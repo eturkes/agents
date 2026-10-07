@@ -1,15 +1,11 @@
 #!/usr/bin/python3
 """Keep the prompt cache of live Claude Code sessions warm across long waits.
 
-HTTP pass-through between Headroom and CLIProxyAPI. It stores the last
-main-thread request of each session. When a session sends no main-thread
-request for --interval seconds, the keeper sends that request again (as a
-stream) and closes the stream at message_start. The cache read renews the 1h
-entry.
-Claude Code's own keepalive needs a direct api.anthropic.com connection, so it
-stays off behind these proxies.
+Relay Headroom → CLIProxyAPI; stores each session's last main-thread request. --interval s without one →
+re-send it as a stream, cut at message_start ⇒ the cache read renews the 1h entry. CC's own keepalive
+needs a direct api.anthropic.com connection → off behind these proxies.
 
-Standard library only: the service must start without a package cache.
+Stdlib only: starts without a package cache.
 """
 import argparse
 import http.client
@@ -108,8 +104,8 @@ class Keeper:
         if not (isinstance(model, str) and model.startswith("claude")) or not has_1h_marker(request):
             return None
         if request.get("stream") is not True:
-            # Headroom forwards a streamed request as stream:false while its retrieval tool is in play.
-            # The touch must stream to stop at message_start; the flag is outside the cached prompt.
+            # Headroom sends stream:false while its retrieval tool is active; a touch must stream to stop
+            # at message_start, and the flag sits outside the cached prompt.
             request["stream"] = True
             body = json.dumps(request).encode()
         forwarded = [(k, v) for k, v in headers.items() if k.lower() not in HOP]
@@ -330,7 +326,7 @@ def parse(argv):
     p.add_argument("--listen", default="127.0.0.1:8318")
     p.add_argument("--upstream", default="http://127.0.0.1:8317")
     p.add_argument("--interval", type=float, default=3300, help="seconds without a cache read before a touch")
-    p.add_argument("--ttl", type=float, default=3600, help="cache entry lifetime; past it the entry is dropped")
+    p.add_argument("--ttl", type=float, default=3600, help="cache entry lifetime; the keeper drops the entry after it")
     p.add_argument("--hold", type=float, default=43200, help="seconds after the last real request to stop touching")
     p.add_argument("--tick", type=float, default=30)
     p.add_argument("--touch-timeout", type=float, default=180)
@@ -348,7 +344,7 @@ def main():
         f"hold {cfg.hold:g}s, ttl {cfg.ttl:g}s")
     try:
         server.serve_forever()
-    except KeyboardInterrupt:  # Ctrl+C in a foreground terminal (aeon)
+    except KeyboardInterrupt:
         log("stopped")
     finally:
         server.server_close()

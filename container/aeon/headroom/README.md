@@ -1,6 +1,6 @@
 # Headroom deployment on aeon
 
-Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` points to cache-keepalive at `127.0.0.1:8318`, which relays to CLIProxyAPI at `127.0.0.1:8317` (see [cache-keepalive](../../../claude/cache-keepalive/README.md#aeon); start it in a terminal before a session), and its `tpm` lifts the proxy's token rate limit (see [Token rate limit](#token-rate-limit)). The Headroom proxy listens on `127.0.0.1:8787`.
+Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` points to [cache-keepalive](../../../claude/cache-keepalive/README.md#aeon) at `127.0.0.1:8318`, which relays to CLIProxyAPI at `127.0.0.1:8317`. Its `tpm` lifts the proxy's token rate limit (see [Token rate limit](#token-rate-limit)). The Headroom proxy listens on `127.0.0.1:8787`.
 
 Once CLIProxyAPI and `cache-keepalive` run, start a session with:
 
