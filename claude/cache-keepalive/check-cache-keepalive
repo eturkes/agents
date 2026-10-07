@@ -9,12 +9,14 @@ import json
 import os
 import select
 import socket
+import sys
 import tempfile
 import threading
 import time
 from pathlib import Path
 
 here = Path(__file__).resolve().parent
+sys.dont_write_bytecode = True  # keep __pycache__ out of the repository
 loader = importlib.machinery.SourceFileLoader("cache_keepalive", str(here / "cache-keepalive"))
 ka = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
 loader.exec_module(ka)
@@ -191,7 +193,7 @@ def relays_raw_and_close_delimited_bodies():
 
 
 @check
-def arms_only_main_streamed_claude_1h_success():
+def arms_only_main_claude_1h_success():
     Up.reset()
     server = proxy()
     post(server, session="aux", cls="auxiliary")
@@ -199,7 +201,6 @@ def arms_only_main_streamed_claude_1h_success():
     post(server, session=None)
     post(server, session="gpt", data=body(model="gpt-6-astra"))
     post(server, session="5m", data=body(ttl="5m"))
-    post(server, session="nostream", data=body(stream=False))
     post(server, session="count", path="/v1/messages/count_tokens")
     Up.status = 529
     status, _, _ = post(server, session="err")
@@ -233,6 +234,23 @@ def touch_resends_verbatim_and_cuts_at_message_start():
     entry = entries(server)["tch"]
     assert entry["touches"] == 1 and entry["last"].startswith("ok read=900 write=0"), entry
     assert 99 <= entry["next_touch_s"] <= 101, "touch did not renew the clock"
+
+
+@check
+def non_stream_request_is_touched_as_stream():
+    Up.reset()
+    live("buf")
+    server = proxy("--interval", "100")
+    sent = body(stream=False)
+    post(server, session="buf", data=sent)
+    assert Up.seen[-1]["body"] == sent, "relayed request changed in transit"
+    assert list(entries(server)) == ["buf"], "stream:false request not armed"
+    Up.reset(pause=2.0)
+    backdate(server, "buf", 101)
+    tick(server)
+    touched = json.loads(Up.seen[0]["body"])
+    assert touched == json.loads(sent) | {"stream": True}, "touch differs beyond the stream flag"
+    assert wait(lambda: Up.cut), "touch stream not closed at message_start"
 
 
 @check

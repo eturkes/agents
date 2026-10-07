@@ -20,12 +20,14 @@ Claude Code also has its own keepalive, which calls `/v1/messages/cache_touch`. 
 
 The relay passes every request and response through unchanged. It stores a request when all of these hold:
 
-- The request is a `POST` to `/v1/messages` with `stream: true` and a `claude` model.
+- The request is a `POST` to `/v1/messages` with a `claude` model.
 - The `x-claude-code-request-class` header is `main`. Claude Code sends this header only when the settings `env` key `CLAUDE_CODE_GATEWAY_HINT_HEADERS` is `1`.
 - The request carries an `X-Claude-Code-Session-Id` header and a cache breakpoint with `ttl: "1h"`.
 - The upstream answers with status 200.
 
-Each session keeps only its newest stored request. When a session sends no main-thread request for 55 minutes, the keeper sends that request again, byte for byte. It closes the stream at the `message_start` event, so the touch costs a cache read and almost no output. The cache read renews the 1-hour entry.
+Each session keeps only its newest stored request. When a session sends no main-thread request for 55 minutes, the keeper sends that request again. It closes the stream at the `message_start` event, so the touch costs a cache read and almost no output. The cache read renews the 1-hour entry.
+
+The touch repeats the stored request byte for byte, with one exception. While its retrieval tool is in play, Headroom forwards a streamed request with `stream: false`. The keeper stores such a request with `stream: true`, because the touch must stream. The flag is not part of the cached prompt, so the touch still reads the same cache entry.
 
 The keeper drops a session in these cases:
 
@@ -35,7 +37,9 @@ The keeper drops a session in these cases:
 - The upstream rejects a touch with status 400, 401, 403, 404, 413 or 422.
 - Two touches in a row write more than they read.
 
-A cache read costs one tenth of the base input price, and a 1-hour write costs twice that price. So about 20 touches cost as much as one rewrite of the same context.
+The keeper holds the stored requests in memory. A restart of the service drops them, and each session is stored again with its next main-thread request.
+
+A cache read costs one tenth of the base input price, and a 1-hour write costs twice the base input price. So about 20 touches cost as much as one rewrite of the same context.
 
 ## Install
 

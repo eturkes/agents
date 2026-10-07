@@ -3,8 +3,9 @@
 
 HTTP pass-through between Headroom and CLIProxyAPI. It stores the last
 main-thread request of each session. When a session sends no main-thread
-request for --interval seconds, the keeper sends that request again, unchanged,
-and closes the stream at message_start. The cache read renews the 1h entry.
+request for --interval seconds, the keeper sends that request again (as a
+stream) and closes the stream at message_start. The cache read renews the 1h
+entry.
 Claude Code's own keepalive needs a direct api.anthropic.com connection, so it
 stays off behind these proxies.
 
@@ -93,7 +94,7 @@ class Keeper:
         self.entries = {}
 
     def candidate(self, method, path, headers, body, now):
-        """An Entry for a streamed main-thread Claude request with a 1h breakpoint, else None."""
+        """An Entry for a main-thread Claude request with a 1h breakpoint, else None."""
         if method != "POST" or urllib.parse.urlsplit(path).path != "/v1/messages":
             return None
         session = headers.get(SESSION_HEADER)
@@ -104,10 +105,13 @@ class Keeper:
         except ValueError:
             return None
         model = request.get("model") if isinstance(request, dict) else None
-        if not (isinstance(model, str) and model.startswith("claude") and request.get("stream") is True):
+        if not (isinstance(model, str) and model.startswith("claude")) or not has_1h_marker(request):
             return None
-        if not has_1h_marker(request):
-            return None
+        if request.get("stream") is not True:
+            # Headroom forwards a streamed request as stream:false while its retrieval tool is in play.
+            # The touch must stream to stop at message_start; the flag is outside the cached prompt.
+            request["stream"] = True
+            body = json.dumps(request).encode()
         forwarded = [(k, v) for k, v in headers.items() if k.lower() not in HOP]
         return Entry(session, model, path, forwarded, body, now, now)
 
