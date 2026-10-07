@@ -26,7 +26,11 @@ The build provides these controls:
 - The guard limits OCR ONNX intra-operation and inter-operation threads to one.
 - The guard honors `--no-image-optimize`, `HEADROOM_NO_IMAGE_OPTIMIZE=1`, `--no-optimize`, and the per-request bypass header.
 
-The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies the guard to upstream tag `v0.39.0`.
+The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies the guard to upstream tag `v0.40.0`.
+
+Keep the base at `v0.40.0` or newer. Older releases compress the text of the newest user message on every turn after the first, which includes long prompts, skill bodies, `CLAUDE.md` change notices, and lead-to-teammate messages. Upstream fixed this in #3923.
+
+Upstream `v0.40.0` also kills the worker of a timed-out call (#3940). The guard replaces that code in `headroom/proxy/image_isolation.py` and adds the grace period, the admission slot, the thread limits, and the bypass controls. Upstream keeps its OCR deadline. Therefore, #3940 does not make the guard redundant.
 
 ### Build and install
 
