@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude Code context gauge + rate limits + prompt-cache warmth.
+# Claude Code context gauge + effort + rate limits.
 # Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
 # Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens =
 # CC's last-executor-iteration figure; transcript fallback applies the same rule (ctx).
@@ -10,10 +10,10 @@
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u ⇒ manual.
-{ read -r u; read -r w; read -r sp; read -r sr; read -r wp; read -r wr; read -r tp; read -r ef; } <<EOF
-$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .transcript_path // "", .effort.level // ""' 2>/dev/null)
+{ read -r u; read -r w; read -r sp; read -r sr; read -r wp; read -r wr; read -r ef; } <<EOF
+$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .effort.level // ""' 2>/dev/null)
 EOF
-# Real API turn = non-sidechain assistant record carrying usage; shared by the gauge fallback + cache anchor.
+# Real API turn = non-sidechain assistant record carrying usage → gauge fallback.
 ctx='def ctx: (.input_tokens//0) as $i | (.cache_creation_input_tokens//0) as $c | (.cache_read_input_tokens//0) as $r | (.output_tokens//0) as $o | ([.iterations[]?|select(type!="object" or (.type!="advisor_message" and .type!="compaction"))]|last) as $x | if $i+$c+$r>0 and (.iterations|type)=="array" and ($x|type)=="object" and ($x.type=="message" or $x.type=="fallback_message") and ([$x.input_tokens,$x.output_tokens,$x.cache_creation_input_tokens,$x.cache_read_input_tokens]|all(type=="number" and (isinfinite or isnan|not) and .>=0)) and $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens>0 then $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens+$x.output_tokens else $i+$c+$r+$o end;'
 api='.type=="assistant" and .isSidechain!=true and .message.model!="<synthetic>" and (.message.usage|type)=="object"'
 if [ -n "$u" ]; then c=1
@@ -31,7 +31,7 @@ if [ "$acw" -gt 0 ] 2>/dev/null; then
   [ "$acw" -lt "$w" ] && w=$acw
   w=$((w - 33000))  # enforcement follows ACW being set, not the clamp firing
 fi
-now=$(date +%s)  # one clock read, reused for reset-delta + cache warmth
+now=$(date +%s)  # one clock read for every reset delta
 # Rate-limit suffix: rate_limits present ⇒ segments; manual/pre-first response ⇒ gauge only.
 # lp LABEL PCT ⇒ "LABEL N%" under the color thresholds every usage figure shares.
 lp() {
@@ -41,12 +41,11 @@ lp() {
     else if(q>=50)printf "\033[32m%s %d%%\033[0m",l,q
     else printf "%s %d%%",l,q}'
 }
-# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA FMT] ⇒ "LABEL N%EXTRA RESET".
-# EXTRA = preformatted leading-space insert between used% and reset; FMT = reset
-# date(1) format, default MM/DD HH:MM.
+# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA] ⇒ "LABEL N%EXTRA MM/DD HH:MM".
+# EXTRA = preformatted leading-space insert between used% and reset.
 seg() {
   pct=$(lp "$3" "$1")
-  dt=$(date -d "@$2" +"${8:-%m/%d %H:%M}"); delta=$(( $2 - now ))
+  dt=$(date -d "@$2" +'%m/%d %H:%M'); delta=$(( $2 - now ))
   rs=${4:-3600}; ys=${5:-7200}
   if [ "$delta" -le "$rs" ]; then dt=$(printf '\033[31m%s\033[0m' "$dt")
   elif [ "$delta" -le "$ys" ]; then dt=$(printf '\033[33m%s\033[0m' "$dt")
@@ -83,25 +82,9 @@ xs=""
 if [ -n "$xa" ]; then xs=" | $(seg "$xp" "$xa" codex 18000 36000 54000)"
 elif [ -n "$xp" ]; then xs=" | $(lp codex "$xp")"
 fi
-# 5h reset lies <5h ahead ⇒ time alone is unambiguous.
-[ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800 "" '%H:%M')"
+[ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800)"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000 "$fx")"
 rl="$rl$xs"
-# `last` = latest cache-moving API-turn timestamp; prompt-cache TTL = 1h.
-# Backward scan stops at latest qualifying assistant usage. Assistant usage is
-# authoritative; transcript metadata can advance mtime independently. Streaming
-# appends assistant records ⇒ live mid-turn anchor.
-ttl=3600
-ce=$(tac "${tp:-$f}" 2>/dev/null | jq -rn "first(inputs|select($api and ((.message.usage.cache_read_input_tokens//0)+(.message.usage.cache_creation_input_tokens//0))>0)|.timestamp)//empty" 2>/dev/null)
-[ -n "$ce" ] && te=$(date -d "$ce" +%s 2>/dev/null) && [ -n "$te" ] && {
-  ts="last $(date -d "@$te" +%H:%M)"  # time alone: color carries TTL state, stale = red
-  left=$(( ttl - (now - te) ))
-  if [ "$left" -le 0 ]; then ts=$(printf '\033[31m%s\033[0m' "$ts")
-  elif [ "$left" -le 900 ]; then ts=$(printf '\033[33m%s\033[0m' "$ts")
-  elif [ "$left" -le 1800 ]; then ts=$(printf '\033[32m%s\033[0m' "$ts")
-  fi
-  rl=" | $ts$rl"  # leads the rate limits ⇒ sits right of effort
-}
 # Effort varies per launch (`--effort`) → shown beside the gauge; high/xhigh/max
 # spend more per turn ⇒ green/yellow/red.
 case $ef in
