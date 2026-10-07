@@ -26,9 +26,11 @@ The build provides these controls:
 - The guard limits OCR ONNX intra-operation and inter-operation threads to one.
 - The guard honors `--no-image-optimize`, `HEADROOM_NO_IMAGE_OPTIMIZE=1`, `--no-optimize`, and the per-request bypass header.
 
-The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies the guard to upstream tag `v0.40.0`.
+The source is `~/src/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies two commits to upstream tag `v0.40.0`: the guard, then the prompt fix described next.
 
-Keep the base at `v0.40.0` or newer. Older releases compress the text of the newest user message on every turn after the first, which includes long prompts, skill bodies, `CLAUDE.md` change notices, and lead-to-teammate messages. Upstream fixed this in #3923.
+From the second turn on, `v0.39.0` compresses the text of the newest user message. That text includes long prompts, skill bodies, `CLAUDE.md` change notices, and messages from a lead to its teammates. Upstream #3923 in `v0.40.0` fixes the case where the user message is the last message in the request. Claude Code adds system messages after the user message on most turns, so the bug remains in `v0.40.0`. The local commit `fix(router): keep the newest user prompt verbatim when system messages follow it` treats the last message before those system messages as the newest turn.
+
+Keep the local prompt fix until an upstream release covers trailing system messages. To test a build, run a real two-turn `claude -p` session through capture relays on both sides of the proxy. Then compare the newest user message before and after compression. A unit test of the router misses this bug because the bug depends on the request layout that Claude Code sends.
 
 Upstream `v0.40.0` also kills the worker of a timed-out call (#3940). The guard replaces that code in `headroom/proxy/image_isolation.py` and adds the grace period, the admission slot, the thread limits, and the bypass controls. Upstream keeps its OCR deadline. Therefore, #3940 does not make the guard redundant.
 
@@ -55,7 +57,7 @@ This build is the whole Headroom install. `command -v headroom` must resolve to 
 
 Because the guard sits on a release tag, the local build reports the same `headroom --version` value as the published package. To identify the installed build, read the receipt path, or run `rg _retire_image_pool` under the tool's `site-packages`.
 
-After an upstream release includes the guard, restore the published package:
+After an upstream release includes the guard and the prompt fix, restore the published package:
 
 ```sh
 uv tool install --force --python 3.14 "headroom-ai[all]"
