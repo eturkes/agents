@@ -1,6 +1,6 @@
 # Implement
 
-My go after ITERATE, or a scope I open straight at IMPLEMENT. Fresh session at the project root; replace `<request>` with your steering, then paste everything below the rule.
+Use after you say go at the end of ITERATE, or to open a scope directly at IMPLEMENT. Start a fresh session at the project root. Replace `<request>` with your steering. Paste everything below the rule.
 
 ---
 
@@ -11,7 +11,7 @@ My request above outranks the rest of this body; `Intent` outranks both — a co
 1. Stack: a shipped repo keeps its stack unless `Decisions` or I reopen it. An open tooling question → `researcher` past a few sources, spikes by your own hand; select for task + agent fit + SOTA over popularity; my preselection wins. One `AskUserQuestion` for the stack + every spec gap before files that encode them; ask again whenever direction is unclear. Plan the units in `Tasks`; `consultant` reviews the plan before the first code file.
 2. Foundation, for whatever the repo lacks: package metadata (project name + `LICENSE` identifier), entry point, one passing test, every gate wired — format, lint, type-check, test + the scanners below — behind one gate command whose invocation + result land in `.claude/rules/<topic>.md`. What already runs stays and is extended.
 3. Security scanning, automated + committed: dependency vulnerability audit, secret scan, static analysis for the stack, in the gate command and in CI (`.github/workflows/` or the host's equivalent), plus update automation (Dependabot/Renovate) where the host supports it.
-4. Units = the shortest path to the consumable artifact, each with its tier (`kernel` full battery, `data` validator + spot-check, `docs` consistency) and a contract of testable predicates before code. You implement every unit; a committed `kernel` contract funds `tester`, and each `kernel` diff gets `reviewer` before its commit. Gates green at every commit; one scoped commit per unit, `Tasks` ticked.
+4. Units: each declares its tier + a contract of testable predicates before code; gates green at every commit, one scoped commit per unit, `Tasks` ticked.
 5. Review: `reviewer` per declared lens (correctness/spec, claim soundness, guarantee-vs-claim gaps, verification integrity, `CLAUDE.md` conformance) over the whole diff, check set fixed before reading, findings returned as red tests; you adjudicate every row in `.agent/review.md` (committed as rows close); accepted fixes land before close.
 6. README in the human-facing register: install, run, configure — current for everything the scope ships. Retire each disposable prototype `Artifacts` names for this scope: `git tag prototype-<scope>`, then `git rm -r` its path, or move a still-useful aid under `tools/` and record it in `Artifacts`.
 7. `.agent/spec.md`: `Artifacts` = the implementation's entry points + run commands, `Decisions` + `Tasks` current, `Phase: MAINTAIN` with the scope folded into the whole product.

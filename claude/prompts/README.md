@@ -19,7 +19,7 @@ ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --e
 | --- | --- | --- |
 | Start PROTOTYPE | `prototype.md` | Write your `Intent` in `.agent/spec.md` first. In a shipped repo, also name the scope in `Phase`. |
 | ITERATE | `resume.md` | Paste it to open each session. The phase moves on when you say go. |
-| Start IMPLEMENT | `implement.md` | Paste after you say go, or to open a new scope directly at IMPLEMENT. |
+| Start IMPLEMENT | `implement.md` | After you say go, paste it. It can also open a new scope directly at IMPLEMENT. |
 | MAINTAIN | `maintain.md` | Paste one body per request, queue run, security review or dependency upgrade. |
 | Continue open work in any phase | `resume.md` | Paste in a fresh session after a pause, a crash or a restart. |
 | Stop now and continue later | `pause.md` | Paste into the running session. |

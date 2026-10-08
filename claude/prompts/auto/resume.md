@@ -1,6 +1,6 @@
 # Resume
 
-Any phase. Fresh session at the project root; paste everything below the rule.
+Use in any phase. Start a fresh session at the project root. Paste everything below the rule.
 
 ---
 

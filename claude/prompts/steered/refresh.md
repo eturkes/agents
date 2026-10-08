@@ -1,6 +1,6 @@
 # Refresh
 
-Phase-flow repo on an older template. At the project root, run `cp ~/.local/app/agents/claude/CLAUDE.project.md CLAUDE.md`, start a fresh session, replace `<request>` with your steering, and paste everything below the rule. One session per repo.
+Use for a phase-flow repo on an older template, one session per repo. At the project root, run `cp ~/.local/app/agents/claude/CLAUDE.project.md CLAUDE.md`. Start a fresh session. Replace `<request>` with your steering. Paste everything below the rule.
 
 ---
 
