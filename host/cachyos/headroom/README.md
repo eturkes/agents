@@ -51,6 +51,8 @@ Upstream `v0.40.0` also kills the worker of a timed-out call (#3940). The guard 
 
 Use Rust 1.95 or newer for the build. The repository `rust-toolchain.toml` applies only to rustup-managed Cargo. The pacman-managed Cargo builds with its installed version.
 
+Run the full test suite with `HOME` set to an empty temporary directory. Some tests write to the real `~/.headroom` and `~/.codex/config.toml`. They also write to the live proxy log.
+
 ### Pin behavior
 
 The uv receipt at `~/.local/share/uv/tools/headroom-ai/uv-receipt.toml` path-pins the installed wheel. Therefore, the routine upgrade routes hold the pin instead of moving it. `host/cachyos/upgrade` runs `uv tool upgrade --all`, and `headroom update` detects the uv-tool install and runs `uv tool upgrade headroom-ai`. Both re-resolve the same path. Keep the wheel on disk.
