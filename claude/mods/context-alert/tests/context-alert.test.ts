@@ -46,33 +46,33 @@ async function call($: Engine): Promise<readonly string[] | undefined> {
 }
 
 test('main reads the engine fill against its raw window', async ($, on) => {
-  world(on, { tokens: 960_000, window: 1_000_000 })
-  expect(await call($)).toEqual([`Context 960K/1M — 40K left. ${FINAL_MAIN}`])
+  world(on, { tokens: 980_000, window: 1_000_000 })
+  expect(await call($)).toEqual([`Context 980K/1M — 20K left. ${FINAL_MAIN}`])
 })
 
 test('main tier boundaries', async ($, on) => {
-  const w = world(on, { tokens: 899_999, window: 1_000_000 })
+  const w = world(on, { tokens: 945_999, window: 1_000_000 })
   expect(await call($)).toBeUndefined()
-  w.tokens = 900_000
-  expect(await call($)).toEqual([`Context 900K/1M — 100K left. ${NOTICE_MAIN}`])
-  w.tokens = 949_999
+  w.tokens = 946_000
+  expect(await call($)).toEqual([`Context 946K/1M — 54K left. ${NOTICE_MAIN}`])
+  w.tokens = 974_999
   expect(await call($)).toBeUndefined()
-  w.tokens = 950_000
-  expect(await call($)).toEqual([`Context 950K/1M — 50K left. ${FINAL_MAIN}`])
+  w.tokens = 975_000
+  expect(await call($)).toEqual([`Context 975K/1M — 25K left. ${FINAL_MAIN}`])
 })
 
 test('once per tier; final subsumes notice after compaction', async ($, on) => {
-  const w = world(on, { tokens: 960_000, window: 1_000_000 })
-  expect(await call($)).toEqual([`Context 960K/1M — 40K left. ${FINAL_MAIN}`])
+  const w = world(on, { tokens: 980_000, window: 1_000_000 })
+  expect(await call($)).toEqual([`Context 980K/1M — 20K left. ${FINAL_MAIN}`])
   expect(await call($)).toBeUndefined()
-  w.tokens = 900_000
+  w.tokens = 946_000
   expect(await call($)).toBeUndefined()
 })
 
 test('concurrent calls claim a tier once', async ($, on) => {
-  world(on, { tokens: 900_000, window: 1_000_000 })
+  world(on, { tokens: 946_000, window: 1_000_000 })
   const all = await Promise.all(Array.from({ length: 16 }, () => call($)))
-  expect(all.filter(c => c !== undefined)).toEqual([[`Context 900K/1M — 100K left. ${NOTICE_MAIN}`]])
+  expect(all.filter(c => c !== undefined)).toEqual([[`Context 946K/1M — 54K left. ${NOTICE_MAIN}`]])
 })
 
 test('no response yet is quiet', async ($, on) => {
@@ -81,9 +81,9 @@ test('no response yet is quiet', async ($, on) => {
 })
 
 test('main output tokens count toward the fill', async ($, on) => {
-  world(on, { tokens: 899_000, window: 1_000_000, output: 1_000 })
+  world(on, { tokens: 945_000, window: 1_000_000, output: 1_000 })
   await step($)
-  expect(await call($)).toEqual([`Context 900K/1M — 100K left. ${NOTICE_MAIN}`])
+  expect(await call($)).toEqual([`Context 946K/1M — 54K left. ${NOTICE_MAIN}`])
 })
 
 test('a refused call passes through untouched', async ($, on) => {
@@ -92,9 +92,10 @@ test('a refused call passes through untouched', async ($, on) => {
 })
 
 test('agent tiers on its own window minus the reserve', () => {
-  expect(assess(204_999, 305_000, 0, true)).toBeUndefined()
-  expect(assess(205_000, 305_000, 0, true)).toEqual({ tier: 'notice', text: `Context 205K/272K — 67K left. ${NOTICE_AGENT}` })
-  expect(assess(255_000, 305_000, 0, true)).toEqual({ tier: 'final', text: `Context 255K/272K — 17K left. ${FINAL_AGENT}` })
+  expect(assess(182_999, 305_000, 0, true)).toBeUndefined()
+  expect(assess(183_000, 305_000, 0, true)).toEqual({ tier: 'notice', text: `Context 183K/272K — 89K left. ${NOTICE_AGENT}` })
+  expect(assess(241_999, 305_000, 0, true)?.tier).toBe('notice')
+  expect(assess(242_000, 305_000, 0, true)).toEqual({ tier: 'final', text: `Context 242K/272K — 30K left. ${FINAL_AGENT}` })
   expect(assess(290_000, 305_000, 0, true)).toEqual({ tier: 'final', text: `Context 290K/272K — 0K left. ${FINAL_AGENT}` })
 })
 
@@ -108,7 +109,7 @@ test('default agent window 200K', () => {
 })
 
 test('message rounds down', () => {
-  expect(assess(923_456, 1_000_000, 0, false)?.text).toBe(`Context 923K/1M — 76K left. ${NOTICE_MAIN}`)
+  expect(assess(953_456, 1_000_000, 0, false)?.text).toBe(`Context 953K/1M — 46K left. ${NOTICE_MAIN}`)
 })
 
 test('agent loop reads its own step usage', async ($, on) => {
@@ -144,15 +145,15 @@ test('a tool that finishes mid-stream waits for its step usage', async ($, on) =
 })
 
 test('a resumed process keeps the session claims; the win is saved', async ($, on) => {
-  const w = world(on, { tokens: 960_000, window: 1_000_000, store: new Map([['claims:s1', { at: 1_000_000, claims: { main: 'final' } }]]) })
+  const w = world(on, { tokens: 980_000, window: 1_000_000, store: new Map([['claims:s1', { at: 1_000_000, claims: { main: 'final' } }]]) })
   expect(await call($)).toBeUndefined()
   w.sid = 's2'
-  expect(await call($)).toEqual([`Context 960K/1M — 40K left. ${FINAL_MAIN}`])
+  expect(await call($)).toEqual([`Context 980K/1M — 20K left. ${FINAL_MAIN}`])
   expect(w.store!.get('claims:s2')).toEqual({ at: 1_000_000, claims: { main: 'final' } })
 })
 
 test('main and two agents claim independently in one session', async ($, on) => {
-  const w = world(on, { tokens: 900_000, window: 1_000_000 }, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
+  const w = world(on, { tokens: 946_000, window: 1_000_000 }, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
   w.output = 210_000
   for (const agentId of ['a1', 'a2']) {
     for await (const chunk of $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1, agentId } as never)) void chunk
@@ -163,7 +164,7 @@ test('main and two agents claim independently in one session', async ($, on) => 
   }
   expect([await of('a1'), await of(), await of('a2'), await of('a1')]).toEqual([
     [`Context 210K/272K — 61K left. ${NOTICE_AGENT}`],
-    [`Context 900K/1M — 100K left. ${NOTICE_MAIN}`],
+    [`Context 946K/1M — 54K left. ${NOTICE_MAIN}`],
     [`Context 210K/272K — 61K left. ${NOTICE_AGENT}`],
     undefined,
   ])

@@ -1,8 +1,11 @@
 import type { ContextAlertTier } from '../types'
 
-// Tiers sit at fixed offsets below the window ⇒ equal headroom at any window size.
-const NOTICE = 100_000
-const FINAL = 50_000
+// Offsets below the compaction trigger = slowest observed response to the tier + p99 step growth
+// ⇒ that response still fits when the alert fires one step past its threshold.
+const OFFSETS = {
+  main: { notice: 54_000, final: 25_000 },
+  agent: { notice: 89_000, final: 30_000 },
+} as const
 // CC's compaction trigger wherever it enforces one = window − 33K.
 const RESERVE = 33_000
 
@@ -31,7 +34,8 @@ export function assess(used: number, window: number, acw: number, isAgent: boole
     w = Math.min(w, acw)
     trigger = w - RESERVE
   }
-  const tier: ContextAlertTier | undefined = used >= w - FINAL ? 'final' : used >= w - NOTICE ? 'notice' : undefined
+  const { notice, final } = OFFSETS[isAgent ? 'agent' : 'main']
+  const tier: ContextAlertTier | undefined = used >= trigger - final ? 'final' : used >= trigger - notice ? 'notice' : undefined
   if (!tier) return undefined
   const left = Math.max(0, Math.trunc((trigger - used) / 1000))
   const label = trigger % 1_000_000 === 0 ? `${trigger / 1_000_000}M` : `${Math.trunc(trigger / 1000)}K`
