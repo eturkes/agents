@@ -33,29 +33,7 @@ Then enable PSD: `systemctl --user enable --now psd.service`.
 
 ## Crash recovery
 
-Policy = `browseros-neo-recovery.conf`: restart after crashes + normal quits, wait five seconds, track the main process.
-Explicit `systemctl --user stop` suppresses recovery; login autostart resumes it next session.
-Keep the generated unit intact; install a persistent user drop-in:
-
-```bash
-install -Dm644 host/cachyos/browseros-neo-recovery.conf \
-  ~/.config/systemd/user/'app-browseros\x2dneo@autostart.service.d'/recovery.conf
-systemctl --user daemon-reload
-```
-
-An already-running browser may belong to another service. Install the same drop-in under
-`$XDG_RUNTIME_DIR/systemd/user/<owning-service>.d/recovery.conf`, then reload without restarting the browser.
-The runtime drop-in expires at logout/reboot; the persistent autostart drop-in covers subsequent logins.
-Inspect `MainPID`, `Restart`, `RestartUSec`, `ExitType` + `DropInPaths` with `systemctl --user show`.
-
-Stop the supervised browser before profile unsync or maintenance:
-
-```bash
-systemctl --user stop 'app-browseros\x2dneo@autostart.service'
-```
-
-Use the owning service's name when another unit launched the running browser.
-Crash recovery requires process exit; it does not detect hangs or repair the native tab-creation fault.
+Policy + replay/checks + owning-unit stop → [Desktop recovery](MAINTENANCE.md#desktop-recovery).
 
 ## Sync identity replay
 

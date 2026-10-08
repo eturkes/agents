@@ -48,6 +48,28 @@ The checkpoint shares the current root filesystem and user-space packages; revie
 
 ## Helper checks
 
+### Desktop recovery
+
+- Apps = BrowserOS Neo + ChatGPT; shared policy = `desktop-recovery.conf` (`Restart=always`, `RestartSec=5s`, `ExitType=main`).
+- Replay from repo root; reload preserves running apps:
+
+```bash
+set -euo pipefail
+units=('app-browseros\x2dneo@autostart.service' app-chatgpt@autostart.service)
+for unit in "${units[@]}"; do
+  install -Dm644 host/cachyos/desktop-recovery.conf "$HOME/.config/systemd/user/$unit.d/recovery.conf"
+done
+systemctl --user daemon-reload
+for unit in "${units[@]}"; do
+  cmp host/cachyos/desktop-recovery.conf "$HOME/.config/systemd/user/$unit.d/recovery.conf"
+  systemd-analyze --user verify "$(systemctl --user show "$unit" -p FragmentPath --value)"
+  systemctl --user show "$unit" -p MainPID -p Restart -p RestartUSec -p ExitType -p DropInPaths
+done
+```
+
+- Active app in another service → install the same policy at `$XDG_RUNTIME_DIR/systemd/user/<owning-unit>.d/recovery.conf`; reload.
+- Before app/profile maintenance → `systemctl --user stop <owning-unit>`; unit stays stopped. Resume → `systemctl --user start <owning-unit>` or login autostart.
+
 ### Agent crash diagnostics
 
 - `host/cachyos/agent-crash-policy apply` masks all installed DrKonqi user units + its system processor template, stops loaded instances and clears their failures.
