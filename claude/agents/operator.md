@@ -1,6 +1,6 @@
 ---
 name: operator
-description: "Computer use: multi-step interaction in the signed-in browser or desktop GUI apps — site flows, account settings, device-login codes, forms — plus visual QA of a UI across states, with screenshot proof. Use for GUI interaction past a single fetch or capture; reading for sources belongs to researcher."
+description: "Computer use: multi-step interaction in the signed-in browser or desktop GUI apps (site flows, account settings, device-login codes, forms) + visual QA across UI states, screenshot proof. Trigger = GUI interaction past one fetch or capture; reading for sources → researcher."
 color: green
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: tester
-description: "Diff-blind test author for a kernel-tier unit: turns a committed contract into a red test suite in its own worktree, plus a reference implementation as differential oracle when the contract is a pure function. Use once a kernel contract is committed."
+description: "Diff-blind test author for a committed kernel contract: red suite in its own worktree + reference implementation as differential oracle when the contract is a pure function."
 color: yellow
 ---
 

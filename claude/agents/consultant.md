@@ -1,6 +1,6 @@
 ---
 name: consultant
-description: "Independent second opinion on a decision: the plan at phase orientation close, a design fork whose reversal is costly, or a problem after the second failed fix attempt. Returns a verdict on the direction, the risks with evidence, and the recommended next step."
+description: "Independent second opinion on a decision: phase plan at orientation close, design fork costly to reverse, problem past its second failed fix → direction verdict + evidenced risks + recommended next step."
 color: purple
 ---
 

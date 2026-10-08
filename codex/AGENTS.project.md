@@ -10,7 +10,7 @@
 ## Execution
 
 - Install/configure project-local; work within the launch dir + children.
-- Reason, research + execute at full capability through completion; efficiency preserves required scope, depth, real success criteria + verification.
+- Execute through completion; efficiency preserves required scope, depth, real success criteria + verification.
 - Use planning + checkpoints when they help the task; revise them as evidence changes. Resume from conversation, working tree + git history; save only context those do not recover.
 - Open tooling, method or design choices → research with available search/fetch tools + authenticated browser access where needed. Primary sources + measurements outrank popularity.
 - Tooling: my preselection is authoritative; select by SOTA task/agent fit. Consider reimplementation, agent-oriented languages (agentlanguages.dev) + AI-targeted tooling; build on mature work when it is SOTA.

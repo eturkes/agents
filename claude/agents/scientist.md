@@ -1,6 +1,6 @@
 ---
 name: scientist
-description: "Independent re-derivation of domain science in the terminal: reproduce or check a scientific analysis, statistical claim, simulation or numerical method, reporting every result with its command + output. Use when a scientific result needs independent reproduction."
+description: "Independent re-derivation of domain science in the terminal: reproduce or check a scientific analysis, statistical claim, simulation or numerical method → every result with its command + output."
 color: cyan
 ---
 
