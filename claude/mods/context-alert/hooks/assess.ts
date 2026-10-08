@@ -1,11 +1,8 @@
 import type { ContextAlertTier } from '../types'
 
 // Tiers sit at fixed offsets below the window ⇒ equal headroom at any window size.
-// Agent offsets put a 272K GPT window's tiers at 200K + 220K, ahead of its 239K trigger.
-const OFFSETS = {
-  main: { notice: 100_000, final: 50_000 },
-  agent: { notice: 72_000, final: 52_000 },
-} as const
+const NOTICE = 100_000
+const FINAL = 50_000
 // CC's compaction trigger wherever it enforces one = window − 33K.
 const RESERVE = 33_000
 
@@ -34,8 +31,7 @@ export function assess(used: number, window: number, acw: number, isAgent: boole
     w = Math.min(w, acw)
     trigger = w - RESERVE
   }
-  const { notice, final } = OFFSETS[isAgent ? 'agent' : 'main']
-  const tier: ContextAlertTier | undefined = used >= w - final ? 'final' : used >= w - notice ? 'notice' : undefined
+  const tier: ContextAlertTier | undefined = used >= w - FINAL ? 'final' : used >= w - NOTICE ? 'notice' : undefined
   if (!tier) return undefined
   const left = Math.max(0, Math.trunc((trigger - used) / 1000))
   const label = trigger % 1_000_000 === 0 ? `${trigger / 1_000_000}M` : `${Math.trunc(trigger / 1000)}K`

@@ -92,10 +92,10 @@ test('a refused call passes through untouched', async ($, on) => {
 })
 
 test('agent tiers on its own window minus the reserve', () => {
-  expect(assess(199_999, 272_000, 0, true)).toBeUndefined()
-  expect(assess(200_000, 272_000, 0, true)).toEqual({ tier: 'notice', text: `Context 200K/239K — 39K left. ${NOTICE_AGENT}` })
-  expect(assess(220_000, 272_000, 0, true)).toEqual({ tier: 'final', text: `Context 220K/239K — 19K left. ${FINAL_AGENT}` })
-  expect(assess(250_000, 272_000, 0, true)).toEqual({ tier: 'final', text: `Context 250K/239K — 0K left. ${FINAL_AGENT}` })
+  expect(assess(204_999, 305_000, 0, true)).toBeUndefined()
+  expect(assess(205_000, 305_000, 0, true)).toEqual({ tier: 'notice', text: `Context 205K/272K — 67K left. ${NOTICE_AGENT}` })
+  expect(assess(255_000, 305_000, 0, true)).toEqual({ tier: 'final', text: `Context 255K/272K — 17K left. ${FINAL_AGENT}` })
+  expect(assess(290_000, 305_000, 0, true)).toEqual({ tier: 'final', text: `Context 290K/272K — 0K left. ${FINAL_AGENT}` })
 })
 
 test('ACW clamps window and trigger for every loop', () => {
@@ -104,7 +104,7 @@ test('ACW clamps window and trigger for every loop', () => {
 })
 
 test('default agent window 200K', () => {
-  expect(assess(130_000, 200_000, 0, true)?.text).toBe(`Context 130K/167K — 37K left. ${NOTICE_AGENT}`)
+  expect(assess(100_000, 200_000, 0, true)?.text).toBe(`Context 100K/167K — 67K left. ${NOTICE_AGENT}`)
 })
 
 test('message rounds down', () => {
@@ -112,17 +112,17 @@ test('message rounds down', () => {
 })
 
 test('agent loop reads its own step usage', async ($, on) => {
-  const w = world(on, { tokens: 100_000, window: 1_000_000 }, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '272000' })
+  const w = world(on, { tokens: 100_000, window: 1_000_000 }, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
   w.output = 210_000
   for await (const chunk of $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1, agentId: 'a1' })) void chunk
   const r = await $.tool.call({ tool: 'Bash', command: 'ls', agentId: 'a1' } as never)
-  expect(r.deny === undefined ? r.context : 'denied').toEqual([`Context 210K/239K — 28K left. ${NOTICE_AGENT}`])
+  expect(r.deny === undefined ? r.context : 'denied').toEqual([`Context 210K/272K — 61K left. ${NOTICE_AGENT}`])
 })
 
 test('a tool that finishes mid-stream waits for its step usage', async ($, on) => {
   mock.clock(on)
   mock.store(on)
-  mock.env(on, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '272000' })
+  mock.env(on, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
   on('session.id', () => ({ value: 's1' }))
   let release = () => {}
   const gate = new Promise<void>(resolve => (release = resolve))
@@ -130,7 +130,7 @@ test('a tool that finishes mid-stream waits for its step usage', async ($, on) =
   on('tool.call', () => ({ result: { stdout: 'ok' }, text: 'ok' }))
   on('turn.step', async function* (_$, e) {
     await gate
-    const usage = { input_tokens: 210_000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0, model: 'm' }
+    const usage = { input_tokens: 230_000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0, model: 'm' }
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use' as const, usage }
   })
   const streamed = (async () => {
@@ -140,7 +140,7 @@ test('a tool that finishes mid-stream waits for its step usage', async ($, on) =
   release()
   await streamed
   const r = await called
-  expect(r.deny === undefined ? r.context : 'denied').toEqual([`Context 210K/239K — 29K left. ${NOTICE_AGENT}`])
+  expect(r.deny === undefined ? r.context : 'denied').toEqual([`Context 230K/272K — 42K left. ${NOTICE_AGENT}`])
 })
 
 test('a resumed process keeps the session claims; the win is saved', async ($, on) => {
@@ -152,7 +152,7 @@ test('a resumed process keeps the session claims; the win is saved', async ($, o
 })
 
 test('main and two agents claim independently in one session', async ($, on) => {
-  const w = world(on, { tokens: 900_000, window: 1_000_000 }, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '272000' })
+  const w = world(on, { tokens: 900_000, window: 1_000_000 }, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
   w.output = 210_000
   for (const agentId of ['a1', 'a2']) {
     for await (const chunk of $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1, agentId } as never)) void chunk
@@ -162,9 +162,9 @@ test('main and two agents claim independently in one session', async ($, on) => 
     return r.deny === undefined ? r.context : 'denied'
   }
   expect([await of('a1'), await of(), await of('a2'), await of('a1')]).toEqual([
-    [`Context 210K/239K — 28K left. ${NOTICE_AGENT}`],
+    [`Context 210K/272K — 61K left. ${NOTICE_AGENT}`],
     [`Context 900K/1M — 100K left. ${NOTICE_MAIN}`],
-    [`Context 210K/239K — 28K left. ${NOTICE_AGENT}`],
+    [`Context 210K/272K — 61K left. ${NOTICE_AGENT}`],
     undefined,
   ])
 })
@@ -180,7 +180,7 @@ test('session claims older than seven days are pruned at session start', async (
 })
 
 test('a slow save of one loop never erases a later loop\'s claim', async ($, on) => {
-  const w = world(on, { tokens: 0, window: 1_000_000 }, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '272000' })
+  const w = world(on, { tokens: 0, window: 1_000_000 }, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
   w.output = 210_000
   for (const agentId of ['a1', 'a2']) {
     for await (const chunk of $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1, agentId } as never)) void chunk
