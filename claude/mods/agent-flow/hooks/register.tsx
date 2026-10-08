@@ -76,8 +76,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // Under the prompt hint, in the warning colour of the plugin status row: each running agent's model + context against its
-  // compaction trigger. The status row truncates to one line ⇒ this site; entries flow whole onto the next row when it fills.
+  // The plugin status row truncates to one line ⇒ this PromptHint site, in that row's warning colour; entries wrap whole.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const entries = agentEntries(await $.agent.list(), await read($, agents), await compactAt($))
     if (entries.length === 0) return next(e)

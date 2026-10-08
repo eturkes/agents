@@ -18,7 +18,7 @@ Claude Code also has its own keepalive. It runs only when `ANTHROPIC_BASE_URL` i
 
 ## How it works
 
-The relay passes every request and response through unchanged. It stores a request when all of these hold:
+The relay forwards the body of every request and response unchanged. It sets the `Host` header for the upstream and drops hop-by-hop headers. It stores a request when all of these hold:
 
 - The request is a `POST` to `/v1/messages` with a `claude` model.
 - The `x-claude-code-request-class` header is `main`. Claude Code sends this header only when the settings `env` key `CLAUDE_CODE_GATEWAY_HINT_HEADERS` is `1`.

@@ -28,7 +28,7 @@ The platform upgrade entry points call `upgrade-servers`:
 
 ## Upgrades
 
-Package-managed servers (`marksman`, `bash-language-server`, `pyright`, `typescript-language-server`, R `languageserver`) upgrade with the system package manager. `./upgrade-servers` covers the hand-installed servers: it resolves each current upstream version at run time, installs the candidate, and performs an LSP client handshake. The script installs each candidate before validation. If validation fails and a previous installation exists, the script restores it. State markers next to each server contain the installed versions.
+Servers outside `./upgrade-servers` (`marksman`, `bash-language-server`, `pyright`, `typescript-language-server`, R `languageserver`) upgrade through their installer. Each plugin README names that method for its machine. `./upgrade-servers` covers the hand-installed servers: it resolves each current upstream version at run time, installs the candidate, and performs an LSP client handshake. The script installs each candidate before validation. If validation fails and a previous installation exists, the script restores it. State markers next to each server contain the installed versions.
 
 - `prolog-lsp` tracks the default branch because the newest tag fails UTF-16 `initialize`. The UTF-16 initialization fix is on the default branch.
 - `xml-lsp` resolves the Eclipse Maven repository `<release>` value. GitHub releases lag this artifact.

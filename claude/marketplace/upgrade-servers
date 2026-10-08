@@ -121,8 +121,7 @@ else
         rm -rf "$backup"
         cp -a "$pack_dir" "$backup"
       fi
-      # pack_install requires an absent destination. Remove current pack first;
-      # tolerant removal also covers an already-absent pack.
+      # pack_install requires an absent destination; the removal tolerates an absent pack.
       swipl -q -g "use_module(library(prolog_pack)), catch(pack_remove(lsp_server,[interactive(false),dependencies(false)]),_,true)" -t halt >/dev/null 2>&1 || true
       if swipl -q -g "use_module(library(prolog_pack)), pack_install('file://$src',[interactive(false),test(false),register(false)])" -t halt >/dev/null 2>&1 \
          && lsp_handshake "$HOME/.local/bin/prolog-lsp" '"positionEncoding":"utf-16"'; then

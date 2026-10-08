@@ -24,7 +24,7 @@ export function stopHold(name: string, marker: string | undefined, targets: read
 
 /** A short lookup answers in its message; a run this long without a write likely lost its findings. */
 export const WROTE_NOTHING_MIN = 15
-/** A stop of a teammate quiet this long cuts nothing in flight. */
+/** A teammate quiet this long is likely idle → its stop passes unheld (a silent long tool call is the blind spot). */
 export const QUIET_MS = 15 * 60_000
 /** A TaskStop re-issued within this window = the deliberate stop. */
 export const REISSUE_MS = 10 * 60_000
@@ -44,7 +44,7 @@ export function isDurable(tool: string, input: { command?: unknown }): boolean {
   return tool === 'Bash' && typeof input.command === 'string' && DURABLE_BASH.test(input.command)
 }
 
-/** Gauge denominator = the compaction trigger: ACW set ⇒ min(window, ACW) − 33K, else window − 33K. */
+/** Gauge denominator = CC's compaction trigger: 33K below the ACW-clamped window. */
 export function trigger(window: number, acw: number): number {
   return (acw > 0 ? Math.min(window, acw) : window) - 33_000
 }

@@ -169,7 +169,7 @@ def teammate(path):
     for e, m in records(path):
         ts = e.get("timestamp") or ""
         if ts:
-            t["times"].append(ts)   # every record rewrites the file = the hook's mtime test
+            t["times"].append(ts)   # record time ≈ agent-flow's activeAt → its 15-min quiet test
         if e.get("type") == "user" and not t["brief"]:
             t["brief"] = text_of(m)
         if e.get("type") not in ("user", "assistant"):

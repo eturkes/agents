@@ -30,7 +30,6 @@ acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
 [ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
 w=$((w - 33000))
 now=$(date +%s)  # one clock read for every reset delta
-# Rate-limit suffix: rate_limits present ⇒ segments; manual/pre-first response ⇒ gauge only.
 # lp LABEL PCT ⇒ "LABEL N%" under the color thresholds every usage figure shares.
 lp() {
   awk -v p="$2" -v l="$1" 'BEGIN{q=int(p+0.5)

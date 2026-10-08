@@ -49,7 +49,7 @@ The body uses base64 `text/plain`, and the subject uses RFC 2047. These encoding
 
 A notification mail includes an `AskUserQuestion` only while that question waits for an answer. Other notifications report their message.
 
-The token helper caches each access token until 60 seconds before it expires. A lock file serializes refreshes, so overlapping sends share one refresh.
+A lock file serializes token refreshes, so overlapping sends share one refresh.
 
 The prompt and response limits are 4,000 and 100,000 characters. The `Time` line shows local time with its UTC offset.
 

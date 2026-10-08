@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """msmtp passwordeval helper: print a live Gmail access token on stdout.
 
-The credential file caches each token until 60s before expiry; a lock file serializes refreshes, so
-a burst of overlapping sends costs one refresh. Failure prints nothing and exits non-zero, which makes msmtp
-abort that single send -- the Stop hook logs it and the turn is unaffected.
+Credential file caches each token until 60 s before expiry; a lock file serializes refreshes → overlapping
+sends share one refresh. Failure → empty stdout + nonzero exit → msmtp aborts that one send; the turn-email
+mod logs it to ~/.claude/cache/turn-email.log, and the turn continues.
 """
 import fcntl
 import json
