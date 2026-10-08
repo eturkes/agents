@@ -26,7 +26,7 @@ The build provides these controls:
 - The guard limits OCR ONNX intra-operation and inter-operation threads to one.
 - The guard honors `--no-image-optimize`, `HEADROOM_NO_IMAGE_OPTIMIZE=1`, `--no-optimize`, and the per-request bypass header.
 
-The source is `~/.local/app/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies three commits to upstream tag `v0.40.0`: the guard, the prompt fix, and the system-message fix. The next paragraphs describe the two fixes.
+The source is `~/.local/app/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies four commits to upstream tag `v0.40.0`: the guard, the prompt fix, the system-message fix, and the block-stop hold. The next paragraphs describe the three fixes.
 
 From the second turn on, `v0.39.0` compresses the text of the newest user message. That text includes long prompts, skill bodies, `CLAUDE.md` change notices, and messages from a lead to its teammates. Upstream #3923 in `v0.40.0` fixes the case where the user message is the last message in the request. Claude Code adds system messages after the user message on most turns, so the bug remains in `v0.40.0`. The local commit `fix(router): keep the newest user prompt verbatim when system messages follow it` treats the last message before those system messages as the newest turn.
 
@@ -34,7 +34,11 @@ Keep the local prompt fix until an upstream release covers trailing system messa
 
 Claude Code sends a `<total_tokens>` countdown to GPT models as `role=system` entries in `messages`. Upstream moves these entries into the top-level `system` field when the upstream URL is custom. The start of each request then changes, and the provider prompt cache reads only the tools. The local commit `fix(proxy): keep mid-conversation system messages in place for non-Claude models` keeps these entries in place when the model ID does not contain `claude`. CLIProxyAPI accepts them in that position.
 
-Keep the system-message fix until an upstream release leaves these entries in place for non-Claude models. To test a build, run one `claude -p` session with a `gpt-6.1-sol` subagent through each proxy. Then compare `cache_read_input_tokens` of the subagent requests.
+Keep the system-message fix until an upstream release leaves these entries in place for non-Claude models. To test a build, run one `claude -p` session with a `gpt-6-luna` subagent through each proxy. Then compare `cache_read_input_tokens` of the subagent requests.
+
+Claude Code writes the transcript entries of an in-process teammate on a 100 ms timer. It adds the final usage and `stop_reason` to an entry when `message_delta` arrives. CLIProxyAPI can send `message_delta` more than 100 ms after the last `content_block_stop`. The entry then reaches disk without its final usage. The local commit `fix(streaming): hold a trailing content_block_stop until the next chunk` sends that stop in the same chunk as `message_delta`.
+
+Keep the block-stop hold until an upstream release delivers the two events together. To test a build, delay each `message_delta` by 400 ms in a relay between the proxy and CLIProxyAPI. Then run one `claude -p` session with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and an in-process `gpt-6-luna` teammate through each proxy. Every teammate entry with `stop_reason` set means the hold works.
 
 Upstream `v0.40.0` also kills the worker of a timed-out call (#3940). The guard replaces that code in `headroom/proxy/image_isolation.py` and adds the grace period, the admission slot, the thread limits, and the bypass controls. Upstream keeps its OCR deadline. Therefore, #3940 does not make the guard redundant.
 
@@ -63,7 +67,7 @@ This build is the whole Headroom install. `command -v headroom` must resolve to 
 
 Because the guard sits on a release tag, the local build reports the same `headroom --version` value as the published package. To identify the installed build, read the receipt path, or run `rg _retire_image_pool` under the tool's `site-packages`.
 
-After an upstream release includes the guard and both fixes, restore the published package:
+After an upstream release includes the guard and all three fixes, restore the published package:
 
 ```sh
 uv tool install --force --python 3.14 "headroom-ai[all]"
