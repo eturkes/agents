@@ -3,9 +3,9 @@
 # Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
 # Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens =
 # CC's last-executor-iteration figure; transcript fallback applies the same rule (ctx).
-# Gauge denominator: ACW set ⇒ min(JSON context_window_size, ACW) - 33K = the
-# compaction trigger for every model; unset ⇒ MAIN's raw window (collapse-managed). Red = rounded ≥92% ≈ CC's `warn` (trigger - 20K)
-# at a 240K trigger; on a raw 1M window it opens at 915K.
+# Gauge denominator = compaction trigger = JSON context_window_size, clamped to ACW
+# when set, - 33K for every model. Red = rounded ≥92% = 885K at a 967K trigger,
+# ahead of CC's `warn` (trigger - 20K = 947K).
 # Teammates → context-gauge, resolving the same way per target.
 j=""
 [ -t 0 ] || j=$(cat)
@@ -27,10 +27,8 @@ else
 fi
 [ "$w" -gt 0 ] 2>/dev/null || w=1000000
 acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
-if [ "$acw" -gt 0 ] 2>/dev/null; then
-  [ "$acw" -lt "$w" ] && w=$acw
-  w=$((w - 33000))  # enforcement follows ACW being set, not the clamp firing
-fi
+[ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
+w=$((w - 33000))
 now=$(date +%s)  # one clock read for every reset delta
 # Rate-limit suffix: rate_limits present ⇒ segments; manual/pre-first response ⇒ gauge only.
 # lp LABEL PCT ⇒ "LABEL N%" under the color thresholds every usage figure shares.

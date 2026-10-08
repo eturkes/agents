@@ -3,10 +3,10 @@ import type { ContextAlertTier } from '../types'
 // Offsets below the compaction trigger = slowest observed response to the tier + p99 step growth
 // ⇒ that response still fits when the alert fires one step past its threshold; `agent-census` alerts derives them.
 const OFFSETS = {
-  main: { notice: 54_000, final: 25_000 },
+  main: { notice: 65_000, final: 27_000 },
   agent: { notice: 82_000, final: 35_000 },
 } as const
-// CC's compaction trigger wherever it enforces one = window − 33K.
+// CC's compaction trigger for every loop = window − 33K.
 const RESERVE = 33_000
 
 const ADVICE = {
@@ -22,18 +22,9 @@ const ADVICE = {
 
 export type Assessment = { tier: ContextAlertTier; text: string }
 
-/**
- * `used` = last request's input + cache + output of the loop; `window` = its raw window.
- * ACW set ⇒ min(window, ACW) − 33K = trigger for every loop; unset ⇒ MAIN runs
- * collapse-managed on its raw window, an agent compacts at window − 33K.
- */
+/** `used` = last request's input + cache + output of the loop; `window` = its raw window, clamped to ACW when set. */
 export function assess(used: number, window: number, acw: number, isAgent: boolean): Assessment | undefined {
-  let w = window
-  let trigger = isAgent ? w - RESERVE : w
-  if (acw > 0) {
-    w = Math.min(w, acw)
-    trigger = w - RESERVE
-  }
+  const trigger = (acw > 0 ? Math.min(window, acw) : window) - RESERVE
   const { notice, final } = OFFSETS[isAgent ? 'agent' : 'main']
   const tier: ContextAlertTier | undefined = used >= trigger - final ? 'final' : used >= trigger - notice ? 'notice' : undefined
   if (!tier) return undefined

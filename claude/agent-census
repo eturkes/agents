@@ -325,7 +325,7 @@ def alerts(roots):
                     elif x[0] == "U":
                         fam = FAMILY[loop]
                         if prev and x[2].startswith(fam) and prev[2].startswith(fam) and x[1] >= prev[1] / 2:
-                            steps[loop].append(x[1] - prev[1])    # drops = collapse, skipped
+                            steps[loop].append(x[1] - prev[1])    # drop past half = reset, skipped
                         prev = x
                     elif x[0] == "N":
                         s = response(ev, i, RESPONSE[(loop, x[1])])
