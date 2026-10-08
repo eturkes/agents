@@ -1,10 +1,10 @@
 import type { ContextAlertTier } from '../types'
 
 // Offsets below the compaction trigger = slowest observed response to the tier + p99 step growth
-// ⇒ that response still fits when the alert fires one step past its threshold.
+// ⇒ that response still fits when the alert fires one step past its threshold; `agent-census` alerts derives them.
 const OFFSETS = {
   main: { notice: 54_000, final: 25_000 },
-  agent: { notice: 89_000, final: 30_000 },
+  agent: { notice: 82_000, final: 35_000 },
 } as const
 // CC's compaction trigger wherever it enforces one = window − 33K.
 const RESERVE = 33_000

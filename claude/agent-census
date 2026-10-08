@@ -9,12 +9,15 @@ Section -> the rule it measures:
   writes      -> the SubagentStop wrote-nothing notice (>=15 tool calls, no durable call)
   tail        -> `context-gauge -t`, corpus-wide: distance from the last durable call
   stops       -> the agent-flow TaskStop hold: lead stops on a mid-turn teammate, and those before its marker
+  alerts      -> context-alert offsets + the GPT window (main + teammate transcripts): step growth,
+                 context spent from a delivered tier to its response, derived vs assess.ts
 
 Compaction record = a `type=system` entry carrying `compactMetadata` (`durationMs` = summarizer
 cost) + the following `isCompactSummary` user entry holding the summary.
 """
 import glob
 import json
+import math
 import os
 import re
 import statistics
@@ -26,6 +29,14 @@ REPORT = ".scratch/agents/"
 WRITE_TOOLS = {"Write", "Edit", "NotebookEdit"}
 BASH_DURABLE = re.compile(r"git commit|git add|>>|\btee\b")
 CONTEXT_ERR = re.compile(r"prompt is too long|context (?:window|limit)|prompt_too_long", re.IGNORECASE)
+NOTE = re.compile(r"Context \d+K/\S+ — \d+K left\. ")
+ASSESS = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mods/context-alert/hooks/assess.ts")
+FAMILY = {"main": "claude-opus", "agent": "gpt-"}   # models now running each loop
+# Tier response = main: next commit; agent: notice → turn end (hand-off), final → next durable write.
+RESPONSE = {("main", "notice"): "G", ("main", "final"): "G", ("agent", "notice"): "E", ("agent", "final"): "W"}
+INPUT_CAP = 921_310       # largest GPT input upstream accepts (1.05M window − 128K max output)
+COMPACT_PROMPT = 2_900    # CC's compaction instructions, sent on top of the full context
+RESERVE = 33_000          # CC compaction trigger = window − 33K
 
 
 def durable(b):
@@ -114,7 +125,8 @@ def records(path):
             except ValueError:
                 continue
             if isinstance(e, dict):
-                yield e, e.get("message") if isinstance(e.get("message"), dict) else {}
+                m = e.get("message")
+                yield e, m if isinstance(m, dict) else {}
 
 
 def blocks(m):
@@ -219,6 +231,119 @@ def q(v, p):
     return v[min(len(v) - 1, int(len(v) * p))] if v else 0
 
 
+def ctx(u):
+    """Context of one response: CC's last executor pass when `iterations` lists them, else the top-level sum."""
+    it = [x for x in u.get("iterations") or []
+          if not isinstance(x, dict) or x.get("type") not in ("advisor_message", "compaction")]
+    x = it[-1] if it else None
+    if isinstance(x, dict) and x.get("type") in ("message", "fallback_message"):
+        n = sum(x.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        if n:
+            return n + (x.get("output_tokens") or 0)
+    return sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens",
+                                       "cache_read_input_tokens", "output_tokens"))
+
+
+def advice():
+    """assess.ts → ({advice label: (loop, tier)}, {(loop, tier): offset}); label = text before the first colon."""
+    with open(ASSESS) as fh:
+        src = fh.read()
+    labels, offsets = {}, {}
+    for loop, body in re.findall(r"(main|agent): \{(.*?)\}", src, re.DOTALL):
+        for tier, v in re.findall(r"(notice|final): ('[^']*'|[\d_]+)", body):
+            if v.startswith("'"):
+                labels[(loop, v[1:].split(":")[0])] = tier
+            else:
+                offsets[(loop, tier)] = int(v.replace("_", ""))
+    return labels, offsets
+
+
+def events(path, side, labels):
+    """Loop events in order: U usage, C compaction, N delivered tier, G commit, W durable write, E turn end."""
+    loop = "main" if side else "agent"
+    ev, seen = [], {}
+    for e, m in records(path):
+        if side and e.get("isSidechain"):
+            continue
+        if isinstance(e.get("compactMetadata"), dict):
+            ev.append(("C",))
+            continue
+        a = e.get("attachment")
+        if isinstance(a, dict) and a.get("type") == "hook_additional_context":
+            for s in a.get("content") or []:
+                hit = NOTE.search(s) if isinstance(s, str) else None
+                tier = hit and labels.get((loop, s[hit.end():].split(":")[0]))
+                if tier:
+                    ev.append(("N", tier))
+            continue
+        if e.get("type") != "assistant" or m.get("model") in (None, "<synthetic>"):
+            continue
+        n = ctx(m["usage"]) if isinstance(m.get("usage"), dict) else 0
+        if n and m.get("id") in seen:    # CC repeats one response across records
+            i = seen[m["id"]]
+            ev[i] = ("U", max(ev[i][1], n), ev[i][2])
+        elif n:
+            seen[m.get("id")] = len(ev)
+            ev.append(("U", n, m["model"]))
+        if m.get("stop_reason") == "end_turn":
+            ev.append(("E",))
+        for b in blocks(m):
+            if b.get("type") != "tool_use":
+                continue
+            if b.get("name") == "Bash" and "git commit" in (b.get("input") or {}).get("command", ""):
+                ev.append(("G",))
+            if durable(b):
+                ev.append(("W",))
+    return ev
+
+
+def response(ev, i, target):
+    """Context spent from the tier at ev[i] to its response; None = compaction or session end came first."""
+    u0 = last = next((x[1] for x in reversed(ev[:i]) if x[0] == "U"), None)
+    for x in ev[i + 1:]:
+        if x[0] == "C" or u0 is None:
+            return None
+        if x[0] == "U":
+            last = x[1]
+        elif x[0] == target:
+            return last - u0
+    return None
+
+
+def alerts(roots):
+    labels, offsets = advice()
+    steps = {"main": [], "agent": []}
+    spent = {k: [] for k in RESPONSE}
+    for r in roots:
+        for loop, pat in (("main", "*/*.jsonl"), ("agent", "**/subagents/*.jsonl")):
+            for f in glob.glob(os.path.join(r, pat), recursive=True):
+                ev = events(f, loop == "main", labels)
+                prev = None
+                for i, x in enumerate(ev):
+                    if x[0] == "C":
+                        prev = None
+                    elif x[0] == "U":
+                        fam = FAMILY[loop]
+                        if prev and x[2].startswith(fam) and prev[2].startswith(fam) and x[1] >= prev[1] / 2:
+                            steps[loop].append(x[1] - prev[1])    # drops = collapse, skipped
+                        prev = x
+                    elif x[0] == "N":
+                        s = response(ev, i, RESPONSE[(loop, x[1])])
+                        if s is not None:
+                            spent[(loop, x[1])].append(s)
+    print("\nalerts: offset below the compaction trigger = slowest response to the current advice + p99 step"
+          " (rounded up to 1K)")
+    for loop, v in steps.items():
+        print(f"  {loop:5s} steps n={len(v)}  p99 {q(v, .99) / 1000:.1f}K  max {max(v, default=0) / 1000:.1f}K")
+    for (loop, tier), v in spent.items():
+        derived = math.ceil((max(v, default=0) + q(steps[loop], .99)) / 1000)
+        print(f"  {loop:5s} {tier:6s} responses n={len(v):3d}  p50 {q(v, .5) / 1000:5.1f}K  max "
+              f"{max(v, default=0) / 1000:5.1f}K  → offset {derived}K  assess.ts {offsets[(loop, tier)] // 1000}K")
+    bound = INPUT_CAP - max(steps["agent"], default=0) - COMPACT_PROMPT + RESERVE
+    print(f"  teammate window ≤ {INPUT_CAP // 1000}K input cap − max step − compaction prompt + "
+          f"{RESERVE // 1000}K = {bound // 1000}K  declared {os.environ.get('CLAUDE_CODE_MAX_CONTEXT_TOKENS', 'unset')}")
+
+
 def main():
     roots = sys.argv[1:] or [os.path.expanduser("~/.claude/projects")]
     files = sorted(f for r in roots
@@ -264,6 +389,7 @@ def main():
               f"{os.path.basename(w['path'])}")
 
     stops(roots)
+    alerts(roots)
 
 
 main()

@@ -92,10 +92,10 @@ test('a refused call passes through untouched', async ($, on) => {
 })
 
 test('agent tiers on its own window minus the reserve', () => {
-  expect(assess(182_999, 305_000, 0, true)).toBeUndefined()
-  expect(assess(183_000, 305_000, 0, true)).toEqual({ tier: 'notice', text: `Context 183K/272K — 89K left. ${NOTICE_AGENT}` })
-  expect(assess(241_999, 305_000, 0, true)?.tier).toBe('notice')
-  expect(assess(242_000, 305_000, 0, true)).toEqual({ tier: 'final', text: `Context 242K/272K — 30K left. ${FINAL_AGENT}` })
+  expect(assess(189_999, 305_000, 0, true)).toBeUndefined()
+  expect(assess(190_000, 305_000, 0, true)).toEqual({ tier: 'notice', text: `Context 190K/272K — 82K left. ${NOTICE_AGENT}` })
+  expect(assess(236_999, 305_000, 0, true)?.tier).toBe('notice')
+  expect(assess(237_000, 305_000, 0, true)).toEqual({ tier: 'final', text: `Context 237K/272K — 35K left. ${FINAL_AGENT}` })
   expect(assess(290_000, 305_000, 0, true)).toEqual({ tier: 'final', text: `Context 290K/272K — 0K left. ${FINAL_AGENT}` })
 })
 
