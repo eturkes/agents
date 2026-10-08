@@ -41,10 +41,10 @@ python -B host/cachyos/browseros-neo-sync-identity
 python -B host/cachyos/browseros-neo-sync-identity --apply
 ```
 
-The recipe clears copied Neo transport metadata/history + only the Sync app's copied GCM IID/registration. Chromium generates fresh identities at startup.
-Other preferences, account/management state, model files and non-Sync GCM records remain intact. Prepared/distinct identities make replay a no-op.
-Guards = empty account caches, no pending metadata commits, decryptable basic-store passwords. Profile/model files remain in place; native first downloads rebuild server caches.
-Verify first sync, distinct identities, bookmarks/passwords and wallet cache values before using the repaired profile.
+Recipe clears = copied Neo transport metadata/history + the Sync app's copied GCM IID/registration alone → Chromium generates fresh identities at startup.
+Intact = other preferences, account/management state, profile + model files, non-Sync GCM records; native first downloads rebuild server caches. Prepared/distinct identities → replay = no-op.
+Guards = empty account caches, no pending metadata commits, decryptable basic-store passwords.
+Verify first sync, distinct identities, bookmarks/passwords + wallet cache values before using the repaired profile.
 
 ## Checks
 

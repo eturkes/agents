@@ -28,7 +28,7 @@ The build provides these controls:
 
 The source is `~/.local/app/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies four commits to upstream tag `v0.40.0`: the guard, the prompt fix, the system-message fix, and the block-stop hold. The next paragraphs describe the three fixes.
 
-From the second turn on, `v0.39.0` compresses the text of the newest user message. That text includes long prompts, skill bodies, `CLAUDE.md` change notices, and messages from a lead to its teammates. Upstream #3923 in `v0.40.0` fixes the case where the user message is the last message in the request. Claude Code adds system messages after the user message on most turns, so the bug remains in `v0.40.0`. The local commit `fix(router): keep the newest user prompt verbatim when system messages follow it` treats the last message before those system messages as the newest turn.
+From the second turn on, upstream Headroom compresses the text of the newest user message. That text includes long prompts, skill bodies, `CLAUDE.md` change notices, and messages from a lead to its teammates. Upstream #3923 in `v0.40.0` protects that message only when it is the last message in the request. Claude Code adds system messages after the user message on most turns, so `v0.40.0` still compresses it. The local commit `fix(router): keep the newest user prompt verbatim when system messages follow it` treats the last message before those system messages as the newest turn.
 
 Keep the local prompt fix until an upstream release covers trailing system messages. To test a build, run a real two-turn `claude -p` session through capture relays on both sides of the proxy. Then compare the newest user message before and after compression. A unit test of the router misses this bug because the bug depends on the request layout that Claude Code sends.
 
@@ -63,7 +63,7 @@ Run the full test suite with `HOME` set to an empty temporary directory. Some te
 
 The uv receipt at `~/.local/share/uv/tools/headroom-ai/uv-receipt.toml` path-pins the installed wheel. Therefore, the routine upgrade routes hold the pin instead of moving it. `host/cachyos/upgrade` runs `uv tool upgrade --all`, and `headroom update` detects the uv-tool install and runs `uv tool upgrade headroom-ai`. Both re-resolve the same path. Keep the wheel on disk.
 
-To update this build, rebase the branch onto the newest upstream tag. Rebuild the wheel, and install the new wheel. Delete the superseded wheel.
+To update this build, rebase the branch onto the newest upstream tag. Rebuild the wheel. Install the new wheel. Delete the superseded wheel.
 
 This build is the whole Headroom install. `command -v headroom` must resolve to `~/.local/bin/headroom`. The uv routes above own every Headroom upgrade on this machine.
 
@@ -87,25 +87,25 @@ headroom mcp install --agent claude --proxy-url http://127.0.0.1:8787 --force
 
 This command rewrites only the `headroom` entry in `~/.claude.json`. New sessions load the updated entry.
 
-`wrap` also writes a `SessionStart` self-heal hook into each project's `.claude/settings.local.json`. That hook stores the absolute path of the binary that wrote it. After the binary moves, sweep the hooks and point each one at the current path:
+`wrap` also writes a `SessionStart` self-heal hook into each project's `.claude/settings.local.json`. That hook stores the absolute path of the binary that wrote it. After the binary moves, find the hooks with this command:
 
 ```sh
 rg -uu 'headroom wrap selfheal' ~/Projects/*/.claude ~/.local/app/*/.claude
 ```
 
-Every hook must name `/home/eturkes/.local/bin/headroom`. These files are gitignored, so each machine repairs its own.
+Every hook must name `/home/eturkes/.local/bin/headroom`. Change each hook that names a different path. These files are gitignored, so each machine repairs its own.
 
 `wrap` keeps its state in `.claude/.headroom_wrap_*` files next to `settings.local.json`: a marker, an owner record for each env key, and a settings lock. Each project must gitignore `.claude/.headroom_wrap_*` together with `.claude/settings.local.json`. An ignore line that names only the marker leaves the other two files untracked.
 
 ## Token rate limit
 
-Starting with 0.39.0, the proxy enforces its tokens-per-minute limit before it forwards a request. `--tpm`, `HEADROOM_TPM`, or `tpm` in `settings.json` sets the limit, and the default is 100,000. Before it forwards a request, the proxy counts the tokens in the request's `messages` with its own tokenizer, before compression. It checks that count against a token bucket. The bucket refills at the limit's rate and never holds more than one minute of tokens. A request that needs more tokens than the bucket holds gets HTTP 429 with a `Retry-After` header, and Claude Code shows it as:
+The proxy enforces its tokens-per-minute limit before it forwards a request. `--tpm`, `HEADROOM_TPM`, or `tpm` in `settings.json` sets the limit, and the default is 100,000. Before it forwards a request, the proxy counts the tokens in the request's `messages` with its own tokenizer, before compression. It checks that count against a token bucket. The bucket refills at the limit's rate and never holds more than one minute of tokens. A request that needs more tokens than the bucket holds gets HTTP 429 with a `Retry-After` header, and Claude Code shows it as:
 
 ```text
 API Error: Request rejected (429) · {"detail":"Token rate limited. Retry after 301.8s"}
 ```
 
-A request larger than the limit never fits in the bucket. The proxy always rejects it, although the error names a finite wait. With the default limit, a Claude Code session can send no turn after its conversation passes about 100,000 tokens. A smaller request fails only until the bucket refills. Claude Code retries a 429 when `Retry-After` is 60 seconds or less. A longer wait ends the turn with the error. Earlier builds do not enforce the limit.
+A request larger than the limit never fits in the bucket. The proxy always rejects it, although the error names a finite wait. With the default limit, a Claude Code session can send no turn after its conversation passes about 100,000 tokens. A smaller request fails only until the bucket refills. Claude Code retries a 429 when `Retry-After` is 60 seconds or less. A longer wait ends the turn with the error.
 
 `settings.json` sets `tpm` to 1,000,000,000, which disables the limit in practice. A `--tpm` option takes precedence over an exported `HEADROOM_TPM`, and both take precedence over the file. The `--no-rate-limit` flag turns off both rate limits. `wrap` does not pass that flag to the proxy that it starts, and `headroom proxy` reads no environment variable or `settings.json` key for it. The requests-per-minute limit keeps its default of 60.
 

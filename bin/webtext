@@ -48,7 +48,6 @@ else
   IFS=$'\t' read -r code type src <<<"$meta"
   (( code < 400 )) || { echo "webtext: HTTP $code: $src" >&2; exit 1; }
   type=${type%%;*} type=${type,,}
-  # Servers that send no type or a generic one → sniff the bytes.
   [[ -n $type && $type != application/octet-stream ]] || type=$(file -b --mime-type "$tmp/body")
 fi
 echo "webtext: $src ($type)" >&2
@@ -71,5 +70,5 @@ case $type in
     | application/yaml | application/x-yaml | application/toml | application/javascript)
     cat "$tmp/body" ;;
   *)
-    echo "webtext: unsupported type $type. Download it with curl -o <file>, then inspect the file." >&2; exit 4 ;;
+    echo "webtext: unsupported type $type. Download it with curl -o <file>. Then inspect the file." >&2; exit 4 ;;
 esac

@@ -20,7 +20,13 @@ The installed build adds hard termination for timed-out image-compression worker
 
 The source is `~/.local/app/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies four commits to upstream tag `v0.40.0`: the guard, the prompt fix, the system-message fix, and the block-stop hold. All four commits match the [CachyOS build](../../../host/cachyos/headroom/README.md#image-worker-termination-guard), which describes the worker controls, the three fixes, and their tests.
 
-To add the system-message fix and the block-stop hold to a branch that has only the guard and the prompt fix, run `git am ~/.local/app/agents/host/cachyos/headroom/patches/*.patch` in `~/.local/app/headroom`. Then do the steps in [Build and install](#build-and-install).
+If the branch has only the guard and the prompt fix, apply the patches for the other two commits. Run this command in `~/.local/app/headroom`:
+
+```sh
+git am ~/.local/app/agents/host/cachyos/headroom/patches/*.patch
+```
+
+Then do the steps in [Build and install](#build-and-install).
 
 This machine runs the proxy in token mode (`HEADROOM_MODE=token` in `~/.profile`). The prompt fix applies in token mode too.
 
@@ -41,7 +47,7 @@ The repository `rust-toolchain.toml` pins the Rust version for the build.
 
 The uv receipt at `~/.local/share/uv/tools/headroom-ai/uv-receipt.toml` path-pins the installed wheel. Therefore, the routine upgrade routes hold the pin instead of moving it. `container/aeon/upgrade` runs `uv tool upgrade --all`, and `headroom update` detects the uv-tool install and runs `uv tool upgrade headroom-ai`. Both re-resolve the same path. Keep the wheel on disk.
 
-To update this build, rebase the branch onto the newest upstream tag. Rebuild the wheel, and install the new wheel. Delete the superseded wheel.
+To update this build, rebase the branch onto the newest upstream tag. Rebuild the wheel. Install the new wheel. Delete the superseded wheel.
 
 Because the guard sits on a release tag, the local build reports the same `headroom --version` value as the published package. To identify the installed build, read the receipt path, or run `rg _retire_image_pool` under the tool's `site-packages`.
 

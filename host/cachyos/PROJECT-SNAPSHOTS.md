@@ -82,7 +82,7 @@ Tracked Claude profiles carry the same hooks; the native Claude launcher and Hea
 
 ## Correct legacy NoCoW settings
 
-Older cache migrations can leave NoCoW settings on ordinary directories and inherited settings on files.
+Target = NoCoW settings on ordinary directories + NoCoW that files inherited.
 From the agents repository, run:
 
 ```bash

@@ -260,7 +260,7 @@ def migrate(source, state, units=()):
     retained = [str(path) for path in folds if path.name.endswith(".snapshot-fold")]
     if retained:
         raise RuntimeError("An interrupted fold kept these original subvolumes: " + ", ".join(retained)
-                           + ". Compare each with its folded path, then delete it with bcachefs subvolume delete.")
+                           + ". Compare each with its folded path. Then delete it with bcachefs subvolume delete.")
     if folds:
         skipped = []
         with paused(units):

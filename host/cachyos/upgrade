@@ -318,9 +318,8 @@ else
 fi
 
 stage 'Marketplace language servers'
-# Marketplace servers = user-managed. Shared updater resolves candidates,
-# requires real LSP handshake + restores prior server on failure. Caller absorbs
-# exit 1/2 so workstation upgrade continues with retained working server.
+# User-managed servers: the updater owns candidates, LSP handshake + rollback on failure.
+# Exit 1/2 → the upgrade continues with the retained working server.
 if [[ -x "$repo_root/claude/marketplace/upgrade-servers" ]]; then
   "$repo_root/claude/marketplace/upgrade-servers" ||
     report REVIEW "Language server updater exited $?; inspect its report for retained versions"

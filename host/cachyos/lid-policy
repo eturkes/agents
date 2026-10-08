@@ -12,7 +12,7 @@ policy_target=/etc/systemd/logind.conf.d/80-lid-ignore.conf
 
 if [[ "$mode" == apply ]]; then
   sudo -n install -D -o root -g root -m 0644 -- "$policy_source" "$policy_target"
-  # Reload preserves sessions and inhibitors; a restart is unnecessary.
+  # Reload preserves sessions and inhibitors.
   sudo -n systemctl reload systemd-logind.service
 fi
 

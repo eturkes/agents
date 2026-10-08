@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 // Headless capture → PDF / PNG / DOM over CDP.
 //
-// Sole capture path here: Chrome's own switches (`--print-to-pdf`, `--dump-dom`,
-// `--screenshot`) hang in the ChromiumFish build — page loads, browser stays
-// live, the headless command handler never completes → rc=124, no artifact.
-// CDP drives the same binary correctly → always capture through here.
+// Sole capture path here: Chrome's own capture switches (`--print-to-pdf`, `--dump-dom`, `--screenshot`)
+// hang in the ChromiumFish build after load (rc=124, no artifact), while CDP drives the same binary.
 //
 // Usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]
 //   --full-page        whole scroll height in PNG (PDF spans the document always)
@@ -80,12 +78,9 @@ if (!opts.pdf && !opts.png && !opts.dom) die("choose at least one of --pdf, --pn
 const { ChromiumFish, BASE_ARGS, binaryPath } = await import(`${resolveGlobal("chromiumfish")}/dist/index.js`);
 const context = { viewport: { width: Number(opts.width), height: Number(opts.height) } };
 
-// This build answers prefers-color-scheme light under CDP media emulation
-// (newPage colorScheme + emulateMedia both report dark=false) → promote every
-// dark media block to `all`; the cascade stands, so a later light rule still
-// wins. Cross-origin sheets deny cssRules
-// → stay light. matchMedia keeps reporting light → pages theming off it rather
-// than off the media query need their own switch.
+// CDP media emulation (newPage colorScheme, emulateMedia) still reports dark=false here → promote
+// every dark media block to `all`; the cascade stands, so a later light rule still wins.
+// Cross-origin sheets deny cssRules → stay light; matchMedia stays light → matchMedia-driven themes need their own switch.
 function promoteDarkRules() {
   const walk = (rules) => {
     for (const rule of rules) {
@@ -105,10 +100,8 @@ function promoteDarkRules() {
   return { sheets: document.styleSheets.length, reached };
 }
 
-// Capture needs a composited frame. Instant loads (file://, localhost above
-// all) reach `load` before the compositor produces one → CDP answers "Unable
-// to capture screenshot". Two animation frames put a real one in place. This
-// script = the only capture route here → the guard stays unconditional.
+// Instant loads (file://, localhost) reach `load` before the first composited frame → CDP "Unable to
+// capture screenshot"; two animation frames supply one; sole capture route → the guard stays unconditional.
 function nextFrames() {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
@@ -116,22 +109,15 @@ function nextFrames() {
 let closable;
 let page;
 
-// The named profile stays read-only: capture runs against a copy. Any build
-// opening the original garbage-collects the component extensions it does not
-// itself provide → the owning browser loses extensions its Preferences still
-// names. Copying also sheds ProcessSingleton → leave that browser running.
-//
-// `cp --reflink` shares extents within one filesystem (no disk cost) → the copy
-// lands beside the original.
-// Singleton* name the live instance's socket → a copy keeping them forwards
-// the capture into that browser.
+// Capture runs against a copy: a build opening the original garbage-collects component extensions it lacks
+// → the owning browser loses extensions its Preferences still name. The copy sheds ProcessSingleton → leave
+// that browser running. `cp --reflink` shares extents within one filesystem (no disk cost) → copy beside it.
+// Singleton* name the live instance's socket → a copy keeping them forwards the capture into that browser.
 function cloneProfile(dir) {
   if (!existsSync(dir)) die(`no profile at ${dir}`);
   const source = realpathSync(dir);
   const copy = mkdtempSync(join(dirname(source), ".webcap-"));
-  // Removal rides process exit, not the capture's `finally`: a `die` or launch
-  // throw past this point leaves that block unreached → clones accumulate
-  // beside the profile.
+  // A `die` or launch throw skips the capture's `finally` → removal rides process exit.
   process.on("exit", () => rmSync(copy, { recursive: true, force: true }));
   const cp = spawnSync("cp", ["-a", "--reflink=auto", `${source}/.`, copy], { encoding: "utf8" });
   if (cp.status !== 0) {
@@ -144,12 +130,10 @@ function cloneProfile(dir) {
   return copy;
 }
 
-// Chrome deletes every cookie it fails to decrypt. playwright-core pins
-// --password-store=basic into every launch on every platform beside
-// --use-mock-keychain → a jar encrypted against the login keyring empties on
-// open. A later --password-store wins on Chrome's last-duplicate rule → the
-// cloned jar opens with the signed-in session intact. That pin = explicit
-// switch, not a detector → no desktop-environment variable moves it.
+// Chrome deletes every cookie it fails to decrypt; playwright-core pins --password-store=basic (beside
+// --use-mock-keychain) into every launch → a login-keyring jar empties on open. Chrome's last duplicate
+// switch wins → this store keeps the cloned session signed in; explicit pin → no desktop-environment
+// variable moves it.
 const PERSISTENT_ARGS = [...BASE_ARGS, "--password-store=gnome-libsecret"];
 
 if (opts["user-data-dir"]) {

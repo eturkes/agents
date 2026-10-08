@@ -364,7 +364,7 @@ class ProjectSnapshots:
         if outside:
             recipe = Path(__file__).resolve().with_name("project-snapshots-migrate")
             raise SnapshotError(f"Nested subvolumes stay outside snapshots: {', '.join(outside)}. "
-                                f"Stop their users, then run {recipe}.")
+                                f"Stop their users. Then run {recipe}.")
         self.snapshots()
         settings = Path.home().resolve() / ".claude/settings.json"
         try:

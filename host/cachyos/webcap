@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 // Headless capture → PDF / PNG / DOM over CDP.
 //
-// Default capture path here: adds full-page PNG, working prefers-color-scheme
-// dark + settle waits over Chrome's own capture switches. Those switches =
-// fallback: browser binary alone + arbitrary Chrome flags (`--window-size`,
-// `--user-agent`, `--force-device-scale-factor`, proxy) → reach for them on
-// flag-level control or a missing node stack.
+// Default capture path: adds full-page PNG, working prefers-color-scheme dark + settle waits over Chrome's
+// own capture switches. Those switches (browser binary alone) = the fallback for flag-level control
+// (`--window-size`, `--user-agent`, `--force-device-scale-factor`, proxy) or a missing node stack.
 //
 // Usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]
 //   --full-page        whole scroll height in PNG (PDF spans the document always)
@@ -77,12 +75,9 @@ if (!opts.pdf && !opts.png && !opts.dom) die("choose at least one of --pdf, --pn
 const { ChromiumFish, BASE_ARGS, binaryPath } = await import(`${resolveModule("chromiumfish")}/dist/index.js`);
 const context = { viewport: { width: Number(opts.width), height: Number(opts.height) } };
 
-// This build answers prefers-color-scheme light under CDP media emulation
-// (newPage colorScheme + emulateMedia both report dark=false) → promote every
-// dark media block to `all`; the cascade stands, so a later light rule still
-// wins. Cross-origin sheets deny cssRules
-// → stay light. matchMedia keeps reporting light → pages theming off it rather
-// than off the media query need their own switch.
+// CDP media emulation (newPage colorScheme, emulateMedia) still reports dark=false here → promote
+// every dark media block to `all`; the cascade stands, so a later light rule still wins.
+// Cross-origin sheets deny cssRules → stay light; matchMedia stays light → matchMedia-driven themes need their own switch.
 function promoteDarkRules() {
   const walk = (rules) => {
     for (const rule of rules) {
@@ -102,9 +97,8 @@ function promoteDarkRules() {
   return { sheets: document.styleSheets.length, reached };
 }
 
-// Capture needs a composited frame. Instant loads (file://, localhost above
-// all) reach `load` before the compositor produces one → CDP answers "Unable
-// to capture screenshot". Two animation frames put a real one in place.
+// Instant loads (file://, localhost) reach `load` before the first composited frame → CDP "Unable to
+// capture screenshot"; two animation frames supply one.
 function nextFrames() {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
@@ -112,18 +106,12 @@ function nextFrames() {
 let closable;
 let page;
 
-// The named profile stays read-only: capture runs against a copy. Any build
-// opening the original garbage-collects the component extensions it does not
-// itself provide + rewrites `Local State` profile.last_used → the owning
-// browser loses extensions its Preferences still names, and its next session
-// opens elsewhere. Copying also sheds ProcessSingleton → leave that browser
-// running.
-//
-// Copy lands beside the original = the only place --reflink could share
-// extents; psd's fuse-overlayfs forces a real copy (~1.4G, ~1s). realpath first, since ~/.config/browser-claw is a
-// symlink into /run and `cp -a` would copy the link alone. Singleton* name the
-// live instance's socket → a copy keeping them forwards the capture into that
-// browser.
+// Capture runs against a copy: a build opening the original garbage-collects component extensions it lacks
+// + rewrites `Local State` profile.last_used → the owning browser loses extensions its Preferences still
+// name + its next session opens elsewhere. The copy sheds ProcessSingleton → leave that browser running.
+// Copy beside the original = the only place --reflink could share extents; psd's fuse-overlayfs forces a
+// real copy (~1.4G, ~1s). realpath first: ~/.config/browser-claw = a symlink into /run, which `cp -a` copies alone.
+// Singleton* name the live instance's socket → a copy keeping them forwards the capture into that browser.
 function cloneProfile(dir) {
   if (!existsSync(dir)) die(`no profile at ${dir}`);
   const source = realpathSync(dir);
@@ -141,9 +129,8 @@ function cloneProfile(dir) {
   return copy;
 }
 
-// Chrome opens the profile `Local State` last used, not `Default`. An absent
-// name gets created empty rather than refused → a signed-out capture that
-// reads like a login failure → resolve it here + report what exists.
+// Chrome opens `Local State`'s last-used profile, not `Default`, and creates an absent name empty → a
+// signed-out capture that reads like a login failure → resolve the name here + report what exists.
 function resolveProfileDir(copy, wanted, label) {
   let name = wanted;
   if (!name) {
@@ -166,13 +153,10 @@ if (opts["user-data-dir"]) {
   const profileDir = resolveProfileDir(scratch, opts["profile-directory"], opts["user-data-dir"]);
   const pw = await import(`${resolveModule("playwright-core")}/index.mjs`);
   const chromium = pw.chromium ?? pw.default.chromium;
-  // Chrome deletes every cookie it fails to decrypt. playwright-core pins
-  // --password-store=basic into every launch on every platform beside
-  // --use-mock-keychain → a later --password-store wins on Chrome's
-  // last-duplicate rule. That pin = explicit switch, not a detector → no
-  // desktop-environment variable moves it. Name the store actually running: no
-  // keyring daemon here + a v10 jar (the hardcoded-key format `basic` reads) →
-  // naming a wallet would write v11 rows the session browser cannot read back.
+  // Chrome deletes every cookie it fails to decrypt; playwright-core pins --password-store=basic (beside
+  // --use-mock-keychain) into every launch, and a later --password-store wins (last duplicate) → name the
+  // store actually running; no desktop-environment variable moves the pin. Here: no keyring daemon + a v10
+  // jar (the hardcoded-key format `basic` reads) → a wallet store would write v11 rows the browser cannot read.
   closable = await chromium.launchPersistentContext(scratch, {
     executablePath: await binaryPath(),
     args: [...BASE_ARGS, "--password-store=basic", `--profile-directory=${profileDir}`],
