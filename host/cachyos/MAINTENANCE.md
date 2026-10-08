@@ -55,10 +55,13 @@ The checkpoint shares the current root filesystem and user-space packages; revie
 
 ```bash
 set -euo pipefail
-units=('app-browseros\x2dneo@autostart.service' app-chatgpt@autostart.service)
+install -Dm644 host/cachyos/browseros-neo.service "$HOME/.config/systemd/user/browseros-neo.service"
+units=(browseros-neo.service app-chatgpt@autostart.service)
 for unit in "${units[@]}"; do
   install -Dm644 host/cachyos/desktop-recovery.conf "$HOME/.config/systemd/user/$unit.d/recovery.conf"
 done
+rm -f "$HOME/.config/autostart/browseros-neo.desktop"
+systemctl --user enable --no-reload "$HOME/.config/systemd/user/browseros-neo.service"
 systemctl --user daemon-reload
 for unit in "${units[@]}"; do
   cmp host/cachyos/desktop-recovery.conf "$HOME/.config/systemd/user/$unit.d/recovery.conf"
@@ -68,6 +71,7 @@ done
 ```
 
 - Active app in another service → install the same policy at `$XDG_RUNTIME_DIR/systemd/user/<owning-unit>.d/recovery.conf`; reload.
+- Neo transitional owner → alias `browseros-neo.service` to its plain service in `$XDG_RUNTIME_DIR/systemd/transient/`; reload. Persistent named service owns startup after reboot.
 - Before app/profile maintenance → `systemctl --user stop <owning-unit>`; unit stays stopped. Resume → `systemctl --user start <owning-unit>` or login autostart.
 
 ### Agent crash diagnostics

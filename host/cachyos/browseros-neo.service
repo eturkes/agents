@@ -1,0 +1,12 @@
+[Unit]
+Description=BrowserOS Neo
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=exec
+ExecStart=%h/.local/bin/browseros-neo
+TimeoutStopSec=5s
+
+[Install]
+WantedBy=xdg-desktop-autostart.target
