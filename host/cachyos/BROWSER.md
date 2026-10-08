@@ -3,7 +3,7 @@
 - Roles = BrowserOS for the user; BrowserOS Neo for agents. Retain both packages and independent profiles.
 - Packages = AUR `browseros-bin` + `browseros-neo-bin`; retain `profile-sync-daemon`.
 - BrowserOS launch = existing private `~/.local/share/applications/browseros.desktop`; original profile + sign-in settings remain intact.
-- Launch = `browseros-neo` → `~/.local/bin/browseros-neo` → `host/cachyos/browseros-neo`; desktop = `browserclaw.desktop`.
+- Launch = `browseros-neo` → `~/.local/bin/browseros-neo` → `host/cachyos/browseros-neo`; desktop = `browseros-neo.desktop`. User `browserclaw.desktop` masks the packaged launcher with `NoDisplay=true`.
 - Neo launcher = desktop environment + PSD readiness + cache directory + `Profile 3` + `--password-store=basic`. `browseros-neo-signin` reuses Google OAuth settings from the private BrowserOS desktop entry; keep credentials outside tracked files and logs.
 - Managed profiles require configured OAuth clients at startup. Preserve account/management metadata; verify Chromium's `Signin.SigninAllowed` histogram and the native desktop UI.
 - Browser sync = enabled in both; each has its own Sync GUID + Sync FCM InstanceID/token. Preserve BrowserOS's identity; regenerate copied Neo metadata before enabling sync.
@@ -28,8 +28,34 @@ ln -sfn "$PWD/host/cachyos/browseros-neo" ~/.local/bin/browseros-neo
 Set `~/.config/psd/psd.conf`: `USE_OVERLAYFS="yes"`, `USE_SUSPSYNC="yes"`, `BROWSERS=(browseros-neo)`.
 Create the cache symlink and tmpfiles rule: `d /tmp/browser-claw-home-cache 0700 eturkes eturkes -`.
 Set `Local State.browseros.server.proxy_port=9200`; active sidecar/CDP ports → `~/.config/browser-claw/.browseros/config.json`.
-Set the user `browserclaw.desktop` Exec to `/home/eturkes/.local/bin/browseros-neo %U`.
+Set the user `browseros-neo.desktop` Exec to `/home/eturkes/.local/bin/browseros-neo %U`.
 Then enable PSD: `systemctl --user enable --now psd.service`.
+
+## Crash recovery
+
+Policy = `browseros-neo-recovery.conf`: restart after crashes + normal quits, wait five seconds, track the main process.
+Explicit `systemctl --user stop` suppresses recovery; login autostart resumes it next session.
+Keep the generated unit intact; install a persistent user drop-in:
+
+```bash
+install -Dm644 host/cachyos/browseros-neo-recovery.conf \
+  ~/.config/systemd/user/'app-browseros\x2dneo@autostart.service.d'/recovery.conf
+systemctl --user daemon-reload
+```
+
+An already-running browser may belong to another service. Install the same drop-in under
+`$XDG_RUNTIME_DIR/systemd/user/<owning-service>.d/recovery.conf`, then reload without restarting the browser.
+The runtime drop-in expires at logout/reboot; the persistent autostart drop-in covers subsequent logins.
+Inspect `MainPID`, `Restart`, `RestartUSec`, `ExitType` + `DropInPaths` with `systemctl --user show`.
+
+Stop the supervised browser before profile unsync or maintenance:
+
+```bash
+systemctl --user stop 'app-browseros\x2dneo@autostart.service'
+```
+
+Use the owning service's name when another unit launched the running browser.
+Crash recovery requires process exit; it does not detect hangs or repair the native tab-creation fault.
 
 ## Sync identity replay
 
