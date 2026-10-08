@@ -4,7 +4,7 @@ Each folder here is one Claude Code mod: a plugin of function hooks. A mod runs 
 
 | Mod | Hosts | What it does |
 | --- | --- | --- |
-| `context-alert` | cachyos, aeon | Gives one notice per session, loop and tier as context nears compaction. A resumed session keeps the notices it already gave. The main loop gets a notice at 100K and 50K below its window. A teammate gets a notice at 205K and 255K. |
+| `context-alert` | cachyos, aeon | Gives one notice per session, loop and tier as context nears compaction. A resumed session keeps the notices it already gave. Each loop gets a notice at 100K and 50K below its window. |
 | `agent-flow` | cachyos, aeon | Appends the deliverable note to every subagent brief. Performs a subagent `Write` that Claude Code rejects for a report file name. Adds the deliverable line to compaction instructions. Asks a long run that wrote nothing at stop. Holds the first `TaskStop` on a mid-turn teammate. Shows a line under the prompt hint with the model and context use of each running agent, idle teammates included, against its compaction trigger. The entries flow onto more lines when the row is full. |
 | `turn-email` | cachyos | Sends one email per completed main turn that you start, one when a run ends with no work in flight, and one per dialog that waits for you. The relay setup is in `../cachyos/turn-email/README.md`. |
 
