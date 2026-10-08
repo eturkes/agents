@@ -1,6 +1,6 @@
 # Pause
 
-Use in any phase. When you want to stop now and continue later, replace `<request>` with your steering, for example the work to stop early. Then paste this body into the running session. Continue later with `resume.md`.
+Use in any phase. When you want to stop now and continue later, replace `<request>` with your steering. It can name the work to stop early. Then paste this body into the running session. Continue later with `resume.md`.
 
 ---
 

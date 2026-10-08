@@ -1,6 +1,6 @@
 # Maintain
 
-Use when `Phase` is `MAINTAIN`. Start a fresh session at the project root. Replace `<request>` with your request, or `<rows>` with `.agent/deferred.md` row names. Paste one body: the text between its two rules. To work every row, use `auto/maintain.md`.
+When `Phase` is `MAINTAIN`, use this body. Start a fresh session at the project root. Replace `<request>` with your request, or `<rows>` with `.agent/deferred.md` row names. Paste one body: the text between its two rules. To work every row, use `auto/maintain.md`.
 
 ## Request
 

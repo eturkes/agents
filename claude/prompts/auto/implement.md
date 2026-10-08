@@ -1,6 +1,6 @@
 # Implement
 
-Use after you say go at the end of ITERATE, or to open a scope directly at IMPLEMENT. Start a fresh session at the project root. Paste everything below the rule.
+After you say go at the end of ITERATE, use this body. It can also open a scope directly at IMPLEMENT. Start a fresh session at the project root. Paste everything below the rule.
 
 ---
 

@@ -1,5 +1,5 @@
 {
   "name": "turn-email",
   "version": "1.0.0",
-  "description": "One email per completed main turn the user started, per run end with nothing in flight, and per dialog that waits for the user"
+  "description": "One email per completed main turn that the user started, per run end with nothing in flight, and per dialog that waits for the user"
 }
