@@ -40,6 +40,8 @@ Claude Code writes the transcript entries of an in-process teammate on a 100 ms 
 
 Keep the block-stop hold until an upstream release delivers the two events together. To test a build, delay each `message_delta` by 400 ms in a relay between the proxy and CLIProxyAPI. Then run one `claude -p` session with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and an in-process `gpt-6-luna` teammate through each proxy. Every teammate entry with `stop_reason` set means the hold works.
 
+`patches/` holds the system-message fix and the block-stop hold as `git format-patch` files for the aeon build. After you change either commit, regenerate them with `git format-patch -o <this-dir>/patches <guard-and-prompt-fix-tip>..HEAD`.
+
 Upstream `v0.40.0` also kills the worker of a timed-out call (#3940). The guard replaces that code in `headroom/proxy/image_isolation.py` and adds the grace period, the admission slot, the thread limits, and the bypass controls. Upstream keeps its OCR deadline. Therefore, #3940 does not make the guard redundant.
 
 ### Build and install

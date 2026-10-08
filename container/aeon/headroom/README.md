@@ -18,7 +18,9 @@ ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --e
 
 The installed build adds hard termination for timed-out image-compression workers. RapidOCR and ONNX workers can otherwise accumulate until the host starves.
 
-The source is `~/.local/app/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies two commits to upstream tag `v0.40.0`: the guard and the prompt fix. Both commits match the [CachyOS build](../../../host/cachyos/headroom/README.md#image-worker-termination-guard), which describes the worker controls, the prompt fix, and its capture test.
+The source is `~/.local/app/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies four commits to upstream tag `v0.40.0`: the guard, the prompt fix, the system-message fix, and the block-stop hold. All four commits match the [CachyOS build](../../../host/cachyos/headroom/README.md#image-worker-termination-guard), which describes the worker controls, the three fixes, and their tests.
+
+To add the system-message fix and the block-stop hold to a branch that has only the guard and the prompt fix, run `git am ~/.local/app/agents/host/cachyos/headroom/patches/*.patch` in `~/.local/app/headroom`. Then do the steps in [Build and install](#build-and-install).
 
 This machine runs the proxy in token mode (`HEADROOM_MODE=token` in `~/.profile`). The prompt fix applies in token mode too.
 
@@ -43,7 +45,7 @@ To update this build, rebase the branch onto the newest upstream tag. Rebuild th
 
 Because the guard sits on a release tag, the local build reports the same `headroom --version` value as the published package. To identify the installed build, read the receipt path, or run `rg _retire_image_pool` under the tool's `site-packages`.
 
-After an upstream release includes the guard and the prompt fix, restore the published package:
+After an upstream release includes the guard and all three fixes, restore the published package:
 
 ```sh
 uv tool install --force --python 3.14.5 "headroom-ai[all]"

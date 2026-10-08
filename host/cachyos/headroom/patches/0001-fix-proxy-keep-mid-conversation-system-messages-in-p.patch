@@ -1,0 +1,103 @@
+From 8c8e5b68b71b4b0356833533b74be5c140a49786 Mon Sep 17 00:00:00 2001
+From: Emir Turkes <eturkes@bu.edu>
+Date: Thu, 8 Oct 2026 11:12:38 +0900
+Subject: [PATCH 1/2] fix(proxy): keep mid-conversation system messages in
+ place for non-Claude models
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Claude Code sends GPT teammates (gpt-6-astra, gpt-6.1-sol, gpt-6-luna) through a
+custom upstream (CLIProxyAPI → Codex) with per-turn `<total_tokens>` sections as
+role=system messages. The #765 guard got model=None for a custom upstream and
+hoisted them into the top-level system on every request, so the request head
+changed each turn and the provider prompt cache read only the tools prefix.
+
+A non-Claude id can only reach a translating upstream, which accepts these
+messages where they are, so the guard now leaves them alone; the call site
+passes non-Claude ids even for a custom upstream. Ids containing "claude"
+(incl. provider-prefixed Bedrock ids) keep the guard.
+
+Measured (claude -p, gpt-6.1-sol main + subagent, same prompt):
+- unpatched proxy: subagent cache_read stuck at 2,944 for 9 requests
+- patched proxy: subagent cache_read 5,248 → 49,536; 0 relocations over 30 requests
+Red first: test_relocate_system_messages_leaves_non_claude_model_untouched failed
+on the unpatched tree (assert True is False).
+---
+ headroom/proxy/handlers/anthropic.py |  1 +
+ headroom/proxy/helpers.py            |  5 +++++
+ tests/test_proxy_handler_helpers.py  | 30 ++++++++++++++++++++++++++++
+ 3 files changed, 36 insertions(+)
+
+diff --git a/headroom/proxy/handlers/anthropic.py b/headroom/proxy/handlers/anthropic.py
+index 6f97dda2..4cfff422 100644
+--- a/headroom/proxy/handlers/anthropic.py
++++ b/headroom/proxy/handlers/anthropic.py
+@@ -3557,6 +3557,7 @@ class AnthropicHandlerMixin:
+                             not upstream_base_url
+                             or getattr(self, "anthropic_backend", None) is not None
+                             or _is_googleapis_endpoint(upstream_base_url)
++                            or "claude" not in str(model).lower()
+                         )
+                         else None
+                     ),
+diff --git a/headroom/proxy/helpers.py b/headroom/proxy/helpers.py
+index 472d5d18..3a54112e 100644
+--- a/headroom/proxy/helpers.py
++++ b/headroom/proxy/helpers.py
+@@ -1066,6 +1066,11 @@ def relocate_system_messages_to_top_level(
+     the common path is untouched.
+     """
+     model_id = str(model or "").lower()
++    if model_id and "claude" not in model_id:
++        # Only a translating upstream serves a non-Claude id, and it takes
++        # mid-conversation system messages as-is. Hoisting them rewrites the
++        # top-level system each turn, so every request misses the prompt cache.
++        return messages, system, False
+     supports_mid_conversation = any(
+         family in model_id
+         for family in (
+diff --git a/tests/test_proxy_handler_helpers.py b/tests/test_proxy_handler_helpers.py
+index 0771745d..869e438f 100644
+--- a/tests/test_proxy_handler_helpers.py
++++ b/tests/test_proxy_handler_helpers.py
+@@ -352,6 +352,36 @@ def test_relocate_system_messages_preserves_valid_mid_conversation_section() ->
+     assert system == "base"
+ 
+ 
++def test_relocate_system_messages_leaves_non_claude_model_untouched() -> None:
++    # A GPT model reaches a translating upstream (CLIProxyAPI → Codex), which takes
++    # mid-conversation system messages. Hoisting Claude Code's per-turn
++    # <total_tokens> sections rewrote the top-level system on every request.
++    messages = [
++        {"role": "user", "content": "hi"},
++        {"role": "system", "content": "<total_tokens>14986530 tokens left</total_tokens>"},
++        {"role": "assistant", "content": "ok"},
++        {"role": "user", "content": [{"type": "tool_result", "content": "ok"}]},
++        {"role": "system", "content": "<total_tokens>14985141 tokens left</total_tokens>"},
++    ]
++
++    clean, system, changed = relocate_system_messages_to_top_level(messages, "base", "gpt-6.1-sol")
++
++    assert changed is False
++    assert clean is messages
++    assert system == "base"
++
++
++def test_relocate_system_messages_still_guards_provider_prefixed_claude_ids() -> None:
++    messages = [{"role": "system", "content": "You are a harness."}, {"role": "user", "content": "hi"}]
++
++    clean, system, changed = relocate_system_messages_to_top_level(
++        messages, None, "anthropic.claude-3-5-sonnet-20241022-v2:0"
++    )
++
++    assert changed is True
++    assert clean == [{"role": "user", "content": "hi"}]
++
++
+ def test_relocate_system_messages_preserves_consecutive_valid_section_at_end() -> None:
+     messages = [
+         {"role": "user", "content": [{"type": "tool_result", "content": "ok"}]},
+-- 
+2.56.0
+

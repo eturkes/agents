@@ -1,0 +1,238 @@
+From 88e3caf1ecd4a3b27d4c9f45f731541e04630697 Mon Sep 17 00:00:00 2001
+From: Emir Turkes <eturkes@bu.edu>
+Date: Thu, 8 Oct 2026 11:58:11 +0900
+Subject: [PATCH 2/2] fix(streaming): hold a trailing content_block_stop until
+ the next chunk
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Claude Code writes an in-process teammate's per-block transcript entry on a
+100 ms flush timer and fills in usage + stop_reason when message_delta
+arrives. CLIProxyAPI → Codex can send message_delta well after the last
+content_block_stop, so the entry reached disk without its final usage
+(cache_read null, stop_reason null) on 8–14% of GPT teammate responses.
+A chunk ending on content_block_stop is now held until the next chunk, so
+the stop and message_delta land in one read; held bytes flush at stream end
+and ahead of any error frame. Bytes are unchanged; only chunking moves.
+
+Measured (claude -p, gpt-6-luna teammate, upstream message_delta delayed 400 ms):
+- without the hold: 24/24 teammate responses unfinalized
+- with the hold: 0/24
+Red first: test_block_stop_arrives_with_message_delta failed with the loop
+unpatched; 638 passed across the stream + proxy helper test files.
+---
+ headroom/proxy/handlers/streaming.py          |  33 +++++-
+ tests/test_proxy_streaming_block_stop_hold.py | 111 ++++++++++++++++++
+ 2 files changed, 139 insertions(+), 5 deletions(-)
+ create mode 100644 tests/test_proxy_streaming_block_stop_hold.py
+
+diff --git a/headroom/proxy/handlers/streaming.py b/headroom/proxy/handlers/streaming.py
+index 2bc0d773..1bea7479 100644
+--- a/headroom/proxy/handlers/streaming.py
++++ b/headroom/proxy/handlers/streaming.py
+@@ -80,6 +80,21 @@ def _upstream_error_frame(error_bytes: bytes, request_id: str) -> bytes:
+     return f"event: error\ndata: {json.dumps(payload)}\n\n".encode()
+ 
+ 
++def _ends_on_block_stop(chunk: bytes) -> bool:
++    """True when the chunk's last complete SSE event is ``content_block_stop``.
++
++    Claude Code writes a sidechain block's transcript entry on a 100 ms flush
++    timer and fills in the final usage when ``message_delta`` arrives. A
++    translated upstream (CLIProxyAPI → Codex) can send that delta well after the
++    last block stop, so the stop is held until the next chunk and both land in
++    one read.
++    """
++    if not chunk.endswith(b"\n\n"):
++        return False
++    start = chunk.rfind(b"\nevent: ", 0, len(chunk) - 2) + 1
++    return chunk.startswith(b"event: content_block_stop\n", start)
++
++
+ def _thinking_for_stream(payload: object) -> ThinkingTokens:
+     """Thinking-token split for a reassembled streaming response.
+ 
+@@ -1503,6 +1518,7 @@ class StreamingMixin:
+             parsed_response = None  # Set by memory block; used by CCR + prefix tracker
+             completed_normally = False
+             pending_messages: list[dict] = []
++            held_for_client = bytearray()  # see _ends_on_block_stop
+             # Proxy-injected memory tools are invisible to the client, so their
+             # tool_use blocks must never reach it (GH #2195).
+             memory_filter = (
+@@ -1543,7 +1559,10 @@ class StreamingMixin:
+                         # Always stream immediately — buffering breaks
+                         # real-time clients (LangGraph, LangChain, etc.)
+                         if memory_filter is None:
+-                            yield chunk
++                            held_for_client.extend(chunk)
++                            if not _ends_on_block_stop(chunk):
++                                yield bytes(held_for_client)
++                                held_for_client.clear()
+                         else:
+                             for frame in memory_filter.feed(chunk):
+                                 yield frame
+@@ -1604,6 +1623,10 @@ class StreamingMixin:
+                                     "cache_creation_ephemeral_1h_input_tokens"
+                                 ]
+ 
++                if held_for_client:
++                    yield bytes(held_for_client)
++                    held_for_client.clear()
++
+                 # Memory tool handling after stream completes
+                 # Chunks were already yielded in real-time above, so we only
+                 # do silent background processing here — no yielding.
+@@ -1730,11 +1753,11 @@ class StreamingMixin:
+                     request_id=request_id,
+                     error_type="connection_error",
+                 )
+-                yield f"event: error\ndata: {json.dumps(error_event)}\n\n".encode()
++                yield bytes(held_for_client) + f"event: error\ndata: {json.dumps(error_event)}\n\n".encode()
+             except httpx.HTTPStatusError as e:
+                 logger.error(f"[{request_id}] HTTP error from upstream API: {e}")
+                 # Forward the upstream error response
+-                yield e.response.content
++                yield bytes(held_for_client) + e.response.content
+             except MemoryToolStreamOverflowError as e:
+                 # The filter dropped what it withheld; end the stream rather
+                 # than forward it.
+@@ -1742,7 +1765,7 @@ class StreamingMixin:
+                 error_event = public_errors.anthropic_error_body(
+                     public_errors.INTERNAL_ERROR, request_id=request_id
+                 )
+-                yield f"event: error\ndata: {json.dumps(error_event)}\n\n".encode()
++                yield bytes(held_for_client) + f"event: error\ndata: {json.dumps(error_event)}\n\n".encode()
+             except Exception as e:
+                 logger.error(f"[{request_id}] Unexpected streaming error: {e}")
+                 error_event = public_errors.anthropic_error_body(
+@@ -1750,7 +1773,7 @@ class StreamingMixin:
+                     request_id=request_id,
+                     error_type="api_error",
+                 )
+-                yield f"event: error\ndata: {json.dumps(error_event)}\n\n".encode()
++                yield bytes(held_for_client) + f"event: error\ndata: {json.dumps(error_event)}\n\n".encode()
+             finally:
+                 pending_messages = self._cleanup_mid_turn_stream(
+                     session_key,
+diff --git a/tests/test_proxy_streaming_block_stop_hold.py b/tests/test_proxy_streaming_block_stop_hold.py
+new file mode 100644
+index 00000000..d68c47ec
+--- /dev/null
++++ b/tests/test_proxy_streaming_block_stop_hold.py
+@@ -0,0 +1,111 @@
++"""A chunk ending on content_block_stop reaches the client together with the next chunk.
++
++Claude Code writes a sidechain block's transcript entry on a 100 ms flush timer
++and fills in the final usage when ``message_delta`` arrives; a stop forwarded
++alone lets that entry reach disk without usage.
++"""
++
++from unittest.mock import AsyncMock, MagicMock
++
++import httpx
++import pytest
++
++from headroom.proxy.handlers.streaming import _ends_on_block_stop
++from headroom.proxy.server import HeadroomProxy
++
++START = (
++    b'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_01",'
++    b'"usage":{"input_tokens":10,"output_tokens":0}}}\n\n'
++    b'event: content_block_start\ndata: {"type":"content_block_start","index":0,'
++    b'"content_block":{"type":"text","text":""}}\n\n'
++)
++STOP = b'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n'
++DELTA = (
++    b'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},'
++    b'"usage":{"output_tokens":3,"cache_read_input_tokens":8}}\n\n'
++    b'event: message_stop\ndata: {"type":"message_stop"}\n\n'
++)
++
++
++def test_ends_on_block_stop_matches_the_last_complete_event_only() -> None:
++    assert _ends_on_block_stop(STOP)
++    assert _ends_on_block_stop(START + STOP)
++    assert not _ends_on_block_stop(STOP + DELTA)
++    assert not _ends_on_block_stop(STOP[:-1])
++    assert not _ends_on_block_stop(START)
++
++
++def _proxy(chunks: list[bytes]) -> HeadroomProxy:
++    proxy = object.__new__(HeadroomProxy)
++    proxy.http_client = MagicMock(spec=httpx.AsyncClient)
++    proxy.metrics = MagicMock()
++    proxy.metrics.record_request = AsyncMock(return_value=None)
++    proxy.metrics.record_failed = AsyncMock(return_value=None)
++    proxy.cost_tracker = MagicMock()
++    proxy.cost_tracker.estimate_cost.return_value = 0.001
++    proxy.stats = {
++        "requests_total": 0,
++        "requests_optimized": 0,
++        "tokens": {"original": 0, "optimized": 0, "saved": 0},
++        "cost": {"total_usd": 0, "savings_usd": 0},
++        "errors": 0,
++        "active_requests": 0,
++        "requests_per_model": {},
++    }
++    proxy.memory_manager = None
++    proxy.memory_handler = None
++    proxy._config = MagicMock()
++    proxy._config.memory_enabled = False
++    proxy._config.ccr_inject_tool = False
++    proxy._config.retry_max_attempts = 3
++    proxy._config.retry_base_delay_ms = 0
++    proxy._config.retry_max_delay_ms = 0
++    proxy.config = proxy._config
++    proxy._parse_sse_usage_from_buffer = MagicMock(return_value=None)
++
++    upstream = AsyncMock()
++    upstream.headers = httpx.Headers({"content-type": "text/event-stream"})
++    upstream.status_code = 200
++
++    async def aiter_bytes():
++        for chunk in chunks:
++            yield chunk
++
++    upstream.aiter_bytes = aiter_bytes
++    upstream.aclose = AsyncMock()
++    proxy.http_client.build_request = MagicMock(return_value=MagicMock())
++    proxy.http_client.send = AsyncMock(return_value=upstream)
++    return proxy
++
++
++async def _client_chunks(chunks: list[bytes]) -> list[bytes]:
++    result = await _proxy(chunks)._stream_response(
++        url="http://127.0.0.1:8318/v1/messages",
++        headers={"x-api-key": "sk-test"},
++        body={"model": "gpt-6-luna", "max_tokens": 100, "stream": True, "messages": []},
++        provider="anthropic",
++        model="gpt-6-luna",
++        request_id="test-hold",
++        original_tokens=10,
++        optimized_tokens=10,
++        tokens_saved=0,
++        transforms_applied=[],
++        tags={},
++        optimization_latency=0.0,
++    )
++    return [chunk async for chunk in result.body_iterator]
++
++
++@pytest.mark.asyncio
++async def test_block_stop_arrives_with_message_delta() -> None:
++    out = await _client_chunks([START, STOP, DELTA])
++
++    assert b"".join(out) == START + STOP + DELTA
++    assert STOP + DELTA in out
++
++
++@pytest.mark.asyncio
++async def test_held_block_stop_flushes_at_stream_end() -> None:
++    out = await _client_chunks([START, STOP])
++
++    assert b"".join(out) == START + STOP
+-- 
+2.56.0
+
