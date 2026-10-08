@@ -40,6 +40,7 @@ function world(on: On, store: Record<string, unknown> = {}): World {
     w.sent.push(parse(e.init?.stdin ?? '', e.argv))
     return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.step', async function* (_$, e) {
     const usage = { input_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 500, model: e.model }
@@ -56,12 +57,17 @@ function world(on: On, store: Record<string, unknown> = {}): World {
   return w
 }
 
-async function turn($: Engine, prompt: string, answer: string, reason = 'answer', agentId?: string): Promise<void> {
-  await human($, 'prompt', prompt)
+type TurnOpts = { reason?: string; agentId?: string; kind?: string; inFlight?: boolean }
+
+/** One main turn: `kind` = its prompt's origin; `inFlight` = a teammate still running at Stop. */
+async function turn($: Engine, prompt: string, answer: string, { reason = 'answer', agentId, kind = 'composer', inFlight }: TurnOpts = {}): Promise<void> {
+  await $.prompt.submit({ text: prompt, wait: false, origin: { kind } } as never)
+  await human($, 'prompt', prompt, undefined, kind === 'composer' ? 'human' : kind)
   await $.turn.start({ text: prompt, turnId: 't' })
   for await (const c of $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', effort: 'xhigh', messageCount: 1 } as never)) void c
+  const background_tasks = inFlight ? [{ id: 'a1', type: 'in_process_teammate', status: 'running', description: 'reviewer-1' }] : []
   await $.classic.Stop({ stop_hook_active: false, last_assistant_message: answer, permission_mode: 'bypassPermissions',
-    cwd: '/tmp/proj', transcript_path: '/t/s1.jsonl' } as never)
+    cwd: '/tmp/proj', transcript_path: '/t/s1.jsonl', background_tasks, session_crons: [] } as never)
   await $.turn.complete({ answer, durationMs: 1, isAborted: reason === 'aborted', turnId: 't', reason, agentId,
     usage: { input_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 1, model: 'claude-opus-5-5' } } as never)
 }
@@ -91,9 +97,9 @@ test('a completed turn mails its prompt and response, threaded per session', asy
 
 test('interrupted, failed and subagent turns send nothing', async ($, on) => {
   const w = world(on)
-  await turn($, 'x', 'partial', 'aborted')
-  await turn($, 'x', '', 'error')
-  await turn($, 'x', 'sub', 'answer', 'a1')
+  await turn($, 'x', 'partial', { reason: 'aborted' })
+  await turn($, 'x', '', { reason: 'error' })
+  await turn($, 'x', 'sub', { agentId: 'a1' })
   expect(w.sent).toEqual([])
 })
 
@@ -139,8 +145,8 @@ test('mail goes to the relay script behind its msmtp + config guard', async ($, 
 })
 
 /** A row reaching the main conversation; the kit keeps none beneath the plugins. */
-async function human($: Engine, door: string, text: string, isMeta?: true): Promise<void> {
-  await $.session.append({ door, origin: { kind: 'human' }, uuid: `h-${text}`,
+async function human($: Engine, door: string, text: string, isMeta?: true, kind = 'human'): Promise<void> {
+  await $.session.append({ door, origin: { kind }, uuid: `h-${text}`,
     message: { type: 'user', role: 'user', isMeta, content: [{ type: 'text', text }] } } as never).catch((err: unknown) => {
     if (!String(err).includes('no implementation for session.append')) throw err
   })
@@ -182,4 +188,43 @@ test('a session resumed before the mod knew it falls back to the last human row'
   await $.turn.start({ text: '', turnId: 't' })
   await $.turn.complete({ answer: 'Continued.', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' } as never)
   expect(w.sent[0]!.subject).toBe('[cc] proj #1 — Original task')
+})
+
+test('wake-started turns mail only once nothing is in flight, under the last typed prompt', async ($, on) => {
+  const w = world(on)
+  await turn($, 'Dispatch the reviewers', 'Dispatched.', { inFlight: true })
+  await turn($, '<task-notification>\n<task-id>b1</task-id>', 'Shell done.', { kind: 'task-notification', inFlight: true })
+  await turn($, 'Another Claude session sent a message: <teammate-message teammate_id="r1">', 'r1 idle.', { kind: 'unclassified', inFlight: true })
+  expect(w.sent.map(m => m.subject)).toEqual(['[cc] proj #1 — Dispatch the reviewers'])
+  await turn($, '<agent-message from="reviewer-1">verdicts ready</agent-message>', 'Run complete.', { kind: 'peer' })
+  expect(w.sent[1]!.subject).toBe('[cc] proj #2 — Dispatch the reviewers')
+  expect(w.sent[1]!.body).toContain('Run complete.')
+})
+
+test('a prompt typed into a wake-started turn mails it', async ($, on) => {
+  const w = world(on)
+  await turn($, '<task-notification>', 'Noted.', { kind: 'task-notification', inFlight: true })
+  expect(w.sent).toEqual([])
+  await $.prompt.submit({ text: 'Status?', wait: false, origin: { kind: 'task-notification' } } as never)
+  await $.prompt.submit({ text: 'Status?', wait: false, turnId: 't', origin: { kind: 'composer' } } as never)
+  await $.turn.complete({ answer: 'Two running.', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' } as never)
+  expect(w.sent).toHaveLength(1)
+})
+
+test('headless claude -p turns send nothing', async ($, on) => {
+  const w = world(on)
+  await turn($, 'Answer from the context loaded at session start, else reply NO', 'NO', { kind: 'sdk' })
+  expect(w.sent).toEqual([])
+})
+
+test('the fallback scan skips compaction summaries and wake deliveries', async ($, on) => {
+  const w = world(on)
+  w.history = [
+    { role: 'user', text: 'Ship M9.8a', toolUses: [] },
+    { role: 'user', text: 'This session is being continued from a previous conversation that ran out of context.', toolUses: [] },
+    { role: 'user', text: '<task-notification>\n<task-id>b1</task-id>', toolUses: [] },
+  ]
+  await $.turn.start({ text: '', turnId: 't' })
+  await $.turn.complete({ answer: 'Committed.', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' } as never)
+  expect(w.sent[0]!.subject).toBe('[cc] proj #1 — Ship M9.8a')
 })

@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import { RESPONSE_MAX, SEND, WAITING, cleanPrompt, compose, questionsText } from './mail'
+import { RESPONSE_MAX, SEND, WAITING, WAKES, compose, mailable, questionsText, typedPrompt } from './mail'
 import type { Mail, Question } from './mail'
 
 const KEEP_MS = 7 * 24 * 3_600_000
@@ -13,6 +13,9 @@ let cwd = ''
 let transcript = '?'
 let mainOutput = 0
 let asking: readonly Question[] | undefined
+// The running main turn: its prompts' origins + whether its Stop saw work in flight (teammates, background shells, wakeups).
+let origins = new Set<string>()
+let idle = true
 
 /** Per session across resumes + reloads: completed-turn count and the last human prompt. */
 type Held = { n: number; at: number; prompt?: string }
@@ -28,7 +31,7 @@ async function lastHuman($: EngineInterface): Promise<string | undefined> {
   const rows = await $.session.messages()
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i]!
-    const text = r.role === 'user' && !r.toolResults?.length ? cleanPrompt(r.text) : ''
+    const text = r.role === 'user' && !r.toolResults?.length ? typedPrompt(r.text) : ''
     if (text) return text
   }
   return undefined
@@ -85,13 +88,18 @@ export const register: Register = on => {
   // A human row = the turn's prompt or one folded into it; tool results, reminders + subagent rows excluded.
   on('session.append', async ($, e, next) => {
     const m = e.message
-    if (e.agentId === undefined && m.type === 'user' && m.isMeta !== true && (e.door === 'prompt' || e.door === 'delivery')) {
-      const prompt = cleanPrompt(textOf(m.content))
+    if (e.agentId === undefined && m.type === 'user' && m.isMeta !== true && (e.door === 'prompt' || e.door === 'delivery') && !WAKES.has(e.origin.kind)) {
+      const prompt = typedPrompt(textOf(m.content))
       if (prompt) {
         const session = await $.session.id()
         await $.store.set(`turn:${session}`, { ...(await loadTurn($, session)), prompt })
       }
     }
+    return next(e)
+  })
+
+  on('prompt.submit', (_$, e, next) => {
+    origins.add(e.origin.kind)
     return next(e)
   })
 
@@ -105,7 +113,10 @@ export const register: Register = on => {
   })
 
   on('classic.Stop', (_$, e, next) => {
-    if (e.agent_id === undefined) note(e)
+    if (e.agent_id === undefined) {
+      note(e)
+      idle = !e.background_tasks?.length && !e.session_crons?.length
+    }
     return next(e)
   })
 
@@ -113,7 +124,11 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     const text = e.answer.slice(0, RESPONSE_MAX)
-    if (e.agentId !== undefined || (e.reason !== 'answer' && e.reason !== 'refusal')) return r
+    if (e.agentId !== undefined) return r
+    const mail = mailable(origins, idle)
+    origins = new Set()
+    idle = true
+    if (!mail || (e.reason !== 'answer' && e.reason !== 'refusal')) return r
     const session = await $.session.id()
     const h = await loadTurn($, session)
     if (!(h.prompt || text)) return r

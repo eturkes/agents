@@ -2,6 +2,20 @@ export const PROMPT_MAX = 4_000
 export const RESPONSE_MAX = 100_000
 /** Dialogs that hold a turn: AskUserQuestion + permission prompts emit no Stop ⇒ the mail is the signal. */
 export const WAITING = new Set(['permission_prompt', 'elicitation_dialog', 'agent_needs_input'])
+/** `prompt.submit` origins that wake the session without you. */
+export const WAKES = new Set([
+  'task-notification', 'scheduled-trigger', 'peer', 'peer-send-message', 'projects-relay', 'channel',
+  'coordinator', 'observer', 'observer-activity', 'unclassified', 'plugin',
+])
+
+/** Typed prompt → mail; `claude -p`/SDK → never; wakes alone or no prompt → only once nothing is in flight. */
+export function mailable(origins: ReadonlySet<string>, idle: boolean): boolean {
+  if ([...origins].some(k => k !== 'sdk' && !WAKES.has(k))) return true
+  return !origins.has('sdk') && idle
+}
+
+// Transcript rows that read as user text yet carry no typed prompt: compaction summaries + wake deliveries.
+const UNTYPED = /^(This session is being continued from a previous conversation|<task-notification>|Another Claude session sent a message|<(teammate|agent)-message[\s>])/
 
 // Spooled + backgrounded with its pipes closed: the run returns at once and the relay outlives
 // a -p process exit. Missing client/config ⇒ silent no-op; failures land in the cache log.
@@ -18,6 +32,11 @@ export type Question = { header?: string; question?: string; options?: readonly 
 
 export function cleanPrompt(text: string): string {
   return text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim().slice(0, PROMPT_MAX)
+}
+
+export function typedPrompt(text: string): string {
+  const clean = cleanPrompt(text)
+  return UNTYPED.test(clean) ? '' : clean
 }
 
 export function questionsText(qs: readonly Question[]): string {

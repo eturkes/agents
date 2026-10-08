@@ -1,6 +1,8 @@
 # Per-turn email notifications on CachyOS
 
-The `turn-email` mod (`../../mods/turn-email`) sends one email to `emir.turkes@eturkes.com` after each completed main-thread turn. Each message contains the prompt, response, session metadata, context usage, and transcript path. Subagent turns, interrupted turns, and turns that end on an API error send no email.
+The `turn-email` mod (`../../mods/turn-email`) sends one email to `emir.turkes@eturkes.com` after each completed main-thread turn that you start. Each message contains the prompt, response, session metadata, context usage, and transcript path. Subagent turns, interrupted turns, and turns that end on an API error send no email.
+
+Teammate messages, background-task notifications, and scheduled wakeups also start turns. Such a turn sends an email only when no work stays in flight: no teammate, background shell, or scheduled wakeup. Thus a run sends one email when its last work ends. An idle teammate stays in flight until `TaskStop` ends it. Headless turns from `claude -p` and the Agent SDK send no email.
 
 The mod also handles the `Notification` event. When a dialog waits for you, it sends one email with the pending question and its options. A turn that waits at an `AskUserQuestion` dialog does not end, so this email is the signal that the session needs you. The mod sends this email for `permission_prompt`, `elicitation_dialog`, and `agent_needs_input`. The message threads under the last completed turn of the session.
 
@@ -51,7 +53,7 @@ The token helper caches each access token until 60 seconds before it expires. A 
 
 The prompt and response limits are 4,000 and 100,000 characters. The `Time` line shows local time with its UTC offset.
 
-The mod keeps the turn counter and the last human prompt in its store, one key per session. A resumed session continues its count, and a turn without a typed prompt shows the last one. A prompt that you type while a turn runs becomes the prompt of that turn. The mod removes counters after seven days. Relay failures go to `~/.claude/cache/turn-email.log`. Relay results go to `~/.claude/cache/msmtp.log`, with one `smtpstatus` line per send.
+The mod keeps the turn counter and the last human prompt in its store, one key per session. A resumed session continues its count, and a turn without a typed prompt shows the last one. Compaction summaries and delivered messages never become the prompt. A prompt that you type while a turn runs becomes the prompt of that turn. The mod removes counters after seven days. Relay failures go to `~/.claude/cache/turn-email.log`. Relay results go to `~/.claude/cache/msmtp.log`, with one `smtpstatus` line per send.
 
 Environment overrides:
 
