@@ -50,12 +50,13 @@ Verify first sync, distinct identities, bookmarks/passwords + wallet cache value
 
 ```bash
 python -B bin/check-browseros-call -q
+python -B bin/check-webtext -q
 python -B host/cachyos/check-browseros-neo-launcher -q
 python -B host/cachyos/check-browseros-neo-sync-identity -q
 python -B host/cachyos/check-browseros-neo
 bash -n host/cachyos/browseros-neo
 shellcheck host/cachyos/browseros-neo
-ruff check bin/browseros-call bin/check-browseros-call host/cachyos/browseros-neo-signin host/cachyos/browseros-neo-sync-identity host/cachyos/check-browseros-neo-launcher host/cachyos/check-browseros-neo-sync-identity host/cachyos/check-browseros-neo host/cachyos/prune-desktop
+ruff check bin/browseros-call bin/check-browseros-call bin/check-webtext host/cachyos/browseros-neo-signin host/cachyos/browseros-neo-sync-identity host/cachyos/check-browseros-neo-launcher host/cachyos/check-browseros-neo-sync-identity host/cachyos/check-browseros-neo host/cachyos/prune-desktop
 codex/cachyos/check-instructions
 codex/cachyos/deploy-instructions
 ```

@@ -43,9 +43,10 @@ if (( js )); then
   webcap "$url" --dom - > "$tmp/body" || { echo "webtext: webcap could not render $url" >&2; exit 1; }
   src=$url type=text/html
 else
-  meta=$(curl -sSL --compressed -A "$UA" -o "$tmp/body" -w '%{http_code}\t%{content_type}\t%{url_effective}' "$url") \
+  # One field per line: IFS whitespace (tab) collapses an empty Content-Type into the next field.
+  meta=$(curl -sSL --compressed -A "$UA" -o "$tmp/body" -w '%{http_code}\n%{content_type}\n%{url_effective}' "$url") \
     || { echo "webtext: could not fetch $url" >&2; exit 1; }
-  IFS=$'\t' read -r code type src <<<"$meta"
+  { read -r code; read -r type; read -r src; } <<<"$meta"
   (( code < 400 )) || { echo "webtext: HTTP $code: $src" >&2; exit 1; }
   type=${type%%;*} type=${type,,}
   [[ -n $type && $type != application/octet-stream ]] || type=$(file -b --mime-type "$tmp/body")
