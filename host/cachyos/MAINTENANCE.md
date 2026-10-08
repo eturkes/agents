@@ -70,8 +70,6 @@ for unit in "${units[@]}"; do
 done
 ```
 
-- Active app in another service → install the same policy at `$XDG_RUNTIME_DIR/systemd/user/<owning-unit>.d/recovery.conf`; reload.
-- Neo transitional owner → alias `browseros-neo.service` to its plain service in `$XDG_RUNTIME_DIR/systemd/transient/`; reload. Persistent named service owns startup after reboot.
 - Before app/profile maintenance → `systemctl --user stop <owning-unit>`; unit stays stopped. Resume → `systemctl --user start <owning-unit>` or login autostart.
 
 ### Agent crash diagnostics
