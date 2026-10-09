@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude Code context gauge + effort + rate limits.
+# Claude Code context gauge + effort + project phase + rate limits.
 # Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
 # Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens =
 # CC's last-executor-iteration figure; transcript fallback applies the same rule (ctx).
@@ -10,8 +10,8 @@
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u ⇒ manual.
-{ read -r u; read -r w; read -r sp; read -r sr; read -r wp; read -r wr; read -r ef; } <<EOF
-$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .effort.level // ""' 2>/dev/null)
+{ read -r u; read -r w; read -r sp; read -r sr; read -r wp; read -r wr; read -r ef; read -r pd; } <<EOF
+$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .effort.level // "", .workspace.project_dir // .cwd // ""' 2>/dev/null)
 EOF
 # Real API turn = non-sidechain assistant record carrying usage → gauge fallback.
 ctx='def ctx: (.input_tokens//0) as $i | (.cache_creation_input_tokens//0) as $c | (.cache_read_input_tokens//0) as $r | (.output_tokens//0) as $o | ([.iterations[]?|select(type!="object" or (.type!="advisor_message" and .type!="compaction"))]|last) as $x | if $i+$c+$r>0 and (.iterations|type)=="array" and ($x|type)=="object" and ($x.type=="message" or $x.type=="fallback_message") and ([$x.input_tokens,$x.output_tokens,$x.cache_creation_input_tokens,$x.cache_read_input_tokens]|all(type=="number" and (isinfinite or isnan|not) and .>=0)) and $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens>0 then $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens+$x.output_tokens else $i+$c+$r+$o end;'
@@ -57,18 +57,14 @@ if [ -z "$sp$wp" ]; then
   uc="$HOME/.claude/.oauth_usage.json"
   "$HOME/.claude/oauth-refresh" "$uc"
   if [ -s "$uc" ]; then  # render the last good poll; utilization is a %, ISO resets_at → epoch
-    { read -r sp; read -r sri; read -r wp; read -r wri; read -r fn; read -r fp; } <<EOF2
-$(jq -r '.five_hour.utilization // "", .five_hour.resets_at // "", .seven_day.utilization // "", .seven_day.resets_at // "", (([.limits[]? | select(.kind == "weekly_scoped")] | max_by(.percent // 0)) as $s | if $s == null then "", "" else (($s.scope.model.display_name // $s.scope.surface // "scoped") | ascii_downcase | gsub(" "; "-")), ($s.percent // 0) end)' "$uc" 2>/dev/null)
+    { read -r sp; read -r sri; read -r wp; read -r wri; } <<EOF2
+$(jq -r '.five_hour.utilization // "", .five_hour.resets_at // "", .seven_day.utilization // "", .seven_day.resets_at // ""' "$uc" 2>/dev/null)
 EOF2
     [ -n "$sri" ] && sr=$(date -d "$sri" +%s 2>/dev/null)
     [ -n "$wri" ] && wr=$(date -d "$wri" +%s 2>/dev/null)
   fi
 fi
 rl=""
-# Weekly model-scoped cache limit (`.limits[] weekly_scoped`) ⇒ 7d-segment
-# insert with shared color thresholds.
-fx=""
-[ -n "$fn" ] && [ -n "$fp" ] && fx=" $(lp "$fn" "$fp")"
 # Codex weekly = the 604800 s window; own segment since its reset ≠ Claude's.
 # codex-refresh = detached poll ⇒ render reads the last good cache.
 xc="$HOME/.claude/.codex_usage.json"
@@ -80,7 +76,7 @@ if [ -n "$xa" ]; then xs=" | $(seg "$xp" "$xa" codex 18000 36000 54000)"
 elif [ -n "$xp" ]; then xs=" | $(lp codex "$xp")"
 fi
 [ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800 "" '%H:%M')"
-[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000 "$fx")"
+[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000)"
 rl="$rl$xs"
 # Effort varies per launch (`--effort`) → shown beside the gauge; high/xhigh/max
 # spend more per turn ⇒ green/yellow/red.
@@ -89,6 +85,50 @@ case $ef in
   xhigh) ef=$(printf '\033[33m%s\033[0m' "$ef") ;;
   max) ef=$(printf '\033[31m%s\033[0m' "$ef") ;;
 esac
+# Phase = the one `## Phase` section | `Phase:` field in the launch dir's
+# `.agent/spec.md`, read outside fences, comments, quotes + indented code;
+# 0 | 2+ declarations ⇒ no phase. 1 MiB cap bounds each render's read.
+ph='function plain(s){ gsub(/\*\*|__|`/,"",s); sub(/^[ \t\r]+/,"",s); sub(/[ \t\r]+$/,"",s); return s }
+function field(s){ s=plain(s); if(toupper(substr(s,1,6))!="PHASE:") return "\001"; s=substr(s,7); sub(/^[ \t\r]+/,"",s); sub(/[ \t\r]+$/,"",s); return s }
+NR==1{ sub(/^\357\273\277/,"") }
+{ sub(/\r$/,""); raw=$0; line=raw; sub(/^[ \t]+/,"",line); sub(/[ \t]+$/,"",line)
+  if(fence!=""){ u=raw; sub(/^ +/,"",u); t=line; gsub("^[" substr(fence,1,1) "]+","",t)
+    if(length(raw)-length(u)<=3 && substr(u,1,1)!="\t" && index(line,fence)==1 && t=="") fence=""
+    next }
+  # <!--…--> → space ⇒ adjacent tokens stay split.
+  vis=""; rest=raw
+  while(rest!=""){
+    if(cm){ i=index(rest,"-->"); if(!i) break; rest=substr(rest,i+3); cm=0 }
+    else { i=index(rest,"<!--"); if(!i){ vis=vis rest; break }; vis=vis substr(rest,1,i-1) " "; rest=substr(rest,i+4); cm=1 } }
+  t=vis; sub(/^ +/,"",t)
+  if(length(vis)-length(t)>3 || substr(t,1,1)=="\t") next
+  line=t; sub(/^[ \t]+/,"",line); sub(/[ \t]+$/,"",line)
+  if(line=="" || substr(line,1,1)==">") next
+  if(line ~ /^(```|~~~)/){ fence=substr(line,1,1); t=line; gsub("^[" fence "]+","",t); fence=substr(line,1,length(line)-length(t)); next }
+  if(match(line,/^#+/) && RLENGTH<=6 && substr(line,RLENGTH+1,1) ~ /[ \t]/){
+    lv=RLENGTH; ti=substr(line,lv+1); sub(/^[ \t]+/,"",ti); sub(/[ \t]+$/,"",ti); sub(/#+$/,"",ti); sub(/[ \t]+$/,"",ti)
+    if(lv<=sec){ sec=0; wait=0 }
+    if(toupper(ti)=="PHASE"){ d[++n]=""; sec=lv; wait=1; next } }
+  f=field(line)
+  if(wait){ d[n]=(f=="\001" ? line : f); wait=0 }
+  else if(f!="\001") d[++n]=f }
+END{ if(n!=1){ print "UNKNOWN"; exit }
+  v=toupper(plain(d[1]))
+  split("PROTOTYPE ITERATE IMPLEMENT MAINTAIN",N," ")
+  for(k=1;k<=4;k++){ s=substr(v,length(N[k])+1)
+    if(index(v,N[k])==1 && (s=="" || index(" \t\r.,:;(",substr(s,1,1)))){ print N[k]; exit } }
+  print "UNKNOWN" }'
+sf="${pd:-$PWD}/.agent/spec.md"
+pv=UNKNOWN
+[ -f "$sf" ] && [ "$(wc -c < "$sf")" -le 1048576 ] && pv=$(LC_ALL=C awk "$ph" "$sf" 2>/dev/null)
+case $pv in
+  IMPLEMENT) pv=$(printf '\033[31mimplement\033[0m') ;;
+  ITERATE) pv=$(printf '\033[33miterate\033[0m') ;;
+  PROTOTYPE) pv=$(printf '\033[32mprototype\033[0m') ;;
+  MAINTAIN) pv=maintain ;;
+  *) pv="no phase" ;;
+esac
+rl=" | $pv$rl"
 [ -n "$ef" ] && rl=" | $ef$rl"
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}
