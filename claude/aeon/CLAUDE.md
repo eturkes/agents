@@ -47,7 +47,7 @@
   - `researcher` ← reading MAIN would only condense: web research, docs, changelogs, papers, forums, a large unfamiliar corpus or log set.
   - `operator` ← browser or desktop GUI interaction past a single fetch or capture (flows, settings, forms, logins); visual QA across UI states. Reading for sources = `researcher`.
   - `tester` ← a committed kernel contract: diff-blind red suite, differential oracle when the contract is a pure function.
-  - `scientist` ← a scientific result, analysis or numerical method that needs independent reproduction.
+  - `scientist` ← a scientific finding or analysis result before it ships or steers work: its assumptions, evidence support, place in the field + implications.
   - `general-purpose` ← bulk per-item judgment behind a committed validator.
 - Offload economics: `reviewer`, `consultant`, `tester` + `scientist` buy capability or independence at any size; `researcher`, `operator` + bulk buy MAIN context ⇒ they pay once the tokens kept out of MAIN ≫ brief + harvest; a few files or pages → MAIN reads them. Script-derivable facts (counts, spans, inventories, hashes) → MAIN computes. One teammate per question; a variant fan-out = one per variant. MAIN keeps working while teammates run.
 - Security-vocabulary work (hardening audits, trust-gate reviews, vulnerability triage) stays on MAIN: the OpenAI request classifier ends any context holding that material (`Death shape`).
@@ -74,7 +74,7 @@
 - Advisor rulings: before each call, the decisive evidence goes into context (read, run) + the question into one visible text line. Intent, taste, wording + framing advice → adopt by default; code + factual claims, all-clears included → leads your own check decides. The final message restates each call (advice can be stored encrypted): question, advice gist, ruling + evidence.
 - Teammate size: scope each brief to finish inside 837K. `context-alert` tells a teammate to hand off at 755K + to save at 802K; compaction keeps it working; a report emitted past ~90% = context-starved → re-derive. `agent-census` = live corpus rates behind these rules.
 - Death shape: final text `API Error: … help.openai.com … request ID …` | `503 auth_unavailable … (providers=codex …)` = provider flapping → revive via `SendMessage`; instant re-death → retry every few minutes while MAIN works; 2 consecutive re-deaths → fresh successor from the deliverable. `400 … flagged for possible cybersecurity risk …` = the request classifier on security-flavored context, permanent for that context → the work moves to MAIN.
-- WebSearch budget = 200/session, shared by MAIN + teammates ⇒ each `researcher` brief carries an allowance.
+- WebSearch budget = 200/session, shared by MAIN + teammates ⇒ each `researcher` + `scientist` brief carries an allowance.
 - MAIN compaction: teammates + background shells keep running, ids stay valid ⇒ keep the roster (names, markers, deliverables, shell ids) in scratch.
 
 ## Delivery
