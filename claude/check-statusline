@@ -1,0 +1,170 @@
+#!/bin/sh
+# Check statusline's phase segment: each case = a `.agent/spec.md` body → the rendered phase.
+# Usage: check-statusline [AWK...] — AWK = the command standing in for awk, e.g. `busybox awk`.
+sl=$(dirname "$(readlink -f "$0")")/statusline
+t=$(mktemp -d) || exit 1
+trap 'rm -rf "$t"' EXIT
+if [ $# -gt 0 ]; then
+  mkdir "$t/bin"; printf '#!/bin/sh\nexec %s "$@"\n' "$*" > "$t/bin/awk"; chmod +x "$t/bin/awk"; PATH=$t/bin:$PATH
+fi
+E=$(printf '\033') n=0 fail=0
+# ck NAME WANT SPEC [LAUNCH_SUBDIR [GIT_SUBDIR]]: WANT = `[color]:text`; SPEC `-` ⇒ no spec file.
+ck() {
+  n=$((n + 1)); p=$t/p$n; mkdir -p "$p/.agent" "$p/$4"
+  [ "$3" = - ] || printf '%s\n' "$3" > "$p/.agent/spec.md"
+  [ -n "$5" ] && mkdir -p "$p/$5/.git"
+  out=$(printf '{"workspace":{"project_dir":"%s"},"context_window":{"total_input_tokens":1,"context_window_size":200000}}' "$p/$4" | HOME=$t sh "$sl" 2>/dev/null)
+  got=${out#* | } want=${2#*:}
+  [ -n "${2%%:*}" ] && want="$E[${2%%:*}m$want$E[0m"
+  [ "$got" = "$want" ] || { fail=$((fail + 1)); printf 'FAIL %s: want %s, got %s\n' "$1" "$2" "$got" | cat -v; }
+}
+# Phase declarations
+ck no-spec ':no phase' -
+ck section ':maintain' '## Phase
+
+MAINTAIN, scope = the whole product (IMPLEMENT closed).'
+ck section-dash 33:iterate '## Phase
+
+ITERATE — whole product.'
+ck field 32:prototype 'Phase: PROTOTYPE — ui'
+ck field-lower 31:implement 'Phase: implement'
+ck field-bold 31:implement '**Phase:** IMPLEMENT'
+ck field-code 31:implement 'Phase: `IMPLEMENT`'
+ck field-space-colon 31:implement 'Phase : IMPLEMENT'
+ck heading-field 31:implement '## Phase: IMPLEMENT — api'
+ck heading-colon 31:implement '## Phase:
+
+IMPLEMENT'
+ck heading-closed 31:implement '## Phase ##
+
+IMPLEMENT'
+ck section-field ':maintain' '## Phase
+
+Phase: MAINTAIN'
+ck section-list 31:implement '## Phase
+
+- IMPLEMENT — api'
+ck section-emphasis 33:iterate '## Phase
+
+*ITERATE* — scope'
+ck section-subheading 31:implement '## Phase
+
+### Current
+
+IMPLEMENT'
+ck section-empty ':no phase' '## Phase
+
+## Tasks
+
+- [ ] U1'
+ck strike 31:implement 'Phase: ~~ITERATE~~ IMPLEMENT'
+ck emdash-tight 31:implement 'Phase: IMPLEMENT—api'
+ck word-bound ':no phase' 'Phase: MAINTAINER'
+ck retired-resume ':no phase' 'Phase: RESUME'
+ck two-decl ':no phase' 'Phase: IMPLEMENT
+
+## Phase
+
+MAINTAIN'
+ck list-field-ignored ':maintain' '- [ ] Phase: IMPLEMENT at close
+
+## Phase
+
+MAINTAIN'
+ck task-prose ':maintain' '- [ ] Phase-close review
+
+## Phase
+
+MAINTAIN'
+ck crlf-bom 31:implement "$(printf '\357\273\277## Phase\r\n\r\nIMPLEMENT\r')"
+# Hidden text
+ck fence ':maintain' '```
+Phase: IMPLEMENT
+```
+Phase: MAINTAIN'
+ck fence-long ':maintain' '~~~~
+Phase: ITERATE
+~~~
+Phase: IMPLEMENT
+~~~~
+
+Phase: MAINTAIN'
+ck fence-list ':maintain' '- item
+
+    ```
+    Phase: IMPLEMENT
+    ```
+
+Phase: MAINTAIN'
+ck inline-code-line ':maintain' '```a``` b
+
+Phase: MAINTAIN'
+ck comment ':maintain' '<!-- Phase: IMPLEMENT -->
+Phase: MAINTAIN'
+ck comment-multi ':maintain' '<!--
+Phase: IMPLEMENT
+-->
+Phase: MAINTAIN'
+ck quote ':maintain' '> Phase: IMPLEMENT
+
+Phase: MAINTAIN'
+ck indented ':maintain' 'Intro
+
+    Phase: IMPLEMENT
+
+Phase: MAINTAIN'
+ck tab-indented ':maintain' "$(printf '\tPhase: IMPLEMENT\nPhase: MAINTAIN')"
+ck continuation ':maintain' 'Intro
+    Phase: IMPLEMENT
+
+Phase: MAINTAIN'
+ck oversize ':no phase' "Phase: MAINTAIN
+$(head -c 1048576 /dev/zero | tr '\0' x)"
+# Resume note
+ck resume-row 35:implement '## Tasks
+
+- [ ] RESUME: finish line = Met when; next action = U2.
+- [ ] U2
+
+## Phase
+
+IMPLEMENT — api'
+ck resume-paused 35:maintain '- [ ] RESUME (paused 2026-10-10): queue run.
+
+## Phase
+
+MAINTAIN, scope = the whole product.'
+ck resume-bold 35:prototype '- [ ] **RESUME**: x
+
+Phase: PROTOTYPE'
+ck resume-note 35:iterate 'Resume note: x
+
+Phase: ITERATE'
+ck resume-nested 35:prototype '- [ ] U1
+    - RESUME: next action
+
+Phase: PROTOTYPE'
+ck resume-heading 35:implement '### RESUME
+
+Phase: IMPLEMENT'
+ck resume-no-phase '35:no phase' '- [ ] RESUME: x'
+ck resume-ticked 31:implement '- [x] RESUME: done
+
+Phase: IMPLEMENT'
+ck resume-prose 33:iterate 'Resume IMPLEMENT at M3.6a3 when the owner says go.
+
+Phase: ITERATE'
+ck resume-word ':maintain' '- [ ] RESUMED X
+
+Phase: MAINTAIN'
+ck resume-fenced ':maintain' '```
+- [ ] RESUME: x
+```
+Phase: MAINTAIN'
+ck resume-comment ':maintain' '<!-- - [ ] RESUME: x -->
+Phase: MAINTAIN'
+# Spec lookup
+ck parent-dir 31:implement 'Phase: IMPLEMENT' a/b
+ck repo-root ':no phase' 'Phase: IMPLEMENT' r/s r
+printf '%d/%d passed\n' $((n - fail)) "$n"
+[ "$fail" -eq 0 ]

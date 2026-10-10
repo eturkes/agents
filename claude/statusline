@@ -85,51 +85,73 @@ case $ef in
   xhigh) ef=$(printf '\033[33m%s\033[0m' "$ef") ;;
   max) ef=$(printf '\033[31m%s\033[0m' "$ef") ;;
 esac
-# Phase = the one `## Phase` section | `Phase:` field in the launch dir's
-# `.agent/spec.md`, read outside fences, comments, quotes + indented code;
-# 0 | 2+ declarations ⇒ no phase. 1 MiB cap bounds each render's read.
-ph='function plain(s){ gsub(/\*\*|__|`/,"",s); sub(/^[ \t\r]+/,"",s); sub(/[ \t\r]+$/,"",s); return s }
-function field(s){ s=plain(s); if(toupper(substr(s,1,6))!="PHASE:") return "\001"; s=substr(s,7); sub(/^[ \t\r]+/,"",s); sub(/[ \t\r]+$/,"",s); return s }
+# Phase = the one `## Phase` section | `Phase:` field (line or heading) in the
+# nearest `.agent/spec.md` from the launch dir up to its repo root, read outside
+# fences, comments, quotes + indented code; 0 | 2+ declarations ⇒ no phase.
+# Open resume note = unticked `RESUME` row (pause.md) ⇒ phase text purple.
+# Portable awk (gawk, mawk, busybox) ⇒ no interval expressions. 1 MiB cap bounds each render's read.
+ph='function plain(s){ gsub(/~~[^~]*~~/,"",s); gsub(/\*\*|__|`/,"",s); sub(/^[ \t*_]+/,"",s); sub(/[ \t*_]+$/,"",s); return s }
+function field(s){ s=plain(s); if(!match(toupper(s),/^PHASE[ \t]*:/)) return "\001"; return plain(substr(s,RLENGTH+1)) }
+function unlist(s){ ck=""; li=match(s,/^([-+*]|[0-9]+[.)])([ \t]|$)/)
+  if(li){ s=substr(s,RLENGTH+1); sub(/^[ \t]+/,"",s); if(match(s,/^\[[ xX]\]([ \t]|$)/)){ ck=toupper(substr(s,2,1)); s=substr(s,RLENGTH+1) } }
+  return s }
+function resume(s){ s=unlist(s); if(ck=="X") return 0; s=plain(s)
+  return s ~ /^RESUME([^A-Za-z0-9_]|$)/ || toupper(s) ~ /^RESUME[ \t]+NOTE([^A-Z0-9_]|$)/ }
 NR==1{ sub(/^\357\273\277/,"") }
-{ sub(/\r$/,""); raw=$0; line=raw; sub(/^[ \t]+/,"",line); sub(/[ \t]+$/,"",line)
-  if(fence!=""){ u=raw; sub(/^ +/,"",u); t=line; gsub("^[" substr(fence,1,1) "]+","",t)
-    if(length(raw)-length(u)<=3 && substr(u,1,1)!="\t" && index(line,fence)==1 && t=="") fence=""
+{ sub(/\r$/,""); raw=$0
+  if(fence!=""){ t=raw; sub(/^ +/,"",t); u=t; gsub("^[" substr(fence,1,1) "]+","",u); sub(/[ \t]+$/,"",u)
+    if(length(raw)-length(t)<=fi+3 && substr(t,1,1)!="\t" && index(t,fence)==1 && u=="") fence=""
     next }
   # <!--…--> → space ⇒ adjacent tokens stay split.
   vis=""; rest=raw
   while(rest!=""){
     if(cm){ i=index(rest,"-->"); if(!i) break; rest=substr(rest,i+3); cm=0 }
     else { i=index(rest,"<!--"); if(!i){ vis=vis rest; break }; vis=vis substr(rest,1,i-1) " "; rest=substr(rest,i+4); cm=1 } }
-  t=vis; sub(/^ +/,"",t)
-  if(length(vis)-length(t)>3 || substr(t,1,1)=="\t") next
+  t=vis; sub(/^ +/,"",t); ind=length(vis)-length(t); if(substr(t,1,1)=="\t") ind=4
   line=t; sub(/^[ \t]+/,"",line); sub(/[ \t]+$/,"",line)
-  if(line=="" || substr(line,1,1)==">") next
-  if(line ~ /^(```|~~~)/){ fence=substr(line,1,1); t=line; gsub("^[" fence "]+","",t); fence=substr(line,1,length(line)-length(t)); next }
-  if(match(line,/^#+/) && RLENGTH<=6 && substr(line,RLENGTH+1,1) ~ /[ \t]/){
-    lv=RLENGTH; ti=substr(line,lv+1); sub(/^[ \t]+/,"",ti); sub(/[ \t]+$/,"",ti); sub(/#+$/,"",ti); sub(/[ \t]+$/,"",ti)
+  if(line==""){ blank=1; para=0; next }
+  # Indented code cannot interrupt a paragraph; list-item content is no code.
+  if(ind>3 && !lst && !para) next
+  pb=blank; blank=0; para=0
+  if(line ~ /^([-+*]|[0-9]+[.)])([ \t]|$)/) lst=1; else if(pb && ind<2) lst=0
+  if(substr(line,1,1)==">") next
+  if(match(line,/^(```+|~~~+)/)){ t=substr(line,RLENGTH+1)
+    if(substr(line,1,1)=="~" || !index(t,"`")){ fence=substr(line,1,RLENGTH); fi=ind; next } }
+  if(match(line,/^#+/) && RLENGTH<=6 && (length(line)==RLENGTH || substr(line,RLENGTH+1,1) ~ /[ \t]/)){
+    lv=RLENGTH; ti=substr(line,lv+1); sub(/^[ \t]+/,"",ti); if(ti ~ /^#*$/) ti=""; sub(/[ \t]+#+$/,"",ti); lst=0
     if(lv<=sec){ sec=0; wait=0 }
-    if(toupper(ti)=="PHASE"){ d[++n]=""; sec=lv; wait=1; next } }
-  f=field(line)
-  if(wait){ d[n]=(f=="\001" ? line : f); wait=0 }
-  else if(f!="\001") d[++n]=f }
-END{ if(n!=1){ print "UNKNOWN"; exit }
-  v=toupper(plain(d[1]))
-  m=split("PROTOTYPE ITERATE IMPLEMENT MAINTAIN RESUME",N," ")
-  for(k=1;k<=m;k++){ s=substr(v,length(N[k])+1)
-    if(index(v,N[k])==1 && (s=="" || index(" \t\r.,:;(",substr(s,1,1)))){ print N[k]; exit } }
-  print "UNKNOWN" }'
-sf="${pd:-$PWD}/.agent/spec.md"
+    if(resume(ti)) rs=1
+    if(ind<4){ f=field(ti); if(f=="" || toupper(plain(ti))=="PHASE"){ d[++n]=""; sec=lv; wait=1 } else if(f!="\001") d[++n]=f }
+    next }
+  para=1
+  if(resume(line)) rs=1
+  if(ind>3) next
+  u=unlist(line); f=field(u)
+  if(wait){ d[n]=(f=="\001" ? plain(u) : f); wait=0 }
+  else if(!li && f!="\001") d[++n]=f }
+END{ p="UNKNOWN"
+  if(n==1){ v=toupper(d[1]); split("PROTOTYPE ITERATE IMPLEMENT MAINTAIN",N," ")
+    for(k=1;k<=4;k++) if(index(v,N[k])==1 && substr(v,length(N[k])+1,1) !~ /[A-Z0-9_]/){ p=N[k]; break } }
+  print p (rs ? " RESUME" : "") }'
+sf=""; sd=${pd:-$PWD}
+while :; do
+  [ -f "$sd/.agent/spec.md" ] && { sf=$sd/.agent/spec.md; break; }
+  case $sd in */*) ;; *) break ;; esac
+  [ -e "$sd/.git" ] && break
+  sd=${sd%/*}
+done
 pv=UNKNOWN
-[ -f "$sf" ] && [ "$(wc -c < "$sf")" -le 1048576 ] && pv=$(LC_ALL=C awk "$ph" "$sf" 2>/dev/null)
-case $pv in
-  IMPLEMENT) pv=$(printf '\033[31mimplement\033[0m') ;;
-  ITERATE) pv=$(printf '\033[33miterate\033[0m') ;;
-  PROTOTYPE) pv=$(printf '\033[32mprototype\033[0m') ;;
-  MAINTAIN) pv=maintain ;;
-  RESUME) pv=$(printf '\033[35mresume\033[0m') ;;
-  *) pv="no phase" ;;
+[ -r "$sf" ] && [ "$(wc -c < "$sf")" -le 1048576 ] && pv=$(LC_ALL=C awk "$ph" "$sf" 2>/dev/null)
+case "${pv% RESUME}" in
+  IMPLEMENT) pt=implement pc=31 ;;
+  ITERATE) pt=iterate pc=33 ;;
+  PROTOTYPE) pt=prototype pc=32 ;;
+  MAINTAIN) pt=maintain pc= ;;
+  *) pt="no phase" pc= ;;
 esac
-rl=" | $pv$rl"
+[ "$pv" = "${pv% RESUME}" ] || pc=35
+[ -n "$pc" ] && pt=$(printf '\033[%sm%s\033[0m' "$pc" "$pt")
+rl=" | $pt$rl"
 [ -n "$ef" ] && rl=" | $ef$rl"
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}
