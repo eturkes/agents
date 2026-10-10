@@ -47,5 +47,3 @@ The advisor lets the agent consult Fable 5.1 while it works. Each consultation u
 - To turn on the advisor from inside a session, send `/advisor claude-fable-5-1` as a message of its own. Then paste the body in a new message. This setting also applies to new sessions until you send `/advisor off`.
 
 Claude Code reads a whole message that starts with `/advisor` as the advisor model name. Thus, a body in the same message does not get to the agent.
-
-The transcript can keep the advice in encrypted form. For this reason, the final message restates each consultation and the decision of the agent.

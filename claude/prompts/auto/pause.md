@@ -13,4 +13,4 @@ Pause this session for a fresh one to resume. The open finish line stays open an
 5. `.agent/spec.md` `Tasks` gains the resume note: one `- [ ] RESUME: …` row at the head of the open unit, holding the finish line in force, committed vs uncommitted work (paths + snapshot branch), teammate branches + tips + whether their last state was rerun, the next action. Commit it.
 6. Resume inputs outside the repo (`/tmp`) → `.scratch/`; delete task-made scratch that no resume needs.
 
-Met when: no teammate or started process runs, the resume note is committed, `git status` shows only the uncommitted work the note names, and the final message states the commits with SHAs + the checks each ran (skipped, not-run + missing named or `none`), the uncommitted work + snapshot branch, each teammate by name + role + verdict (or `none`), each advisor call with your ruling (or `none`), what you could not confirm, the next action, and the `git status` result.
+Met when: no teammate or started process runs, the resume note is committed, and `git status` shows only the uncommitted work the note names.
