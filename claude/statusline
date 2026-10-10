@@ -114,8 +114,8 @@ NR==1{ sub(/^\357\273\277/,"") }
   else if(f!="\001") d[++n]=f }
 END{ if(n!=1){ print "UNKNOWN"; exit }
   v=toupper(plain(d[1]))
-  split("PROTOTYPE ITERATE IMPLEMENT MAINTAIN",N," ")
-  for(k=1;k<=4;k++){ s=substr(v,length(N[k])+1)
+  m=split("PROTOTYPE ITERATE IMPLEMENT MAINTAIN RESUME",N," ")
+  for(k=1;k<=m;k++){ s=substr(v,length(N[k])+1)
     if(index(v,N[k])==1 && (s=="" || index(" \t\r.,:;(",substr(s,1,1)))){ print N[k]; exit } }
   print "UNKNOWN" }'
 sf="${pd:-$PWD}/.agent/spec.md"
@@ -126,6 +126,7 @@ case $pv in
   ITERATE) pv=$(printf '\033[33miterate\033[0m') ;;
   PROTOTYPE) pv=$(printf '\033[32mprototype\033[0m') ;;
   MAINTAIN) pv=maintain ;;
+  RESUME) pv=$(printf '\033[35mresume\033[0m') ;;
   *) pv="no phase" ;;
 esac
 rl=" | $pv$rl"
