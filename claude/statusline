@@ -88,7 +88,7 @@ esac
 # Phase = the one `## Phase` section | `Phase:` field (line or heading) in the
 # nearest `.agent/spec.md` from the launch dir up to its repo root, read outside
 # fences, comments, quotes + indented code; 0 | 2+ declarations ⇒ no phase.
-# Open resume note = unticked `RESUME` row (pause.md) ⇒ phase text purple.
+# Open resume note = unticked `RESUME` row (pause.md) | `Resume note` line ⇒ phase text purple.
 # Portable awk (gawk, mawk, busybox) ⇒ no interval expressions. 1 MiB cap bounds each render's read.
 ph='function plain(s){ gsub(/~~[^~]*~~/,"",s); gsub(/\*\*|__|`/,"",s); sub(/^[ \t*_]+/,"",s); sub(/[ \t*_]+$/,"",s); return s }
 function field(s){ s=plain(s); if(!match(toupper(s),/^PHASE[ \t]*:/)) return "\001"; return plain(substr(s,RLENGTH+1)) }
