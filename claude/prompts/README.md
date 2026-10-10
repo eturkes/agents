@@ -9,11 +9,16 @@ Each prompt comes in two sets with the same file names:
 
 Use `steered/resume.md` to name the next work and its end point. Use `steered/maintain.md` for a specific request or for named `.agent/deferred.md` rows. `auto/maintain.md` works every row.
 
-Start each fresh session with this command. Replace `<level>` with the effort level that you choose for the session.
+Start each fresh session with this command. Replace `<gpt-model>` with the GPT model for the teammates. Replace `<level>` with the effort level that you choose for the session.
 
 ```sh
-ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --effort <level>
+CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --effort <level>
 ```
+
+Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teammate model. Choose the model and the effort level for the phase:
+
+- PROTOTYPE and ITERATE use many small teammates in parallel. Choose a cheap model and a low effort level. For design choices such as the UI, these phases build several different variants, including at least one unconventional idea. You compare the variants and pick one or combine them.
+- IMPLEMENT and MAINTAIN use teammates wherever they make the work more correct. These phases also do more research on state-of-the-art methods. Choose a strong model and a high effort level.
 
 | Situation | File | Use |
 | --- | --- | --- |
