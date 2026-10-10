@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: "Adversarial audit of a diff, file set, spec or document against a check set fixed before reading → verdict table + anchored findings. Trigger = each kernel-unit diff before its commit, every phase or request closing diff, any artifact needing an audit."
+description: "Adversarial audit of a diff, file set, spec or document against a check set fixed before reading → verdict table + anchored findings. Fit = a kernel-unit diff before its commit, a phase or request closing diff, an artifact needing an audit."
 color: red
 ---
 

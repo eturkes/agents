@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: "Reading the lead would only condense: web research, vendor docs, changelogs, papers, x.com or forums through the signed-in browser, a large unfamiliar codebase or log set → sourced table. Trigger = an answer needing more than a few sources or files."
+description: "Reading the lead would only condense: web research, vendor docs, changelogs, papers, x.com or forums through the signed-in browser, a large unfamiliar codebase or log set → sourced table. Fit = an answer needing more than a few sources or files."
 color: blue
 ---
 

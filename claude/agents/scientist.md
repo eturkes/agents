@@ -1,6 +1,6 @@
 ---
 name: scientist
-description: "Scientific appraisal of a finding, analysis or method choice: assumptions, evidence-to-conclusion fit, place in established knowledge, implications → per-claim verdict table + rival explanations + next tests. Trigger = a scientific or analysis result before it ships or steers work."
+description: "Scientific appraisal of a finding, analysis or method choice: assumptions, evidence-to-conclusion fit, place in established knowledge, implications → per-claim verdict table + rival explanations + next tests. Fit = a scientific or analysis result before it ships or steers work."
 color: cyan
 ---
 
