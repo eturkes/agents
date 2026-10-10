@@ -33,7 +33,7 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 - A phase applies to a scope: the whole product, or one surface or feature of a shipped repo.
 - The template sets default structures, for example the prototype location, CI and the review ledger. A rule in `.claude/rules/` can adapt or retire one of them for a repo, and every prompt follows that rule.
 - Teammates run at the effort level of the session.
-- The agent decides when to use a teammate or the advisor. The instruction files name the situations where each can help. To require a teammate or an advisor call, name it in your request.
+- The agent decides when to use a teammate or the advisor. The instruction files name the situations where each can help. To require a teammate or an advisor consultation, name it in your request.
 - The agent works on a body until its `Met when` condition holds. It asks you questions whenever your input can improve the work, and it continues after you answer.
 - `AskUserQuestion` holds the run until you answer. The Notification hook emails each pending question.
 - To continue an interrupted run in the same session, send `continue`. In a fresh session, paste `resume.md`.
