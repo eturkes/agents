@@ -1,5 +1,6 @@
 #!/usr/bin/python3
-"""Check cache-keepalive against a fake upstream: relay framing, arming rules, touch lifecycle."""
+"""Check cache-keepalive against a fake upstream: relay framing, arming rules, touch + compaction lifecycle."""
+import calendar
 import gzip
 import http.client
 import http.server
@@ -108,7 +109,8 @@ def proxy(*extra, up=UP_URL):
 
 
 def live(session, pid=None):
-    (sessions / f"{session}.json").write_text(json.dumps({"pid": pid or os.getpid(), "sessionId": session}))
+    (sessions / f"{session}.json").write_text(json.dumps({"pid": pid or os.getpid(), "sessionId": session,
+                                                           "cwd": f"/launch/{session}"}))
 
 
 def body(model="claude-opus-5-5", ttl="1h", stream=True):
@@ -130,7 +132,20 @@ def post(server, session="s1", cls="main", data=None, conn=None, path="/v1/messa
 
 
 def entries(server):
-    return {e["session"]: e for e in server.keeper.status(time.time())}
+    return {e["session"]: e for e in server.keeper.status()}
+
+
+def control(server, path, payload):
+    conn = http.client.HTTPConnection(*server.server_address, timeout=10)
+    conn.request("POST", f"{ka.STATUS_PATH}/{path}", body=json.dumps(payload).encode())
+    resp = conn.getresponse()
+    return resp.status, json.loads(resp.read())
+
+
+def poll(server, session, quiet):
+    status, reply = control(server, "poll", {"session": session, "quiet": quiet})
+    assert status == 200, (status, reply)
+    return reply["compact"]
 
 
 def wait(predicate, timeout=5.0):
@@ -143,9 +158,7 @@ def wait(predicate, timeout=5.0):
 
 
 def backdate(server, session, seconds):
-    entry = server.keeper.entries[session]
-    entry.requested_at -= seconds
-    entry.renewed_at -= seconds
+    server.keeper.entries[session].renewed_at -= seconds
 
 
 def tick(server, ahead=0.0):
@@ -232,8 +245,8 @@ def touch_resends_verbatim_and_cuts_at_message_start():
     assert touch["headers"]["Accept-Encoding"] == "identity"
     assert wait(lambda: Up.cut), "touch stream not closed at message_start"
     entry = entries(server)["tch"]
-    assert entry["touches"] == 1 and entry["last"].startswith("ok read=900 write=0"), entry
-    assert 99 <= entry["next_touch_s"] <= 101, "touch did not renew the clock"
+    assert entry["kept_alive"] == 1 and entry["last"].startswith("ok read=900 write=0"), entry
+    assert time.time() - server.keeper.entries["tch"].renewed_at < 5, "touch did not renew the clock"
 
 
 @check
@@ -273,19 +286,119 @@ def drops_ended_sessions_but_not_on_unreadable_records():
 
 
 @check
-def drops_after_hold_and_lapse():
+def status_lists_dir_stop_time_and_count():
     Up.reset()
-    live("hold")
-    server = proxy("--interval", "100", "--hold", "1000", "--ttl", "200")
-    post(server, session="hold")
-    tick(server, ahead=1001)
-    assert "hold" not in entries(server), "kept past hold"
-    post(server, session="hold")
+    live("stat")
+    server = proxy()
+    before = time.time()
+    post(server, session="stat")
+    assert wait(lambda: entries(server)["stat"]["stopped"]), "no stop time"
+    entry = entries(server)["stat"]
+    stopped = calendar.timegm(time.strptime(entry["stopped"], "%Y-%m-%dT%H:%M:%SZ"))
+    assert entry["dir"] == "/launch/stat" and entry["kept_alive"] == 0, entry
+    assert int(before) <= stopped <= time.time(), "stop time not the response end in UTC"
+
+
+@check
+def waiting_session_touches_up_to_limit():
+    Up.reset()
+    live("wait")
+    server = proxy("--interval", "100", "--touches", "2")
+    post(server, session="wait")
+    assert poll(server, "wait", False) is False
+    for n in (1, 2):
+        backdate(server, "wait", 101)
+        tick(server)
+        assert entries(server)["wait"]["kept_alive"] == n, f"touch {n} missing"
+    backdate(server, "wait", 101)
+    tick(server)
+    entry = entries(server)["wait"]
+    assert len(Up.seen) == 3 and entry["last"] == "touch limit", entry
+    tick(server, ahead=1e4)
+    assert len(Up.seen) == 3 and entries(server)["wait"]["kept_alive"] == 2, "finished entry touched or unlisted"
+
+
+@check
+def drops_on_lapse():
+    Up.reset()
+    live("lapse")
+    server = proxy("--interval", "100", "--ttl", "200")
+    post(server, session="lapse")
     Up.status = 503
     tick(server, ahead=150)
-    assert entries(server)["hold"]["last"].startswith("failed 503"), "failed touch not recorded"
+    assert entries(server)["lapse"]["last"].startswith("failed 503"), "failed touch not recorded"
     tick(server, ahead=201)
-    assert "hold" not in entries(server), "kept past cache lapse"
+    assert entries(server)["lapse"]["last"] == "cache lapsed", "kept past cache lapse"
+    tick(server, ahead=1e4)
+    assert len(Up.seen) == 2, "lapsed entry touched"
+
+
+@check
+def quiet_session_compacts_once_at_mark():
+    Up.reset()
+    live("q")
+    server = proxy("--interval", "100")
+    post(server, session="q")
+    assert poll(server, "q", True) is False, "compacted before the mark"
+    backdate(server, "q", 101)
+    tick(server)
+    assert len(Up.seen) == 1, "quiet session touched"
+    assert poll(server, "q", True) is True, "no compaction at the mark"
+    assert poll(server, "q", True) is False, "compaction handed out twice"
+    tick(server)
+    usage = {"cache_read_input_tokens": 900, "cache_creation_input_tokens": 40}
+    assert control(server, "compacted", {"session": "q", "ok": True, "usage": usage}) == (200, {})
+    entry = entries(server)["q"]
+    assert entry["kept_alive"] == "compacted" and entry["last"] == "compacted read=900 write=40", entry
+    tick(server, ahead=1e4)
+    assert len(Up.seen) == 1 and entries(server)["q"]["kept_alive"] == "compacted", "compacted session touched"
+    post(server, session="q")
+    assert entries(server)["q"]["kept_alive"] == 0, "new request did not re-arm"
+
+
+@check
+def quiet_after_touches_compacts():
+    Up.reset()
+    live("auq")
+    server = proxy("--interval", "100")
+    post(server, session="auq")
+    poll(server, "auq", False)
+    backdate(server, "auq", 101)
+    tick(server)
+    assert entries(server)["auq"]["kept_alive"] == 1
+    backdate(server, "auq", 101)
+    assert poll(server, "auq", True) is True, "quiet after a wait did not compact"
+
+
+@check
+def failed_compaction_or_silent_mod_falls_back_to_touch():
+    Up.reset()
+    live("fail")
+    live("gone")
+    server = proxy("--interval", "100")
+    post(server, session="fail")
+    backdate(server, "fail", 101)
+    assert poll(server, "fail", True) is True
+    control(server, "compacted", {"session": "fail", "ok": False, "reason": "vetoed"})
+    assert entries(server)["fail"]["last"] == "compaction failed: vetoed"
+    tick(server)
+    assert entries(server)["fail"]["kept_alive"] == 1, "failed compaction not followed by a touch"
+    backdate(server, "fail", 101)
+    assert poll(server, "fail", True) is False, "compaction retried"
+    post(server, session="gone")
+    poll(server, "gone", True)
+    server.keeper.entries["gone"].polled_at -= ka.POLL_FRESH
+    backdate(server, "gone", 101)
+    tick(server)
+    assert entries(server)["gone"]["kept_alive"] == 1, "stale quiet report blocked the touch"
+
+
+@check
+def control_rejects_malformed_reports():
+    server = proxy()
+    for path, payload in (("poll", {"quiet": True}), ("compacted", ["x"]), ("other", {"session": "x"})):
+        status, reply = control(server, path, payload)
+        assert status == 400 and reply["type"] == "error", (path, status, reply)
 
 
 @check
@@ -299,13 +412,13 @@ def drops_on_rejection_and_repeated_misses():
     Up.status = 400
     server.keeper.entries["miss"].busy = True  # one session at a time
     tick(server, ahead=101)
-    assert "rej" not in entries(server), "kept after a 400 touch"
+    assert entries(server)["rej"]["last"] == "rejected 400", "kept touching after a 400"
     Up.reset(usage={"cache_read_input_tokens": 0, "cache_creation_input_tokens": 900})
     server.keeper.entries["miss"].busy = False
     tick(server, ahead=101)
-    assert entries(server)["miss"]["touches"] == 1, "first miss dropped"
+    assert entries(server)["miss"]["kept_alive"] == 1, "first miss dropped"
     tick(server, ahead=202)
-    assert "miss" not in entries(server), "kept after two misses"
+    assert entries(server)["miss"]["last"] == "repeated misses", "kept touching after two misses"
 
 
 @check

@@ -6,6 +6,7 @@ Each folder here is one Claude Code mod: a plugin of function hooks. A mod runs 
 | --- | --- | --- |
 | `context-alert` | cachyos, aeon | Gives one notice per session, loop and tier as context nears compaction. A session resumed within seven days of its last notice keeps the notices it already gave. The main loop gets a notice at 65K and 27K below its compaction point. A teammate gets a notice at 82K and 35K below its compaction point. |
 | `agent-flow` | cachyos, aeon | Appends the deliverable note to every subagent brief. Performs a subagent `Write` that Claude Code rejects for a report file name. Adds the deliverable line to compaction instructions. Asks a long run that wrote nothing at stop. Holds the first `TaskStop` on a mid-turn teammate. Shows a line under the prompt hint with the model and context use of each running agent, idle teammates included, against its compaction trigger. The entries flow onto more lines when the row is full. |
+| `idle-compact` | cachyos, aeon | Tells [`cache-keepalive`](../cache-keepalive/README.md) every 30 seconds whether the session is quiet. Quiet means that no turn runs, and that the last turn left no background task or scheduled wakeup. When the keeper asks at its 55-minute mark, the mod compacts the session. It runs in interactive sessions only. |
 | `turn-email` | cachyos | Sends one email per completed main turn that you start. It also sends one when a run ends with no work in flight, and one per dialog that waits for you. The relay setup is in `../cachyos/turn-email/README.md`. |
 
 ## Load
@@ -20,7 +21,7 @@ Run from the repository root. On aeon, leave out `turn-email`.
 
 ```sh
 mkdir -p ~/.claude/mods
-for m in context-alert agent-flow turn-email; do
+for m in context-alert agent-flow idle-compact turn-email; do
   rsync -a --delete --exclude .claude-plugin/types/ --exclude tsconfig.json "claude/mods/$m/" "$HOME/.claude/mods/$m/"
 done
 ```

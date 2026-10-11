@@ -2,8 +2,9 @@
 """Keep the prompt cache of live Claude Code sessions warm across long waits.
 
 Relay Headroom → CLIProxyAPI; stores each session's last main-thread request. --interval s without one →
-re-send it as a stream, cut at message_start ⇒ the cache read renews the 1h entry. CC's own keepalive
-needs a direct api.anthropic.com connection → off behind these proxies.
+quiet session (idle-compact mod report: no turn, no background work) → the mod compacts it, touches end;
+else ≤ --touches touches: re-send the request as a stream, cut at message_start ⇒ the cache read renews the
+1h entry. CC's own keepalive needs a direct api.anthropic.com connection → off behind these proxies.
 
 Stdlib only: starts without a package cache.
 """
@@ -25,6 +26,7 @@ HOP = frozenset({
 SESSION_HEADER = "X-Claude-Code-Session-Id"
 CLASS_HEADER = "x-claude-code-request-class"
 STATUS_PATH = "/_keepalive"
+POLL_FRESH = 90  # s: 3 idle-compact polls; older → no mod report
 NO_RETRY = frozenset({400, 401, 403, 404, 413, 422})
 
 
@@ -39,11 +41,15 @@ class Entry:
     path: str
     headers: list
     body: bytes
-    requested_at: float  # start of the last real main-thread request
-    renewed_at: float  # last cache read: that request or a touch
+    renewed_at: float  # last cache read: the stored request or a touch
+    stopped_at: float = 0.0  # end of the stored request's response
     touches: int = 0
     misses: int = 0
     busy: bool = False
+    quiet: bool = False  # idle-compact's last report
+    polled_at: float = 0.0
+    compact_at: float = 0.0  # when the mod was told to compact: one attempt per entry
+    state: str = "armed"  # armed | compacting | compacted | done
     last: str = "armed"
 
 
@@ -69,8 +75,8 @@ def has_1h_marker(request):
 
 
 def live_sessions(directory):
-    """Session ids whose Claude Code process runs; flag = every record was readable."""
-    live, complete = set(), True
+    """{session id: launch dir} per running Claude Code process; flag = every record was readable."""
+    live, complete = {}, True
     for path in Path(directory).glob("*.json"):
         try:
             record = json.loads(path.read_text())
@@ -79,8 +85,12 @@ def live_sessions(directory):
             complete = False
             continue
         if Path(f"/proc/{pid}").exists():
-            live.add(session)
+            live[session] = record.get("cwd")
     return live, complete
+
+
+def utc(stamp):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(stamp)) if stamp else None
 
 
 class Keeper:
@@ -109,14 +119,19 @@ class Keeper:
             request["stream"] = True
             body = json.dumps(request).encode()
         forwarded = [(k, v) for k, v in headers.items() if k.lower() not in HOP]
-        return Entry(session, model, path, forwarded, body, now, now)
+        return Entry(session, model, path, forwarded, body, now)
 
     def record(self, entry):
         with self.lock:
-            known = entry.session in self.entries
+            old = self.entries.get(entry.session)
             self.entries[entry.session] = entry
-        if not known:
+        if old is None or old.state != "armed":
             log(f"armed {entry.session[:8]} model={entry.model} bytes={len(entry.body)}")
+
+    def finish(self, entry, reason):
+        """Caller holds the lock. The entry stays listed until its session ends or sends a new request."""
+        entry.state, entry.last, entry.body = "done", reason, b""
+        log(f"stop {entry.session[:8]}: {reason} after {entry.touches} touches")
 
     def tick(self, now):
         live, complete = live_sessions(self.cfg.sessions_dir)
@@ -124,20 +139,51 @@ class Keeper:
         with self.lock:
             for session, entry in list(self.entries.items()):
                 if session not in live and complete:
-                    reason = "session ended"
-                elif now - entry.requested_at >= self.cfg.hold:
-                    reason = "hold elapsed"
-                elif now - entry.renewed_at >= self.cfg.ttl:
-                    reason = "cache lapsed"
-                else:
-                    if not entry.busy and now - entry.renewed_at >= self.cfg.interval:
-                        entry.busy = True
-                        due.append(entry)
+                    del self.entries[session]
+                    log(f"drop {session[:8]}: session ended")
+                elif entry.busy or entry.state not in ("armed", "compacting"):
                     continue
-                del self.entries[session]
-                log(f"drop {session[:8]}: {reason} after {entry.touches} touches")
+                elif now - entry.renewed_at >= self.cfg.ttl:
+                    self.finish(entry, "cache lapsed")
+                elif entry.state != "armed" or now - entry.renewed_at < self.cfg.interval:
+                    continue
+                elif entry.quiet and now - entry.polled_at < POLL_FRESH and not entry.compact_at:
+                    continue  # the mod's next poll compacts it
+                elif entry.touches >= self.cfg.touches:
+                    self.finish(entry, "touch limit")
+                else:
+                    entry.busy = True
+                    due.append(entry)
         for entry in due:
             threading.Thread(target=self.touch, args=(entry,), daemon=True).start()
+
+    def poll(self, session, quiet, now):
+        """Store the mod's quiet report; True = compact now."""
+        with self.lock:
+            entry = self.entries.get(session)
+            if entry is None:
+                return False
+            entry.quiet, entry.polled_at = quiet, now
+            if not quiet or entry.state != "armed" or entry.busy or entry.compact_at \
+                    or now - entry.renewed_at < self.cfg.interval:
+                return False
+            entry.state, entry.last, entry.compact_at = "compacting", "compacting", now
+        log(f"compact {session[:8]} after {entry.touches} touches")
+        return True
+
+    def compacted(self, session, ok, reason, usage):
+        tokens = ""
+        if isinstance(usage, dict):
+            tokens = f" read={usage.get('cache_read_input_tokens')} write={usage.get('cache_creation_input_tokens')}"
+        with self.lock:
+            entry = self.entries.get(session)
+            if entry is None or not entry.compact_at:
+                return
+            if ok:
+                entry.state, entry.last, entry.body = "compacted", "compacted" + tokens, b""
+            elif entry.state == "compacting":
+                entry.state, entry.last = "armed", f"compaction failed: {reason}"
+        log(f"compacted {session[:8]}{tokens}" if ok else f"compaction failed {session[:8]}: {reason}")
 
     def touch(self, entry):
         started = time.time()
@@ -156,23 +202,21 @@ class Keeper:
                 entry.touches += 1
                 entry.misses = entry.misses + 1 if wrote > read else 0
                 entry.last = f"ok read={read} write={wrote} {took:.1f}s"
-                drop = "repeated misses" if entry.misses >= 2 else None
+                stop = "repeated misses" if entry.misses >= 2 else None
             else:
                 entry.last = f"failed {status or ''} {str(detail)[:200]}".replace("\n", " ")
-                drop = f"rejected {status}" if status in NO_RETRY else None
-            if current and drop:
-                del self.entries[entry.session]
-        if current:
-            log(f"touch {entry.session[:8]} {entry.last}")
-            if drop:
-                log(f"drop {entry.session[:8]}: {drop} after {entry.touches} touches")
+                stop = f"rejected {status}" if status in NO_RETRY else None
+            if current:
+                log(f"touch {entry.session[:8]} {entry.touches}/{self.cfg.touches} {entry.last}")
+                if stop:
+                    self.finish(entry, stop)
 
-    def status(self, now):
+    def status(self):
+        dirs, _ = live_sessions(self.cfg.sessions_dir)
         with self.lock:
             return [{
-                "session": e.session[:8], "model": e.model, "bytes": len(e.body),
-                "idle_s": round(now - e.requested_at), "next_touch_s": round(e.renewed_at + self.cfg.interval - now),
-                "touches": e.touches, "last": e.last,
+                "session": e.session[:8], "dir": dirs.get(e.session), "stopped": utc(e.stopped_at),
+                "kept_alive": "compacted" if e.state == "compacted" else e.touches, "last": e.last,
             } for e in self.entries.values()]
 
 
@@ -213,8 +257,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
     def relay(self):
-        if self.command == "GET" and self.path == STATUS_PATH:
-            return self.reply(200, {"entries": self.server.keeper.status(time.time())})
+        if self.path.startswith(STATUS_PATH):
+            return self.control()
         try:
             body = self.read_body()
         except ValueError:
@@ -237,12 +281,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (OSError, http.client.HTTPException) as exc:
             conn.close()
             return self.reply(502, error(f"cache-keepalive: upstream unreachable: {exc}"))
+        recorded = entry is not None and resp.status == 200
         try:
-            if entry is not None and resp.status == 200:
+            if recorded:
                 self.server.keeper.record(entry)
             self.forward(resp)
         finally:
             conn.close()
+            if recorded:
+                entry.stopped_at = time.time()
+
+    def control(self):
+        """GET status; POST /poll {session, quiet} → {compact}; POST /compacted {session, ok, reason, usage}."""
+        keeper = self.server.keeper
+        if self.command == "GET" and self.path == STATUS_PATH:
+            return self.reply(200, {"entries": keeper.status()})
+        try:
+            report = json.loads(self.read_body())
+            if self.path == STATUS_PATH + "/poll":
+                return self.reply(200, {"compact": keeper.poll(report["session"], report["quiet"] is True, time.time())})
+            if self.path == STATUS_PATH + "/compacted":
+                keeper.compacted(report["session"], report["ok"] is True, str(report.get("reason"))[:200], report.get("usage"))
+                return self.reply(200, {})
+        except (ValueError, KeyError, TypeError):
+            self.close_connection = True
+        return self.reply(400, error(f"cache-keepalive: bad control request {self.command} {self.path}"))
 
     do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = relay
 
@@ -325,9 +388,9 @@ def parse(argv):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--listen", default="127.0.0.1:8318")
     p.add_argument("--upstream", default="http://127.0.0.1:8317")
-    p.add_argument("--interval", type=float, default=3300, help="seconds without a cache read before a touch")
-    p.add_argument("--ttl", type=float, default=3600, help="cache entry lifetime; the keeper drops the entry after it")
-    p.add_argument("--hold", type=float, default=43200, help="seconds after the last real request to stop touching")
+    p.add_argument("--interval", type=float, default=3300, help="seconds without a cache read before a compaction or a touch")
+    p.add_argument("--ttl", type=float, default=3600, help="cache entry lifetime; the keeper stops for the session after it")
+    p.add_argument("--touches", type=int, default=5, help="touches per stored request while the session is not quiet")
     p.add_argument("--tick", type=float, default=30)
     p.add_argument("--touch-timeout", type=float, default=180)
     p.add_argument("--upstream-timeout", type=float, default=900, help="idle read timeout on relayed requests")
@@ -340,8 +403,8 @@ def parse(argv):
 def main():
     cfg = parse(sys.argv[1:])
     server = serve(cfg)
-    log(f"listening {cfg.listen} → {cfg.upstream.geturl()}; touch after {cfg.interval:g}s idle, "
-        f"hold {cfg.hold:g}s, ttl {cfg.ttl:g}s")
+    log(f"listening {cfg.listen} → {cfg.upstream.geturl()}; compact or touch after {cfg.interval:g}s idle, "
+        f"≤{cfg.touches} touches, ttl {cfg.ttl:g}s")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

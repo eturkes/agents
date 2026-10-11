@@ -1,6 +1,6 @@
 # cache-keepalive
 
-`cache-keepalive` keeps the prompt cache of a waiting Claude Code session warm. Without it, an answer to an AskUserQuestion dialog after more than an hour sends the whole conversation again as an uncached write.
+`cache-keepalive` keeps the prompt cache of a waiting Claude Code session warm, and it compacts a finished session before its cache expires. Without it, a prompt after more than an hour sends the whole conversation again as an uncached write.
 
 The keeper is an HTTP relay between Headroom and CLIProxyAPI:
 
@@ -25,17 +25,26 @@ The relay forwards the body of every request and response unchanged. It sets the
 - The request carries an `X-Claude-Code-Session-Id` header and a cache breakpoint with `ttl: "1h"`.
 - The upstream answers with status 200.
 
-Each session keeps only its newest stored request. When a session sends no main-thread request for 55 minutes, the keeper sends that request again. It closes the stream at the `message_start` event, so the touch costs a cache read and almost no output. The cache read renews the 1-hour entry.
+Each session keeps only its newest stored request. When a session sends no main-thread request for 55 minutes, the keeper does one of these:
+
+- If the session is quiet, the `idle-compact` mod compacts it. Quiet means that no turn runs, and that the last turn left no background task or scheduled wakeup. The compaction reads the cache, and the next prompt writes only the short summary. The keeper then stops for the session.
+- Otherwise, the session waits for you at an AskUserQuestion dialog, or its work still runs. The keeper then sends the stored request again. This touch renews the 1-hour cache entry. The keeper touches a session at most 5 times.
+
+A touch closes the stream at the `message_start` event, so it costs a cache read and almost no output.
+
+The [`idle-compact`](../mods/README.md) mod runs in each interactive session. Every 30 seconds, it tells the keeper whether the session is quiet (`POST /_keepalive/poll`). When the keeper asks, the mod compacts the session and reports the result (`POST /_keepalive/compacted`). A session without a mod report in the last 90 seconds gets touches only. A failed compaction also falls back to touches.
 
 The touch repeats the stored request byte for byte, with one exception. While its retrieval tool is active, Headroom forwards a streamed request with `stream: false`. The keeper stores such a request with `stream: true`, because the touch must stream. The flag is not part of the cached prompt, so the touch still reads the same cache entry.
 
-The keeper drops a session in these cases:
+The keeper stops for a session in these cases:
 
-- Its Claude Code process ends. The keeper reads `~/.claude/sessions/<pid>.json`.
-- 12 hours pass after its last real request.
+- The mod compacted it.
+- The session got 5 touches and reached its next 55-minute mark.
 - Touches fail until the cache entry expires.
 - The upstream rejects a touch with status 400, 401, 403, 404, 413 or 422.
 - Two touches in a row write more than they read.
+
+A stopped session stays in the status list. The keeper starts again with the next main-thread request of the session. It removes the session when its Claude Code process ends. The keeper reads each process and its launch directory from `~/.claude/sessions/<pid>.json`.
 
 The keeper holds the stored requests in memory. A restart of the keeper drops them. The keeper stores each session again with its next main-thread request.
 
@@ -54,11 +63,11 @@ systemctl --user daemon-reload
 systemctl --user enable --now cache-keepalive.service
 ```
 
-Then point Headroom at the keeper. `host/cachyos/headroom/settings.json` sets `anthropic_base_url` to `http://127.0.0.1:8318`. Copy it to `~/.headroom/settings.json`. Then restart the Headroom proxy.
+Deploy the `idle-compact` mod as `../mods/README.md` describes. Then point Headroom at the keeper. `host/cachyos/headroom/settings.json` sets `anthropic_base_url` to `http://127.0.0.1:8318`. Copy it to `~/.headroom/settings.json`. Then restart the Headroom proxy.
 
 ### aeon
 
-aeon runs no unit. Link the script:
+aeon runs no unit. Deploy the `idle-compact` mod as `../mods/README.md` describes. Link the script:
 
 ```sh
 ln -sfn "$PWD/claude/cache-keepalive/cache-keepalive" ~/.local/bin/cache-keepalive
@@ -82,8 +91,15 @@ curl -sS http://127.0.0.1:8318/_keepalive
 journalctl --user -u cache-keepalive.service
 ```
 
-The check script runs the relay and the touch logic against a fake upstream. The status endpoint lists each stored session with its idle time, the time to the next touch, and the result of the last touch. The journal logs each stored session, each touch with its read and write token counts, and each drop. On aeon, the keeper's terminal shows the same lines.
+The check script runs the relay, the touch logic and the compaction logic against a fake upstream. The status endpoint returns one JSON entry per session with these fields:
+
+- `dir`: the directory in which the session was launched.
+- `stopped`: the UTC time at which the response to the stored request ended.
+- `kept_alive`: the number of touches since that request, or `compacted`.
+- `last`: the latest event, for example the token counts of a touch or the reason for a stop.
+
+The journal logs each stored session, each touch with its read and write token counts, each compaction and each stop. On aeon, the keeper's terminal shows the same lines.
 
 ## Options
 
-`--interval` (3300 s) sets the idle time before a touch. `--hold` (43200 s) sets how long after the last real request touches continue. `--ttl` (3600 s) is the cache lifetime. Use `--listen` and `--upstream` to change the addresses. To change an option on CachyOS, add it to `ExecStart` in the unit. On aeon, add it to the `cache-keepalive` command.
+`--interval` (3300 s) sets the idle time before a compaction or a touch. `--touches` (5) sets the maximum number of touches per stored request. `--ttl` (3600 s) is the cache lifetime. Use `--listen` and `--upstream` to change the addresses. To change an option on CachyOS, add it to `ExecStart` in the unit. On aeon, add it to the `cache-keepalive` command.

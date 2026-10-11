@@ -1,0 +1,5 @@
+{
+  "name": "idle-compact",
+  "version": "1.0.0",
+  "description": "Compacts a quiet session when cache-keepalive reaches its 55-minute mark"
+}
