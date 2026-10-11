@@ -363,6 +363,18 @@ def update(module, tenant, source, expected, summary):
         return transition(module, controller, tenant, source, expected, summary)
 
 
+def runtime_location(tenant, release):
+    """Select a frozen recovery controller or one immutable fleet release."""
+    if release is None:
+        package = f"{PACKAGES[tenant]}_dashboard"
+        root = Path(f"/usr/local/libexec/{PACKAGES[tenant]}-dashboard")
+        return root, package, root / package / "orchestrator.py"
+    if not isinstance(release, str) or re.fullmatch(r"[0-9a-f]{64}", release) is None:
+        raise UpdateError("invalid immutable runtime release")
+    root = Path("/usr/local/lib/promptvm/releases") / release
+    return root, f"promptvm.deployment.{tenant}", root / "promptvm/deployment" / tenant / "orchestrator.py"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tenant", choices=PACKAGES)
@@ -370,17 +382,20 @@ def main():
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--controller-sha256", required=True)
     parser.add_argument("--summary", required=True)
+    parser.add_argument("--release", help="verified immutable PromptVM release SHA-256")
     args = parser.parse_args()
     if not sys.flags.isolated or not sys.dont_write_bytecode:
         parser.error("invoke with python3 -I -B")
-    package = f"{PACKAGES[args.tenant]}_dashboard"
-    root = Path(f"/usr/local/libexec/{PACKAGES[args.tenant]}-dashboard")
-    controller_path = root / package / "orchestrator.py"
     try:
+        root, package, controller_path = runtime_location(args.tenant, args.release)
         payload = read_file(controller_path, trusted=True)
         if hashlib.sha256(payload).hexdigest() != args.controller_sha256:
             raise UpdateError("installed controller differs from approved SHA-256")
         sys.path.insert(0, str(root))
+        if args.release is not None:
+            verifier = importlib.import_module("promptvm.release")
+            if verifier.verify_release(root=root.parent.parent, release=args.release)["sha256"] != args.release:
+                raise UpdateError("immutable runtime release differs")
         module = importlib.import_module(f"{package}.orchestrator")
         if module.__file__ is None or Path(module.__file__).resolve() != controller_path:
             raise UpdateError("controller import escaped installed path")

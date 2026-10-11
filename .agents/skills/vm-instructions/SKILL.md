@@ -7,6 +7,37 @@ description: "Regenerate VM policies, install pinned controller deltas, and crea
 
 Apply [scope/invariants](../../../codex/void/AGENTS.md). Run host recipes in Bash from the `agents/` root; keep transient baselines/stages outside tracked paths.
 
+## Current immutable fleet runtime
+
+Live controllers are canonical in `../promptvm/promptvm/deployment/`. The legacy
+mutable-controller recipes below are historical references; do not overwrite
+frozen controller, policy or receipt files in `eturkes.com/ops` or installed
+`/usr/local/libexec` trees for a live policy change.
+
+1. Edit `codex/void/{vm}/AGENTS.md`, then use `runtime-policy.py source` against
+   the corresponding live controller. Copy its policy-only constant delta into
+   the live source and its policy bytes into
+   `../promptvm/promptvm/deployment/{vm}/workspace-AGENTS.md`. Rehab's live
+   controller selects that packaged file rather than its frozen historical file.
+2. Run `test_*.py` in `codex/void`; run `runtime-policy.py check-source` on each
+   live controller (Rehab adds `--workspace` pointing at its packaged policy),
+   and `cmp` each canonical policy against the corresponding packaged policy.
+   Run PromptVM's unit, Linux and unchanged historical compatibility checks and
+   the sibling site's `./scripts/check`. Commit and repeat local policy gates.
+3. Build one PromptVM wheel, stage/activate it with `scripts/deploy-vms`, and
+   complete rollback tests **before** instruction-only source transitions.
+4. Retain the canonical policy and unmodified `update-workspace.py` as root-owned
+   reviewed artifacts outside Projects. Stop only that VM's web/controller pair,
+   prove quiescence, and run the existing operator with `--release WHEEL_SHA256`
+   plus the selected immutable controller's SHA-256 and canonical policy SHA-256.
+   This verifies the immutable distribution and uses the unchanged native
+   linked-child/no-op transaction functions. Exit 3 still requires forward
+   reconciliation; do not roll runtime back across a committed source child.
+5. Require exactly one linked child, unchanged non-instruction source/report and
+   private/runtime/history preimages, and a repeated identical-head no-op. Start
+   controller then web; run the unchanged authenticated baseline checker between
+   VMs. Keep every receipt and original version.
+
 ## Targets
 
 | VM | SSH peer | Host known-hosts file | Prefix | Active project |
