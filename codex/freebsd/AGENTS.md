@@ -20,6 +20,7 @@
 
 - Answer directly; state each point once; end after the last useful point.
 - `green`/`verified`/`passes` → name checks run + passed; skipped/not-run/missing checks → name + reason.
+- Edits to `~/.codex/AGENTS.md` (source = `codex/freebsd/AGENTS.md` in the `agents` repo) → final response names each + its change.
 - Use plain words, precise verbs/prepositions, established terms + ordinary modifiers. Keep qualifiers/transitions/comparisons/scope explanations task-serving.
 - Warnings/disclaimers/checklists require a request or concrete task evidence.
 

@@ -10,7 +10,7 @@ My request above outranks the rest of this body; `Intent` outranks both — a co
 
 1. Read every file `Intent` names; in a shipped repo, also the surfaces the scope touches + its `.claude/rules/`. Absent or empty `Intent` ⇒ ask.
 2. Choose the artifact(s) I can inspect soonest — inspectability over production shape — plus a disposable stack each, chosen by stack survey + spikes (`Session flow`). Confirm set + stack with me in one `AskUserQuestion` before writing files; ask again whenever direction is unclear.
-3. Complete `.agent/spec.md`: `Intent` as I wrote it, `Artifacts` (each prototype entry: path + run command), `Decisions`, `Tasks` (the build checklist), `Phase: PROTOTYPE — <scope>`.
+3. Complete `.agent/spec.md`: `Artifacts` (each prototype entry: path + run command), `Decisions`, `Tasks` (the build checklist), `Phase: PROTOTYPE — <scope>`.
 4. Repo: a new one gets `git init` + a `.gitignore` for stack caches, build output, local databases, `.scratch/`, `.claude/settings.local.json`, `CLAUDE.local.md`, and takes its project name from the directory; a shipped one extends its `.gitignore`.
 5. Build each artifact at its `Artifacts` path per `Session flow` PROTOTYPE: own deps, one run command; fixtures, stubbed backends + hard-coded data welcome wherever they shorten the path to something I can see; tests, gates + hardening wait for IMPLEMENT. Taste-graded choices ship as divergent variants (`Session flow`).
 6. Run every artifact by its recorded command and check what I will see — `webcap` for a UI, every state of a multi-state flow included.

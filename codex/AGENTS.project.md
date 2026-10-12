@@ -22,7 +22,7 @@
 - State rules, facts + warnings plainly; prune provenance (dates, verification/discovery events, origin stories).
 - Future-facing text, esp. prompts → state the desired action/target positively (`always`/`must`).
 - Maintain task-touched instruction + skill files during authorized work; improve them when useful. Route durable guidance to one scope: global `~/.codex/AGENTS.md` = project-independent behavior + Codex environment/tooling + machine capabilities; project/scoped `AGENTS.md` = repo principles + binding rules; `.agents/skills/` = repo workflows.
-- Preserve project-specific rules when refreshing templates. Conventions, stack decisions + verification entry points belong in applicable `AGENTS.md`; optional task notes hold changing state.
+- Preserve project-specific rules when refreshing templates. An edit to this file's template text (source = `~/.local/app/agents/codex/AGENTS.project.md`) → final response names it + the change. Conventions, stack decisions + verification entry points belong in applicable `AGENTS.md`; optional task notes hold changing state.
 - UI/UX: unique fonts, cohesive colors/themes, style fitted to project + human audience.
 - Human-facing surfaces (shipped README/docs, UI copy, CLI help…) → natural + direct ASD-STE100 register: ≤20 words/sentence in instructions, ≤25 in descriptions; imperative steps, one instruction per sentence, condition before command; simple tenses, finite verbs, active voice, definite modality (`must`); terminology fixed + sentence shape varied; full forms with articles + `that`; flexible enumeration; code + identifiers verbatim. Machine-consumed payloads (JSON fields, logs, codes) = code surface.
 
