@@ -13,7 +13,7 @@ My request above outranks the rest of this body; `Intent` outranks both — a co
 3. Complete `.agent/spec.md`: `Intent` as I wrote it, `Artifacts` (each prototype entry: path + run command), `Decisions`, `Tasks` (the build checklist), `Phase: PROTOTYPE — <scope>`.
 4. Repo: a new one gets `git init` + a `.gitignore` for stack caches, build output, local databases, `.scratch/`, `.claude/settings.local.json`, `CLAUDE.local.md`, and takes its project name from the directory; a shipped one extends its `.gitignore`.
 5. Build each artifact at its `Artifacts` path per `Session flow` PROTOTYPE: own deps, one run command; fixtures, stubbed backends + hard-coded data welcome wherever they shorten the path to something I can see; tests, gates + hardening wait for IMPLEMENT. Taste-graded choices ship as divergent variants (`Session flow`).
-6. Run every artifact yourself by its recorded command and check what I will see — `webcap` for a UI, every state of a multi-state flow included.
+6. Run every artifact by its recorded command and check what I will see — `webcap` for a UI, every state of a multi-state flow included.
 7. Review: the whole diff on lenses fixed before reading — every prototype entry in `Artifacts` runs by its recorded command, each stub, shortcut + hard-coded value reads as one wherever I would take it for real, `spec.md` matches what shipped; you adjudicate, accepted fixes land before close.
 8. Off-path findings + every unfixed review row → `.agent/deferred.md`, acceptance check each. Set `Phase: ITERATE — <scope>`. One scoped commit per cohesive piece; clean tree at close.
 
