@@ -17,7 +17,7 @@ CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> ANTHROPIC_MODEL=claude-opus-5-5 headroom 
 
 Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teammate model. Choose the model and the effort level for the phase:
 
-- In PROTOTYPE and ITERATE, the agent gives each separate part of the work to a small teammate, and many teammates run in parallel. The agent plans the work, combines the results and talks with you. Choose a cheap model and a low effort level. For design choices such as the UI, these phases build several different variants, including at least one unconventional idea. You compare the variants and pick one or combine them.
+- In PROTOTYPE and ITERATE, the agent gives separate parts of the work to small teammates that run in parallel. Choose a cheap model and a low effort level. For design choices such as the UI, these phases build several different variants, including at least one unconventional idea. You compare the variants and pick one or combine them.
 - In IMPLEMENT, the agent uses teammates wherever they can make the work more correct. This phase also does more research on state-of-the-art methods. Choose a strong model and a high effort level.
 - In MAINTAIN, the agent does most of the work alone. One reviewer usually checks the complete change. Other teammates join only when the work needs them. Choose a strong model and a high effort level.
 
@@ -25,7 +25,7 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 | --- | --- | --- |
 | Start PROTOTYPE | `prototype.md` | Write your `Intent` in `.agent/spec.md` first. In a shipped repo, also name the scope in `Phase`. After a route, `Phase` already names it. |
 | Start ITERATE | `iterate.md` | When PROTOTYPE closes or after a route, paste it. The session runs until you say go. |
-| Start IMPLEMENT | `implement.md` | After you say go or after a route, turn on the advisor, then paste it. It can also open a new scope directly at IMPLEMENT. |
+| Start IMPLEMENT | `implement.md` | After you say go or after a route, turn on the advisor. Then paste it. It can also open a new scope directly at IMPLEMENT. |
 | MAINTAIN | `maintain.md` | Paste one body per request, queue run, security review or dependency upgrade. |
 | Move work to another phase | `route.md` | Make your request in any session, or paste this body after it. |
 | Continue open work in any phase | `resume.md` | Paste in a fresh session after a pause, a crash or a restart. |
@@ -50,7 +50,7 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 
 The advisor lets the agent consult Fable 5.1 while it works. Each consultation uses part of your Fable usage limit. The advisor is off until you turn it on.
 
-The phase sets how often the agent consults the advisor. In IMPLEMENT, the agent consults the advisor often, for example on the contract of each unit and before each commit. Thus, turn the advisor on before you start an IMPLEMENT session. In MAINTAIN, the agent consults the advisor only when it cannot settle a decision alone. In PROTOTYPE and ITERATE, the agent consults the advisor where it can help, for example on design and wording.
+In IMPLEMENT, the agent consults the advisor often, for example on the contract of each unit and before each commit. During MAINTAIN, a consultation occurs only when a decision needs Fable. For PROTOTYPE and ITERATE, the agent uses the advisor where Fable is strong, for example on design and wording.
 
 - To use the advisor for one session, add `--advisor claude-fable-5-1` to the start command. Put `CLAUDE_CODE_FOOTER_INDICATOR=adv` in front of the command. The footer then shows `◆ adv`.
 - To turn on the advisor from inside a session, send `/advisor claude-fable-5-1` as a message of its own. Then paste the body in a new message. This setting also applies to new sessions until you send `/advisor off`.

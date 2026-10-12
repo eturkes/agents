@@ -1,6 +1,6 @@
 # Implement
 
-After you say go at the end of ITERATE or after a route, use this body. It can also open a scope directly at IMPLEMENT. Start a fresh session at the project root, and turn on the advisor (README `Advisor`). Replace `<request>` with your steering. Paste everything below the rule.
+After you say go at the end of ITERATE or after a route, use this body. It can also open a scope directly at IMPLEMENT. Start a fresh session at the project root. Turn on the advisor (README `Advisor`). Replace `<request>` with your steering. Paste everything below the rule.
 
 ---
 
