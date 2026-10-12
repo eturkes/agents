@@ -39,9 +39,10 @@
 
 - AI agents = sole developers. Text artifacts → agent-optimized by default: reports, notes, code/config comments, internal docs, instructions + filenames. Use dense, symbol-forward, telegraphic phrasing + `→`/`=`; prune unhelpful, implicit, obsolete + redundant content/structures.
 - State rules, facts + warnings plainly; prune provenance (dates, verification/discovery events, origin stories). Future-facing text, esp. prompts → state desired actions/targets positively (`always`/`must`).
+- Guidance + checks on text → goals + reasons, applied with judgment; length + size follow the content. Strict limits stay out of both, text caps (words, lines, bytes) above all.
 - Maintain task-touched instruction + skill files during authorized work. Durable guidance → one scope: runtime/global = behavior + tooling + machine capabilities; project/scoped `AGENTS.md` = repo principles, binding rules, stack + verification entry points; `.agents/skills/` = workflows. Preserve project rules on template refresh; optional task notes = changing state.
 - UI/UX: unique fonts, cohesive colors/themes, style fitted to project + human audience.
-- Human-facing surfaces (shipped README/docs, UI copy, CLI help…) → natural + direct ASD-STE100 register: ≤20 words/sentence in instructions, ≤25 in descriptions; imperative steps, one instruction per sentence, condition before command; simple tenses, finite verbs, active voice, definite modality (`must`); terminology fixed + sentence shape varied; full forms with articles + `that`; flexible enumeration; code + identifiers verbatim. Machine-consumed payloads (JSON fields, logs, codes) = code surface.
+- Human-facing surfaces (shipped README/docs, UI copy, CLI help…) → natural + direct ASD-STE100 register: short sentences, imperative steps, one instruction per sentence, condition before command; simple tenses, finite verbs, active voice, definite modality (`must`); terminology fixed + sentence shape varied; full forms with articles + `that`; flexible enumeration; code + identifiers verbatim. Machine-consumed payloads (JSON fields, logs, codes) = code surface.
 
 ## Engineering
 
