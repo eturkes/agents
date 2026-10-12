@@ -46,7 +46,8 @@
       "Bash(nano:*)",
       "Bash(emacs:*)",
       "Bash(ed:*)",
-      "WebFetch"
+      "WebFetch",
+      "ScheduleWakeup"
     ],
     "defaultMode": "bypassPermissions"
   },
