@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Usage: stamp-versions [--check]
+# Version of each plugin = 1.0.0+<12 hex of sha256 over its entry minus `version` + its git-tracked files>.
+# Why: `claude plugin update` reinstalls only when the version string changes.
+# --check: no writes; exit 1 + one `stale:` line per plugin whose version lags its content.
+set -euo pipefail
+case ${1:-} in --check) check=1 ;; '') check=0 ;; *) echo 'Usage: stamp-versions [--check]' >&2; exit 2 ;; esac
+root=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+manifest=$root/.claude-plugin/marketplace.json
+
+stamp() {
+  local name=$1 source file
+  source=$(jq -r --arg n "$name" '.plugins[] | select(.name == $n) | .source' "$manifest")
+  {
+    jq -cS --arg n "$name" '.plugins[] | select(.name == $n) | del(.version)' "$manifest"
+    # Tracked files alone → the stamp reproduces from committed state; git lists them byte-sorted.
+    git -C "$root" ls-files -z -- "$source" | while IFS= read -r -d '' file; do
+      printf '%s\0' "$file"
+      sha256sum < "$root/$file"
+    done
+  } | sha256sum | cut -c1-12 | sed 's/^/1.0.0+/'
+}
+
+stale=0
+for name in $(jq -r '.plugins[].name' "$manifest"); do
+  want=$(stamp "$name")
+  have=$(jq -r --arg n "$name" '.plugins[] | select(.name == $n) | .version' "$manifest")
+  [[ "$have" == "$want" ]] && continue
+  stale=1
+  if ((check)); then
+    printf 'stale: %s %s → %s\n' "$name" "$have" "$want" >&2
+  else
+    jq --arg n "$name" --arg v "$want" '(.plugins[] | select(.name == $n) | .version) = $v' "$manifest" > "$manifest.tmp"
+    mv -- "$manifest.tmp" "$manifest"
+    printf 'stamped: %s %s → %s\n' "$name" "$have" "$want"
+  fi
+done
+((check && stale)) && exit 1
+exit 0

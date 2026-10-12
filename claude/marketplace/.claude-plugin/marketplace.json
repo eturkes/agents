@@ -11,7 +11,7 @@
     {
       "name": "xml-lsp",
       "description": "XML LSP via Eclipse LemMinX; covers DMN, BPMN, SHACL-XML and generic XML/XSD",
-      "version": "1.0.0",
+      "version": "1.0.0+a0ee1e3bc023",
       "source": "./plugins/xml-lsp",
       "category": "development",
       "strict": false,
@@ -30,7 +30,7 @@
     {
       "name": "prolog-lsp",
       "description": "SWI-Prolog LSP via the lsp_server pack (jamesnvc/lsp_server), tracking the default branch",
-      "version": "1.0.0",
+      "version": "1.0.0+f7123ec459d4",
       "source": "./plugins/prolog-lsp",
       "category": "development",
       "strict": false,
@@ -47,7 +47,7 @@
     {
       "name": "markdown-lsp",
       "description": "Markdown LSP via Marksman: link + reference diagnostics, heading symbols",
-      "version": "1.0.0",
+      "version": "1.0.0+5ed1b71df2c3",
       "source": "./plugins/markdown-lsp",
       "category": "development",
       "strict": false,
@@ -68,7 +68,7 @@
     {
       "name": "r-lsp",
       "description": "R LSP via the languageserver package: diagnostics (lintr), definitions, hover",
-      "version": "1.0.0",
+      "version": "1.0.0+7a4ce3a0cf37",
       "source": "./plugins/r-lsp",
       "category": "development",
       "strict": false,
@@ -102,7 +102,7 @@
     {
       "name": "bash-lsp",
       "description": "Bash LSP via bash-language-server; shellcheck diagnostics when shellcheck is on PATH",
-      "version": "1.0.0",
+      "version": "1.0.0+9569e9d4eade",
       "source": "./plugins/bash-lsp",
       "category": "development",
       "strict": false,
