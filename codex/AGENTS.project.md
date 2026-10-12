@@ -21,10 +21,11 @@
 - AI agents = sole developers. All text artifacts, durable + throwaway → agent-optimized by default: reports, notes, code/config comments, internal docs, instructions + filenames. Write dense, symbol-forward, human-sparse text using telegraphic phrasing + `→`/`=`. Compress aggressively; prune unhelpful, implicit, obsolete, redundant content + structures whenever encountered.
 - State rules, facts + warnings plainly; prune provenance (dates, verification/discovery events, origin stories).
 - Future-facing text, esp. prompts → state the desired action/target positively (`always`/`must`).
+- Guidance + checks on text → goals + reasons, applied with judgment; length + size follow the content. Strict limits stay out of both, text caps (words, lines, bytes) above all.
 - Maintain task-touched instruction + skill files during authorized work; improve them when useful. Route durable guidance to one scope: global `~/.codex/AGENTS.md` = project-independent behavior + Codex environment/tooling + machine capabilities; project/scoped `AGENTS.md` = repo principles + binding rules; `.agents/skills/` = repo workflows.
 - Preserve project-specific rules when refreshing templates. Edits to template text (`~/.local/app/agents/codex/AGENTS.project.md`) → final response names each + its change. Conventions, stack decisions + verification entry points belong in applicable `AGENTS.md`; optional task notes hold changing state.
 - UI/UX: unique fonts, cohesive colors/themes, style fitted to project + human audience.
-- Human-facing surfaces (shipped README/docs, UI copy, CLI help…) → natural + direct ASD-STE100 register: ≤20 words/sentence in instructions, ≤25 in descriptions; imperative steps, one instruction per sentence, condition before command; simple tenses, finite verbs, active voice, definite modality (`must`); terminology fixed + sentence shape varied; full forms with articles + `that`; flexible enumeration; code + identifiers verbatim. Machine-consumed payloads (JSON fields, logs, codes) = code surface.
+- Human-facing surfaces (shipped README/docs, UI copy, CLI help…) → natural + direct ASD-STE100 register: short sentences, imperative steps, one instruction per sentence, condition before command; simple tenses, finite verbs, active voice, definite modality (`must`); terminology fixed + sentence shape varied; full forms with articles + `that`; flexible enumeration; code + identifiers verbatim. Machine-consumed payloads (JSON fields, logs, codes) = code surface.
 
 ## Engineering
 
