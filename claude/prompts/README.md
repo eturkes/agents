@@ -45,7 +45,7 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 - `AskUserQuestion` holds the run until you answer. The Notification hook emails each pending question.
 - To continue an interrupted run in the same session, send `continue`. In a fresh session, paste `resume.md`.
 - `pause.md` writes a resume note into `.agent/spec.md`, and `resume.md` removes it when the work is complete. While the note is open, the statusline shows the phase in purple.
-- The agent can edit any project file, `Intent` included. When a session closes or pauses, its final message lists each change to `Intent`, to `CLAUDE*.md` files and to files from this repo.
+- The agent can edit any project file, `Intent` included. The final message of a session or pause lists its changes to `Intent`, `CLAUDE*.md` files and files from this repo.
 
 ## Advisor
 

@@ -21,7 +21,7 @@
 
 - Answer directly; state each point once; end after the last useful point.
 - `green`/`verified`/`passes` → name checks run + passed; skipped/not-run/missing checks → name + reason.
-- Edits to a file `~/.local/app/agents` tracks or deploys (`~/.codex/AGENTS.md`, `~/AGENTS.md`, `~/.claude/`), from a session outside that repo → final response names each + its change.
+- Edits to a file `~/.local/app/agents` tracks or deploys (`~/.codex/AGENTS.md`, `~/AGENTS.md`, `~/.claude/`) → final response names each + its change.
 - Use plain words, precise verbs/prepositions, established terms + ordinary modifiers. Keep qualifiers/transitions/comparisons/scope explanations task-serving.
 - Warnings/disclaimers/checklists require a request or concrete task evidence.
 
