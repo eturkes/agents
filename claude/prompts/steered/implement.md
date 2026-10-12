@@ -1,6 +1,6 @@
 # Implement
 
-After you say go at the end of ITERATE, use this body. It can also open a scope directly at IMPLEMENT. Start a fresh session at the project root. Replace `<request>` with your steering. Paste everything below the rule.
+After you say go at the end of ITERATE or after a route, use this body. It can also open a scope directly at IMPLEMENT. Start a fresh session at the project root. Replace `<request>` with your steering. Paste everything below the rule.
 
 ---
 
@@ -14,6 +14,6 @@ My request above outranks the rest of this body; `Intent` outranks both — a co
 4. Units: each declares its tier + a contract of testable predicates before code; gates green at every commit, one scoped commit per unit, `Tasks` ticked.
 5. Review: the whole diff per declared lens (correctness/spec, claim soundness, guarantee-vs-claim gaps, verification integrity, `CLAUDE.md` conformance), check set fixed before reading, findings returned as red tests; you adjudicate every row in `.agent/review.md` (committed as rows close); accepted fixes land before close.
 6. README in the human-facing register: install, run, configure — current for everything the scope ships. Retire each disposable prototype `Artifacts` names for this scope: `git tag prototype-<scope>`, then `git rm -r` its path, or move a still-useful aid under `tools/` and record it in `Artifacts`.
-7. `.agent/spec.md`: `Artifacts` = the implementation's entry points + run commands, `Decisions` + `Tasks` current, `Phase: MAINTAIN` with the scope folded into the whole product.
+7. `.agent/spec.md`: `Artifacts` = the implementation's entry points + run commands, `Decisions` + `Tasks` current, `Phase: MAINTAIN` with the scope folded into the whole product — or, while a `Suspended:` scope waits, that scope's phase (`Session flow` Routed state).
 
-Met when: the full gate command (scanners included) passes on a clean working tree at the closing commit, CI + scanning + update automation are committed, every `Decisions` entry is implemented or moved to `.agent/deferred.md` with its reason, `.agent/review.md` holds no open row, every disposable prototype of the scope is retired, and `Phase: MAINTAIN` is committed — each structure a `.claude/rules/` ruling adapts or retires is met through what that ruling names.
+Met when: the full gate command (scanners included) passes on a clean working tree at the closing commit, CI + scanning + update automation are committed, every `Decisions` entry is implemented or moved to `.agent/deferred.md` with its reason, `.agent/review.md` holds no open row, every disposable prototype of the scope is retired, and `Phase: MAINTAIN` (or the resumed suspended scope's phase) is committed — each structure a `.claude/rules/` ruling adapts or retires is met through what that ruling names.

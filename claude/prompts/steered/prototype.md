@@ -1,6 +1,6 @@
 # Prototype
 
-Write your `Intent` in `.agent/spec.md`. Add each file that the intent names. A new repo also needs `CLAUDE.md` (a copy of the template) and `LICENSE`. In a shipped repo, name the scope in `Phase`. Start a fresh session at the project root. Replace `<request>` with your steering. Paste everything below the rule.
+Write your `Intent` in `.agent/spec.md`. Add each file that the intent names. A new repo also needs `CLAUDE.md` (a copy of the template) and `LICENSE`. In a shipped repo, name the scope in `Phase`, unless a route or your request names it. Start a fresh session at the project root. Replace `<request>` with your steering. Paste everything below the rule.
 
 ---
 

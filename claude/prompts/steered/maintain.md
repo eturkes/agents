@@ -8,9 +8,9 @@ When `Phase` is `MAINTAIN`, use this body. Start a fresh session at the project 
 
 <request>
 
-Scope = the implementation; `.agent/spec.md` `Intent` + `Decisions` bind; global + project `CLAUDE.md` law applies as written. Decide, execute; ask me whenever direction is unclear. Units on the shortest path, planned in `Tasks`, contract + tests per tier, gate green at every scoped commit; `Artifacts`/`Decisions`/`Tasks`, `.claude/rules/` + README move with the change.
+Scope = the implementation; `.agent/spec.md` `Intent` + `Decisions` bind; global + project `CLAUDE.md` law applies as written. A request needing a session or more of another phase → route it (`Session flow` Routing). Decide, execute; ask me whenever direction is unclear. Units on the shortest path, planned in `Tasks`, contract + tests per tier, gate green at every scoped commit; `Artifacts`/`Decisions`/`Tasks`, `.claude/rules/` + README move with the change.
 
-Met when: the request is delivered end to end, and the full gate command passes on a clean working tree at the closing commit.
+Met when: the request is delivered end to end, and the full gate command passes on a clean working tree at the closing commit — or its route is committed (`route.md` `Met when`).
 
 ---
 
@@ -20,9 +20,9 @@ Met when: the request is delivered end to end, and the full gate command passes 
 
 <rows>
 
-Work the `.agent/deferred.md` rows named above in rank order until none remains that you can fund. A row's text + acceptance check = its contract; a row lacking one → write it yourself, then fund the row. One unit + one scoped commit per row, gate green at every commit, the row pruned in its closing commit. A row that needs me (a live run, hardware, a ruling) → finish every agent-fundable part, record my part as owed (unsimulated, unclaimed), move on; a row stating a re-open condition waits for its trigger. A row closes on its own acceptance check alone; one too big for its check stays open with what it owes. New finds → new rows with acceptance checks, funded after the named ones. Collect what you need from me into one `AskUserQuestion` once the agent-side work is done, then fund what my answers unblock; whatever needs me after it stays owed. Ask mid-run only where proceeding would waste a unit or risk harm. `.agent/spec.md` `Intent` + `Decisions` bind; global + project `CLAUDE.md` law applies as written.
+Work the `.agent/deferred.md` rows named above in rank order until none remains that you can fund. A row's text + acceptance check = its contract; a row lacking one → write it yourself, then fund the row. One unit + one scoped commit per row, gate green at every commit, the row pruned in its closing commit. A row that needs me (a live run, hardware, a ruling) → finish every agent-fundable part, record my part as owed (unsimulated, unclaimed), move on; a row stating a re-open condition waits for its trigger. A row closes on its own acceptance check alone; one too big for its check stays open with what it owes. New finds → new rows with acceptance checks, funded after the named ones. Collect what you need from me into one `AskUserQuestion` once the agent-side work is done, then fund what my answers unblock; whatever needs me after it stays owed. A row needing a session or more of another phase (`Session flow` Routing) waits for that question: routed after every other row (`route.md`), or funded here, per my answer. Ask mid-run only where proceeding would waste a unit or risk harm. `.agent/spec.md` `Intent` + `Decisions` bind; global + project `CLAUDE.md` law applies as written.
 
-Met when: every row in scope is closed by its acceptance check in its own commit, recorded as blocked on me with what it still owes, or waiting on its unmet re-open trigger, and the full gate command passes on a clean working tree at the closing commit.
+Met when: every row in scope is closed by its acceptance check in its own commit, recorded as blocked on me with what it still owes, waiting on its unmet re-open trigger, or routed (`route.md` `Met when`), and the full gate command passes on a clean working tree at the closing commit.
 
 ---
 
