@@ -28,14 +28,14 @@ systemctl status ac-loss-suspend.timer --no-pager
 ```
 
 `check` covers bytes/metadata, enabled active timer, effective units, successful monitor execution and UPower's live critical action.
-`rollback` removes only matching deployed files, stops the observer, and restores UPower's previous configuration precedence.
+`rollback` removes only its own deployed files (current or committed source bytes), stops the observer, and restores UPower's previous configuration precedence.
 
 ## Graphics activation
 
 `intel-graphics-policy apply` changes six owned configuration/hook paths; it preserves the running desktop.
 NVIDIA kernel modules, CUDA libraries, boot command line, initramfs, filesystem and network remain unchanged.
 `rollback` restores the retained NVIDIA-primary recipe; it does not restart the desktop.
-Both directions reject foreign files/symlinks before writes.
+Both directions reject foreign files/symlinks before writes; files holding current or committed source bytes are the recipe's own (`recipe-owned`).
 
 ```bash
 host/cachyos/intel-graphics-policy apply

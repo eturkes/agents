@@ -46,8 +46,8 @@ case "$mode" in
           target=${legacy_targets[index]}
           source=${legacy_sources[index]}
         fi
-        if [[ -L "$target" ]] || { [[ -e "$target" ]] && ! cmp -s -- "$recipe_dir/$source" "$target"; }; then
-          printf 'Refusing different existing file: %s\n' "$target" >&2
+        if [[ -e "$target" || -L "$target" ]] && ! "$recipe_dir/recipe-owned" "$recipe_dir/$source" "$target"; then
+          printf 'Refusing foreign file: %s\n' "$target" >&2
           exit 1
         fi
       done

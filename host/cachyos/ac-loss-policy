@@ -14,11 +14,9 @@ modes=(755 644 644 644)
 if [[ "$mode" != check ]]; then
   for i in "${!sources[@]}"; do
     target=${targets[$i]}
-    if [[ -e "$target" || -L "$target" ]]; then
-      if [[ ! -f "$target" || -L "$target" ]] || ! cmp -s -- "$recipe_dir/${sources[$i]}" "$target"; then
-        printf 'Refusing a different deployment: %s\n' "$target" >&2
-        exit 1
-      fi
+    if [[ -e "$target" || -L "$target" ]] && ! "$recipe_dir/recipe-owned" "$recipe_dir/${sources[$i]}" "$target"; then
+      printf 'Refusing a foreign file: %s\n' "$target" >&2
+      exit 1
     fi
   done
 fi

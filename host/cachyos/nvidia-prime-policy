@@ -29,8 +29,8 @@ case "$mode" in
     # Foreign files → abort before the first write; rollback scope = these three paths.
     for index in "${!sources[@]}"; do
       target=${targets[index]}
-      if [[ -L "$target" ]] || { [[ -e "$target" ]] && ! cmp -s -- "$recipe_dir/${sources[index]}" "$target"; }; then
-        printf 'Refusing different existing file: %s\n' "$target" >&2
+      if [[ -e "$target" || -L "$target" ]] && ! "$recipe_dir/recipe-owned" "$recipe_dir/${sources[index]}" "$target"; then
+        printf 'Refusing foreign file: %s\n' "$target" >&2
         exit 1
       fi
     done
