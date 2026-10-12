@@ -29,7 +29,8 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 | MAINTAIN | `maintain.md` | Paste one body per request, queue run, security review or dependency upgrade. |
 | Move work to another phase | `route.md` | Make your request in any session, or paste this body after it. |
 | Continue open work in any phase | `resume.md` | Paste in a fresh session after a pause, a crash or a restart. |
-| Stop now and continue later | `pause.md` | Paste into the running session. |
+| Stop now and continue later | `pause-now.md` | Paste into the running session. In-flight work stops, and the repo stays consistent. |
+| Stop after in-flight work finishes | `pause.md` | Paste into the running session. Teammates and running units finish first. |
 | Repo on an older template | `refresh.md` | Copy `CLAUDE.project.md` over `CLAUDE.md` first. The session does the migration and nothing else. |
 
 - A phase applies to a scope: the whole product, or one surface or feature of a shipped repo.
@@ -46,7 +47,7 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 - The agent works on a body until its `Met when` condition holds. It asks you questions whenever your input can improve the work, and it continues after you answer.
 - `AskUserQuestion` holds the run until you answer. The Notification hook emails each pending question.
 - To continue an interrupted run in the same session, send `continue`. In a fresh session, paste `resume.md`.
-- `pause.md` writes a resume note into `.agent/spec.md`, and `resume.md` removes it when the work is complete. While the note is open, the statusline shows the phase in purple.
+- `pause.md` and `pause-now.md` write a resume note into `.agent/spec.md`, and `resume.md` removes it when the work is complete. While the note is open, the statusline shows the phase in purple.
 - The agent can edit any project file, `Intent` included. The final message of a session or pause lists its changes to `Intent`, `CLAUDE*.md` files and files from this repo.
 
 ## Advisor
