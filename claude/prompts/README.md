@@ -22,21 +22,21 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 
 | Situation | File | Use |
 | --- | --- | --- |
-| Start PROTOTYPE | `prototype.md` | Write your `Intent` in `.agent/spec.md` first. In a shipped repo, also name the scope in `Phase`, unless a route named it. |
+| Start PROTOTYPE | `prototype.md` | Write your `Intent` in `.agent/spec.md` first. In a shipped repo, also name the scope in `Phase`. After a route, `Phase` already names it. |
 | Start ITERATE | `iterate.md` | When PROTOTYPE closes or after a route, paste it. The session runs until you say go. |
 | Start IMPLEMENT | `implement.md` | After you say go or after a route, paste it. It can also open a new scope directly at IMPLEMENT. |
 | MAINTAIN | `maintain.md` | Paste one body per request, queue run, security review or dependency upgrade. |
-| Move work to another phase | `route.md` | Make your request in any session. The agent confirms the route with you, sets up the phase and ends the session. You can also paste this body. |
+| Move work to another phase | `route.md` | Make your request in any session, or paste this body after it. |
 | Continue open work in any phase | `resume.md` | Paste in a fresh session after a pause, a crash or a restart. |
 | Stop now and continue later | `pause.md` | Paste into the running session. |
 | Repo on an older template | `refresh.md` | Copy `CLAUDE.project.md` over `CLAUDE.md` first. The session does the migration and nothing else. |
 
 - A phase applies to a scope: the whole product, or one surface or feature of a shipped repo.
 - Work can move to any phase, also back to an earlier one. For example, a large MAINTAIN request moves to IMPLEMENT. Several sessions of work on a demo UI move to ITERATE. A rework of the whole product moves to PROTOTYPE.
-- Before a route, the agent asks you to confirm it, unless your request names the phase. Then it saves the open work in commits and sets up the next phase. Its final message names the body to paste in a fresh session.
+- Before a route, the agent asks you to confirm it, unless your request names the phase. The session then saves the open work in commits, sets up the next phase and ends. Its final message names the body for the next session.
+- To skip this extra session, paste the steered body of the target phase into a fresh session. Put your request in its slot.
 - Open work that a route leaves is suspended in `Tasks`. It continues after the routed work, or joins it when both reach the same phase.
 - ITERATE on a surface that exists only as shipped code works on a copy. After your go, IMPLEMENT re-implements the approved changes in the shipped code.
-- You can skip the route session: paste the steered body of the target phase into a fresh session. Put your request in its slot.
 - The template sets default structures, for example the prototype location, CI and the review ledger. A rule in `.claude/rules/` can adapt or retire one of them for a repo, and every prompt follows that rule.
 - Teammates run at the effort level of the session.
 - The agent decides when to use a teammate or the advisor. The instruction files name the situations where each can help. To require a teammate or an advisor consultation, name it in your request.
