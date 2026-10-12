@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Fable drift gate: claude/<host>/fable/CLAUDE.md = host CLAUDE.md + EDITS − advisor bullets;
+fable/settings.json = host settings.json + env.ANTHROPIC_MODEL = MODEL. Mismatch → diff, exit 1."""
+import difflib
+import json
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent
+MODEL = "claude-fable-5-1"
+EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
+    ("`ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --effort <level>`",
+     "`CLAUDE_CONFIG_DIR=$HOME/.claude/fable ANTHROPIC_MODEL=claude-fable-5-1 headroom wrap claude"
+     " --code-memory none --effort <level>`"),
+    ("passes (advisor, compaction), occupancy", "passes (compaction), occupancy"),
+    ("MAIN = `claude-opus-5-5[1m]` at 1M → 967K;", "MAIN = `claude-fable-5-1` at 1M → 967K;"),
+    ("⇒ a teammate claim = a lead (`Harvest`). Fits below",
+     "⇒ a teammate claim = a lead (`Harvest`). MAIN = Fable 5.1: Opus 5.5 leads it on most work, code above"
+     " all; Fable leads on reading my intent, judgment, taste (original UI/frontend design, naming, API + CLI"
+     " surface, prose), world knowledge + wording for me, yet runs less thorough + occasionally asserts an"
+     " unchecked assumption ⇒ check each assumption before building on or stating it. Fits below"),
+    ("MAIN = `claude-opus-5-5[1m]`. Teammates",
+     "MAIN = `claude-fable-5-1`; config home `~/.claude/fable` (repo `claude/{host}/fable/`) = own"
+     " `CLAUDE.md` + `settings.json`, every other entry → symlink into `~/.claude` (`claude/link-profile`)."
+     " Teammates"),
+]
+ADVISOR = re.compile(r"^- Advisor = CC `/advisor`.*?^- Advisor rulings: .*?\n", re.M | re.S)
+
+
+def claude_md(text, host):
+    for old, new in EDITS:
+        if text.count(old) != 1:
+            raise ValueError(f"anchor occurs {text.count(old)}x: {old[:70]}")
+        text = text.replace(old, new.replace("{host}", host))
+    text, k = ADVISOR.subn("", text)
+    if k != 1:
+        raise ValueError(f"advisor bullets matched {k}x")
+    return text
+
+
+def settings_json(text, _host):
+    d = json.loads(text)
+    d["env"]["ANTHROPIC_MODEL"] = MODEL
+    return json.dumps(d, indent=2, sort_keys=True)
+
+
+n = fail = 0
+for host in ("cachyos", "aeon"):
+    for name, fable in (("CLAUDE.md", claude_md), ("settings.json", settings_json)):
+        n += 1
+        src, dst = ROOT / host / name, ROOT / host / "fable" / name
+        rel = str(dst.relative_to(ROOT.parent))
+        have = dst.read_text(encoding="utf-8")
+        if name == "settings.json":
+            have = json.dumps(json.loads(have), indent=2, sort_keys=True)
+        try:
+            want = fable(src.read_text(encoding="utf-8"), host)
+        except ValueError as e:
+            fail += 1
+            print(f"FAIL {rel}: {e}")
+            continue
+        if have != want:
+            fail += 1
+            print(f"FAIL {rel}")
+            sys.stdout.writelines(difflib.unified_diff(want.splitlines(True), have.splitlines(True),
+                                                       "expected", rel, n=0))
+print(f"check-fable: {n - fail}/{n} files match")
+sys.exit(fail > 0)

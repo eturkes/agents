@@ -1,0 +1,49 @@
+#!/bin/sh
+# link-profile gate: fixture ~/.claude in a temp HOME. LINK_PROFILE=<path> → gate another build.
+lp=${LINK_PROFILE:-$(dirname "$(readlink -f "$0")")/link-profile}
+t=$(mktemp -d) || exit 1
+trap 'rm -rf "$t"' EXIT
+export HOME="$t"
+b=$t/.claude p=$t/.claude/fable n=0 fail=0
+run() { out=$("$lp" "$@" 2>&1); rc=$?; }
+# ck NAME RC LAST-LINE [TEST...]: TEST = shell condition, eval'd
+ck() {
+  name=$1 want_rc=$2 want=$3; shift 3; n=$((n + 1)); bad=
+  [ "$rc" = "$want_rc" ] || bad="rc=$rc"
+  [ "$(printf '%s\n' "$out" | tail -n 1)" = "$want" ] || bad="$bad last=$(printf '%s\n' "$out" | tail -n 1)"
+  for c in "$@"; do eval "$c" || bad="$bad !($c)"; done
+  [ -z "$bad" ] || { fail=$((fail + 1)); echo "FAIL $name:$bad"; printf '%s\n' "$out" | sed 's/^/  /'; }
+}
+mkdir -p "$b/agents" "$b/other" "$p" && : > "$t/.claude.json"
+: > "$b/CLAUDE.md"; : > "$b/settings.json"; : > "$b/history.jsonl"; : > "$b/.credentials.json"
+ln -s ../../.claude.json "$b/other/.claude.json"
+run fable; ck missing-deploy 2 "link-profile: $p/CLAUDE.md missing: deploy it first"
+run; ck no-name 2 'usage: link-profile [--check] <name>'
+run ../x; ck dotted-name 2 'usage: link-profile [--check] <name>'
+echo fable > "$p/CLAUDE.md"; echo '{}' > "$p/settings.json"
+run fable; ck fresh 0 'fable: 4 changes, 0 conflicts' \
+  '[ "$(readlink "$p/agents")" = ../agents ]' '[ "$(readlink "$p/history.jsonl")" = ../history.jsonl ]' \
+  '[ "$(readlink "$p/.credentials.json")" = ../.credentials.json ]' \
+  '[ "$(readlink "$p/.claude.json")" = ../../.claude.json ] && [ -f "$p/.claude.json" ]' \
+  '[ ! -L "$p/CLAUDE.md" ] && [ "$(cat "$p/CLAUDE.md")" = fable ]' '[ ! -L "$p/settings.json" ]' \
+  '[ ! -e "$p/other" ] && [ ! -e "$p/fable" ]'
+run fable; ck idempotent 0 'fable: 0 changes, 0 conflicts'
+run --check fable; ck check-clean 0 'fable: 0 changes needed, 0 conflicts'
+mkdir "$b/plans"
+run --check fable; ck check-drift 1 'fable: 1 changes needed, 0 conflicts' '[ ! -e "$p/plans" ]'
+run fable; ck new-entry 0 'fable: 1 changes, 0 conflicts' '[ "$(readlink "$p/plans")" = ../plans ]'
+mkdir "$b/teams" "$p/teams"
+run fable; ck empty-dir 0 'fable: 1 changes, 0 conflicts' '[ "$(readlink "$p/teams")" = ../teams ]'
+mkdir -p "$b/tasks" "$p/tasks" && : > "$p/tasks/t1"
+run fable; ck conflict 1 'fable: 0 changes, 1 conflicts' '[ -f "$p/tasks/t1" ] && [ ! -L "$p/tasks" ]'
+rm -r "$b/tasks" && mkdir -p "$p/debug" && : > "$p/debug/log"
+run fable; ck migrate 0 'fable: 2 changes, 0 conflicts' \
+  '[ -f "$b/tasks/t1" ] && [ "$(readlink "$p/tasks")" = ../tasks ]' \
+  '[ -f "$b/debug/log" ] && [ "$(readlink "$p/debug")" = ../debug ] && [ -f "$p/debug/log" ]'
+rm "$b/history.jsonl"
+run fable; ck dangling 0 'fable: 1 changes, 0 conflicts' '[ ! -L "$p/history.jsonl" ]'
+rm "$p/agents" && ln -s /nowhere "$p/agents"
+run fable; ck relink 0 'fable: 1 changes, 0 conflicts' '[ "$(readlink "$p/agents")" = ../agents ]'
+rm "$p/.claude.json" && echo '{}' > "$p/.claude.json"
+run fable; ck real-claude-json 1 'fable: 0 changes, 1 conflicts' '[ ! -L "$p/.claude.json" ]'
+if [ "$fail" -eq 0 ]; then echo "link-profile: $n/$n cases pass"; else echo "link-profile: $fail/$n cases FAIL"; exit 1; fi

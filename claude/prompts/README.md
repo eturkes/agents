@@ -57,3 +57,25 @@ In IMPLEMENT, the agent consults the advisor often, for example on the contract 
 - To turn on the advisor from inside a session, send `/advisor claude-fable-5-1` as a message of its own. Then paste the body in a new message. This setting also applies to new sessions until you send `/advisor off`.
 
 Claude Code reads a whole message that starts with `/advisor` as the advisor model name. Thus, a body in the same message does not get to the agent.
+
+## Fable as MAIN
+
+To run Fable 5.1 as the main agent, start the session with the Fable profile. Replace `<gpt-model>` and `<level>` as for an Opus session.
+
+```sh
+CLAUDE_CONFIG_DIR=$HOME/.claude/fable CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> ANTHROPIC_MODEL=claude-fable-5-1 headroom wrap claude --code-memory none --effort <level>
+```
+
+With `CLAUDE_CONFIG_DIR`, Claude Code reads its global `CLAUDE.md` and `settings.json` from `~/.claude/fable`. The other entries in that folder link into `~/.claude`, so Fable and Opus sessions share transcripts, history, MCP servers, agents, plugins and mods.
+
+A Fable session has no advisor. Skip the advisor steps in this README and in the prompt headers.
+
+To deploy or update the profile, run these commands from the repository root. Replace `<host>` with `cachyos` or `aeon`.
+
+```sh
+mkdir -p ~/.claude/fable
+cp claude/<host>/fable/CLAUDE.md claude/<host>/fable/settings.json ~/.claude/fable/
+claude/link-profile fable
+```
+
+After a Claude Code update or a new entry in `~/.claude`, run `claude/link-profile fable` again. `claude/link-profile --check fable` lists the changes that the profile needs and leaves the files as they are.

@@ -1,0 +1,150 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "local-proxy",
+    "ANTHROPIC_MODEL": "claude-fable-5-1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h",
+    "CLAUDE_CODE_GATEWAY_HINT_HEADERS": "1",
+    "MCP_TIMEOUT": "60000",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "870000",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "128000",
+    "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1",
+    "ANTHROPIC_SMALL_FAST_MODEL": "gpt-6-luna",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-6-luna",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-6.1-sol",
+    "CLAUDE_CODE_AUTO_MODE_MODEL": "gpt-6.1-sol",
+    "CLAUDE_CODE_BG_CLASSIFIER_MODEL": "gpt-6-luna",
+    "CLAUDE_CODE_NO_FLICKER": "0",
+    "DISABLE_AUTOUPDATER": "1",
+    "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS": "1",
+    "CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL": "1",
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/context-alert:~/.claude/mods/agent-flow:~/.claude/mods/idle-compact"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
+  "permissions": {
+    "allow": [],
+    "deny": [
+      "Bash(bat:*)",
+      "Bash(batcat:*)",
+      "Bash(ccat:*)",
+      "Bash(pygmentize:*)",
+      "Bash(highlight:*)",
+      "Bash(source-highlight:*)",
+      "Bash(less:*)",
+      "Bash(more:*)",
+      "Bash(most:*)",
+      "Bash(pg:*)",
+      "Bash(vi:*)",
+      "Bash(vim:*)",
+      "Bash(nvim:*)",
+      "Bash(view:*)",
+      "Bash(nano:*)",
+      "Bash(emacs:*)",
+      "Bash(ed:*)",
+      "WebFetch"
+    ],
+    "defaultMode": "bypassPermissions"
+  },
+  "skillOverrides": {
+    "claude-api": "off",
+    "update-config": "off",
+    "schedule": "off",
+    "run": "off",
+    "loop": "off",
+    "verify": "off",
+    "keybindings-help": "off",
+    "code-review": "off",
+    "fewer-permission-prompts": "off",
+    "security-review": "off",
+    "init": "off",
+    "review": "off",
+    "simplify": "off",
+    "deep-research": "off",
+    "dataviz": "off",
+    "artifact-design": "off",
+    "artifact-capabilities": "off",
+    "design": "off",
+    "prototype": "off",
+    "workshop": "off",
+    "artifact-components": "off",
+    "commit": "off",
+    "pr": "off"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -c 'if (.session_title // \"\") == \"\" then {hookSpecificOutput: {hookEventName: \"SessionStart\", sessionTitle: (.cwd | sub(\".*/(?=.)\"; \"\"))}} else empty end'"
+          }
+        ]
+      }
+    ]
+  },
+  "enableArtifact": false,
+  "enableWorkflows": false,
+  "workflowKeywordTriggerEnabled": false,
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/.claude/statusline",
+    "refreshInterval": 60
+  },
+  "enabledPlugins": {
+    "pyright-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "markdown-lsp@global": true,
+    "r-lsp@global": true,
+    "bash-lsp@global": true,
+    "xml-lsp@global": true,
+    "prolog-lsp@global": true
+  },
+  "extraKnownMarketplaces": {
+    "global": {
+      "source": {
+        "source": "directory",
+        "path": "/var/home/eturkes/debian/.local/app/agents/claude/marketplace"
+      }
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official",
+        "sparsePaths": [
+          ".claude-plugin",
+          "plugins/pyright-lsp",
+          "plugins/typescript-lsp",
+          "plugins/rust-analyzer-lsp"
+        ]
+      }
+    }
+  },
+  "promptSuggestionEnabled": false,
+  "awaySummaryEnabled": false,
+  "timeFormat": "24-hour-utc",
+  "autoMemoryEnabled": false,
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "light",
+  "preferredNotifChannel": "notifications_disabled",
+  "switchModelsOnFlag": true,
+  "cleanupPeriodDays": 365,
+  "fileCheckpointingEnabled": false,
+  "teammateMode": "in-process",
+  "remoteControlAtStartup": false,
+  "crossSessionInbound": "accept",
+  "useAutoModeDuringPlan": false,
+  "pluginConfigs": {
+    "agents-md@builtin": {
+      "options": {
+        "instructionFiles": "claude-md"
+      }
+    }
+  }
+}
