@@ -1,4 +1,4 @@
-# Markdown language server on Aeon
+# Markdown language server on aeon
 
 Marksman reports broken links, duplicate headings, and unresolved references in Markdown, Quarto, and R Markdown files.
 

@@ -1,4 +1,4 @@
-# Bash language server on Aeon
+# Bash language server on aeon
 
 `bash-language-server` provides diagnostics, definitions, and hover for shell scripts. It runs `shellcheck` for diagnostics when `shellcheck` is on `PATH`.
 
