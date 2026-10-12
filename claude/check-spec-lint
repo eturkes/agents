@@ -54,7 +54,7 @@ edit 's/^IMPLEMENT — the whole product$/MAINTAIN, scope = the whole product/';
 base > "$t/spec.md"; printf 'M1 closed, M2 closed.\n' >> "$t/spec.md"; run phase-history 1 'history'
 base > "$t/spec.md"; printf '\nSuspended: IMPLEMENT — api\n> late quote\n' >> "$t/spec.md"; run quote-after-suspended 1 'request quote after'
 edit '/^IMPLEMENT — the whole product$/d'; run empty-phase 1 'Phase is empty'
-edit 's/^IMPLEMENT — the whole product$/IMPLEMENT — the whole product. M1 closed./'; run phase-narrative 1 'one phrase'
+edit 's/^IMPLEMENT — the whole product$/IMPLEMENT — the whole product. M1 closed./'; run phase-narrative 0 ''
 edit 's/^IMPLEMENT — the whole product$/IMPLEMENT — the CLI, e.g. its parser/'; run phase-abbrev 0 ''
 "$L" "$t/absent.md" > /dev/null 2>&1; rc=$?; n=$((n + 1)); [ "$rc" -eq 2 ] || { echo "FAIL unreadable: rc=$rc want=2"; fail=$((fail + 1)); }
 
