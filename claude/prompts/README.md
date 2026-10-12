@@ -47,6 +47,7 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 - The agent works on a body until its `Met when` condition holds. It asks you questions whenever your input can improve the work, and it continues after you answer.
 - `AskUserQuestion` holds the run until you answer. The Notification hook emails each pending question.
 - To continue an interrupted run in the same session, send `continue`. In a fresh session, paste `resume.md`.
+- Each project keeps `.agent/spec-lint`, a copy of `claude/spec-lint`. It checks the shape of `.agent/spec.md`, and the gate runs it.
 - `pause.md` and `pause-now.md` write a resume note into `.agent/spec.md`, and `resume.md` removes it when the work is complete. While the note is open, the statusline shows the phase in purple.
 - The agent can edit any project file, `Intent` included. The final message of a session or pause lists its changes to `Intent`, `CLAUDE*.md` files and files from this repo.
 
