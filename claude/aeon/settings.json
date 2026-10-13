@@ -74,7 +74,8 @@
     "workshop": "off",
     "artifact-components": "off",
     "commit": "off",
-    "pr": "off"
+    "pr": "off",
+    "plugin-authoring": "off"
   },
   "hooks": {
     "SessionStart": [
