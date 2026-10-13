@@ -1,6 +1,6 @@
 # Headroom deployment on CachyOS
 
-Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` points to [cache-keepalive](../../../claude/cache-keepalive/README.md) at `127.0.0.1:8318`, which relays to CLIProxyAPI at `127.0.0.1:8317`. Its `tpm` lifts the proxy's token rate limit (see [Token rate limit](#token-rate-limit)). The Headroom proxy listens on `127.0.0.1:8787`.
+Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` points to [cache-keepalive](../../../claude/cache-keepalive/README.md) at `127.0.0.1:8318`, which relays to CLIProxyAPI at `127.0.0.1:8317`. Its `lossless` keeps tool output byte-reversible (see [Lossless mode](#lossless-mode)). Its `tpm` lifts the proxy's token rate limit (see [Token rate limit](#token-rate-limit)). The Headroom proxy listens on `127.0.0.1:8787`.
 
 Start a session with:
 
@@ -96,6 +96,16 @@ rg -uu 'headroom wrap selfheal' ~/Projects/*/.claude ~/.local/app/*/.claude
 Every hook must name `/home/eturkes/.local/bin/headroom`. Change each hook that names a different path. These files are gitignored, so each machine repairs its own.
 
 `wrap` keeps its state in `.claude/.headroom_wrap_*` files next to `settings.local.json`: a marker, an owner record for each env key, and a settings lock. Each project must gitignore `.claude/.headroom_wrap_*` together with `.claude/settings.local.json`. An ignore line that names only the marker leaves the other two files untracked.
+
+## Lossless mode
+
+`settings.json` sets `lossless` to `true`. The proxy then compresses tool output only with byte-reversible folds, such as the grep heading fold, the log run-collapse, and the diff index strip. The proxy forwards all other output unchanged.
+
+Without this setting, the `coding` profile sends prose tool output through Kompress, which drops words. Since `v0.38.0` (#3483), this also applies to the newest tool result. Later turns replay the compressed bytes to keep the prompt cache, so the agent never sees the original output. Kompress saves less than 0.01 percent of the forwarded tokens. Tool-schema compaction supplies almost all of the proxy's savings, and lossless mode keeps it.
+
+Lossless mode keeps cross-turn dedup, which the `coding` profile turns on. Dedup replaces output that repeats an earlier tool result with a pointer such as `[↑3L same as msg 90: '…']`. The earlier result still holds the text.
+
+After you restart the proxy, run one Bash command that prints prose, such as `git log`. Then examine `~/.headroom/logs/proxy-8787.log`. The `route_counts` line of that request must contain `lossless_noop`, and no `Kompress slow compress` line may follow.
 
 ## Token rate limit
 

@@ -1,6 +1,6 @@
 # Headroom deployment on aeon
 
-Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` points to [cache-keepalive](../../../claude/cache-keepalive/README.md#aeon) at `127.0.0.1:8318`, which relays to CLIProxyAPI at `127.0.0.1:8317`. Its `tpm` lifts the proxy's token rate limit (see [Token rate limit](#token-rate-limit)). The Headroom proxy listens on `127.0.0.1:8787`.
+Copy `settings.json` to `~/.headroom/settings.json`. Its `anthropic_base_url` points to [cache-keepalive](../../../claude/cache-keepalive/README.md#aeon) at `127.0.0.1:8318`, which relays to CLIProxyAPI at `127.0.0.1:8317`. Its `lossless` keeps tool output byte-reversible (see [Lossless mode](#lossless-mode)). Its `tpm` lifts the proxy's token rate limit (see [Token rate limit](#token-rate-limit)). The Headroom proxy listens on `127.0.0.1:8787`.
 
 Once CLIProxyAPI and `cache-keepalive` run, start a session with:
 
@@ -56,6 +56,10 @@ After an upstream release includes the guard and all three fixes, restore the pu
 ```sh
 uv tool install --force --python 3.14.5 "headroom-ai[all]"
 ```
+
+## Lossless mode
+
+`settings.json` sets `lossless` to `true`, which stops Kompress from dropping words from tool output. The [CachyOS lossless mode section](../../../host/cachyos/headroom/README.md#lossless-mode) describes the reason and the restart check.
 
 ## Token rate limit
 
