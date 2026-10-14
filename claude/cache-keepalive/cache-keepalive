@@ -336,9 +336,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         chunked = length is None
         self.send_header(*(("Transfer-Encoding", "chunked") if chunked else ("Content-Length", length)))
         self.end_headers()
+        sse = (resp.getheader("Content-Type") or "").startswith("text/event-stream")
+        held = b""
         try:
             while data := resp.read1(65536):
-                self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data) if chunked else data)
+                if sse:
+                    data, held = split_block_stop(held + data)
+                if data:
+                    self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data) if chunked else data)
+            if held:
+                self.wfile.write(b"%x\r\n%s\r\n" % (len(held), held) if chunked else held)
             if chunked:
                 self.wfile.write(b"0\r\n\r\n")
         except (OSError, http.client.HTTPException):
@@ -351,6 +358,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+
+def split_block_stop(data):
+    """(send now, hold): a trailing complete content_block_stop event waits for the next chunk.
+
+    CC writes an in-process teammate's transcript entry on a 100 ms timer and adds usage + stop_reason
+    at message_delta. CLIProxyAPI sends message_delta up to ~150 ms after the last content_block_stop
+    (4 of 32 gpt-6-luna responses > 100 ms), so those entries reached disk without final usage.
+    """
+    if not data.endswith(b"\n\n"):
+        return data, b""
+    cut = data.rfind(b"\n\n", 0, len(data) - 2)
+    start = cut + 2 if cut >= 0 else 0
+    if data[start:].split(b"\n", 1)[0].partition(b":")[2].strip() == b"content_block_stop":
+        return data[:start], data[start:]
+    return data, b""
 
 
 def error(message):
