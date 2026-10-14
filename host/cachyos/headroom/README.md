@@ -101,7 +101,9 @@ Every hook must name `/home/eturkes/.local/bin/headroom`. Change each hook that 
 
 `settings.json` sets `lossless` to `true`. The proxy then compresses tool output only with byte-reversible folds, such as the grep heading fold, the log run-collapse, and the diff index strip. The proxy forwards all other output unchanged.
 
-Without this setting, the `coding` profile sends prose tool output through Kompress, which drops words. Since `v0.38.0` (#3483), this also applies to the newest tool result. Later turns replay the compressed bytes to keep the prompt cache, so the agent never sees the original output. Kompress saves less than 0.01 percent of the forwarded tokens. Tool-schema compaction supplies almost all of the proxy's savings, and lossless mode keeps it.
+Without this setting, the `coding` profile sends prose tool output through Kompress, which drops words. Since `v0.38.0` (#3483), this also applies to the newest tool result. Later turns replay the compressed bytes to keep the prompt cache, so the agent never sees the original output. With lossy compression on, the proxy saved less than 1 percent of the forwarded tokens, and almost all forwarded tokens are prompt-cache reads.
+
+Lossless mode keeps tool-schema compaction. It drops annotation keys such as `$schema` and puts each tool description on one line.
 
 Lossless mode keeps cross-turn dedup, which the `coding` profile turns on. Dedup replaces output that repeats an earlier tool result with a pointer such as `[↑3L same as msg 90: '…']`. The earlier result still holds the text.
 
