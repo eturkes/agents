@@ -1,7 +1,7 @@
 #!/bin/sh
 # Profile ~/.claude/<name> = a CLAUDE_CONFIG_DIR owning CLAUDE.md alone; each other
 # ~/.claude entry → link ../<entry>, ~/.claude.json → ../../.claude.json (relative ⇒ valid under any
-# mount path) ⇒ transcripts, history, MCP, agents, plugins + mods stay shared. CC creates state dirs
+# mount path) ⇒ settings, transcripts, history, MCP, agents, plugins + mods stay shared. CC creates state dirs
 # lazily ⇒ a profile-only entry moves into ~/.claude; empty dir or byte-identical file → link; other
 # real on both sides = conflict.
 # Usage: link-profile [--check] <name>  (--check: report only; exit 1 = change needed | conflict)
@@ -11,7 +11,8 @@ check=
 name=$1
 case $name in ''|.*|*/*) echo 'usage: link-profile [--check] <name>' >&2; exit 2 ;; esac
 b=$HOME/.claude p=$HOME/.claude/$name n=0 c=0
-[ -f "$p/CLAUDE.md" ] && [ ! -L "$p/CLAUDE.md" ] || { echo "link-profile: $p/CLAUDE.md missing: deploy it first" >&2; exit 2; }
+[ -f "$p/CLAUDE.md" ] && [ ! -L "$p/CLAUDE.md" ] ||
+  { echo "link-profile: $p/CLAUDE.md missing: deploy it first" >&2; exit 2; }
 change() { n=$((n + 1)); echo "$1"; shift; [ -n "$check" ] || "$@"; }
 relink() { rm "$1" && ln -s "$2" "$1"; }
 swap() { rmdir "$p/$1" && ln -s "../$1" "$p/$1"; }

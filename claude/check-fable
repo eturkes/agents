@@ -29,14 +29,13 @@ EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
     (("Profile: GPT teammates, any tier, lead Opus 5.5 on hard reasoning, science, audit, computer use +"
       " instruction following; Opus leads on code, search + calibrated confidence ⇒ a teammate claim = a lead"
       " (`Harvest`). Fits below"),
-     ("Profile: MAIN = Fable 5.1: leads on reading my intent, judgment, taste (original UI/frontend design,"
-      " naming, API + CLI surface, prose), world knowledge + wording for me; Opus 5.5 leads it on most work,"
-      " code above all; runs less thorough + occasionally asserts an unchecked assumption ⇒ check each"
-      " assumption before building on or stating it. GPT teammates, any tier, lead Opus 5.5 on hard"
-      " reasoning, science, audit, computer use + instruction following ⇒ lead Fable there too, by inference"
-      " (direct datum = audit alone: one Astra-judged panel ranks GPT > Opus > Fable); a teammate claim = a"
-      " lead (`Harvest`). Fits below")),
-    ("MAIN = CC's unpinned default `claude-opus-5-5` (1M window). Teammates",
+     ("Profile: MAIN = Fable 5.1, leading on reading my intent, judgment, taste (original UI/frontend"
+      " design, naming, API + CLI surface, prose), world knowledge + wording for me; Opus 5.5 leads it on most"
+      " work, code above all; it runs less thorough + occasionally asserts an unchecked assumption ⇒ check"
+      " each assumption before building on or stating it. GPT teammates, any tier, lead Opus 5.5, and by"
+      " inference Fable, on hard reasoning, science, audit, computer use + instruction following; a teammate"
+      " claim = a lead (`Harvest`). Fits below")),
+    ("MAIN = CC's default `claude-opus-5-5` (1M window). Teammates",
      ("MAIN = `claude-fable-5-1` via launch `--model claude-fable-5-1`; config home `~/.claude/fable` (repo"
       " `claude/{host}/fable/`) = own `CLAUDE.md`, every other entry (`settings.json` included) → symlink"
       " into `~/.claude` (`claude/link-profile`). Teammates")),
@@ -45,7 +44,7 @@ EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
      (" Before ending a turn, check the last paragraph: a plan, an analysis, a list of next steps or a promise"
       " about undone work → do that work now with tool calls, retries after errors + gathering missing"
       " information included; a question → `AskUserQuestion` where my input decides, else the work it asks"
-      " about. A long context or session = no reason to stop. Before a command that changes system state"
+      " about. A long context or session → keep working. Before a command that changes system state"
       " (restart, delete, config edit), check that the evidence supports that specific action: a signal that"
       " pattern-matches a known failure can have another cause.")),
     (("- MAIN, before acting on a task: explore broadly with tool calls — list + open every available app +"
