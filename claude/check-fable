@@ -10,9 +10,6 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent
 MODEL = "claude-fable-5-1"
 EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
-    ("`ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --effort <level>`",
-     "`CLAUDE_CONFIG_DIR=$HOME/.claude/fable ANTHROPIC_MODEL=claude-fable-5-1 headroom wrap claude"
-     " --code-memory none --effort <level>`"),
     ("passes (advisor, compaction), occupancy", "passes (compaction), occupancy"),
     ("MAIN = `claude-opus-5-5[1m]` at 1M → 967K;", "MAIN = `claude-fable-5-1` at 1M → 967K;"),
     ("⇒ a teammate claim = a lead (`Harvest`). Fits below",

@@ -78,7 +78,7 @@ Migration evidence = `~/.local/state/project-snapshots/migration/verified.json`.
 An interrupted preparation keeps the original Projects tree active and retains its stage for inspection.
 
 Setup installs the manual-retention Snapper config and merges Claude hooks while preserving other settings.
-Tracked Claude profiles carry the same hooks; the native Claude launcher and Headroom remain unchanged.
+Tracked Claude profiles carry the same hooks; the native Claude launcher remains unchanged.
 
 ## Correct legacy NoCoW settings
 

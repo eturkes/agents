@@ -1,5 +1,0 @@
-{
-  "anthropic_base_url": "http://127.0.0.1:8318",
-  "lossless": true,
-  "tpm": 1000000000
-}

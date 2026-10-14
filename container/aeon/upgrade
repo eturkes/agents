@@ -20,7 +20,6 @@ rustup update
 cargo install-update -a
 
 # --- Python: uv and uv-managed tools ---
-# headroom-ai = local wheel pin → the wheel stays on disk; pin lifecycle: $repo_root/container/aeon/headroom/README.md
 uv self update
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 

@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """Keep the prompt cache of live Claude Code sessions warm across long waits.
 
-Relay Headroom → CLIProxyAPI; stores each session's last main-thread request. --interval s without one →
+Relay Claude Code → CLIProxyAPI; stores each session's last main-thread request. --interval s without one →
 quiet session (idle-compact mod report: no turn, no background work) → the mod compacts it, touches end;
 else ≤ --touches touches: re-send the request as a stream, cut at message_start ⇒ the cache read renews the
 1h entry. CC's own keepalive needs a direct api.anthropic.com connection → off behind these proxies.
@@ -114,8 +114,7 @@ class Keeper:
         if not (isinstance(model, str) and model.startswith("claude")) or not has_1h_marker(request):
             return None
         if request.get("stream") is not True:
-            # Headroom sends stream:false while its retrieval tool is active; a touch must stream to stop
-            # at message_start, and the flag sits outside the cached prompt.
+            # A touch must stream to stop at message_start; the flag sits outside the cached prompt.
             request["stream"] = True
             body = json.dumps(request).encode()
         forwarded = [(k, v) for k, v in headers.items() if k.lower() not in HOP]

@@ -2,10 +2,10 @@
 
 `cache-keepalive` keeps the prompt cache of a waiting Claude Code session warm, and it compacts a finished session before its cache expires. Without it, a prompt after more than an hour sends the whole conversation again as an uncached write.
 
-The keeper is an HTTP relay between Headroom and CLIProxyAPI:
+The keeper is an HTTP relay between Claude Code and CLIProxyAPI. The settings `env` key `ANTHROPIC_BASE_URL` points Claude Code at it:
 
 ```text
-Claude Code → Headroom 127.0.0.1:8787 → cache-keepalive 127.0.0.1:8318 → CLIProxyAPI 127.0.0.1:8317
+Claude Code → cache-keepalive 127.0.0.1:8318 → CLIProxyAPI 127.0.0.1:8317
 ```
 
 On CachyOS it runs as a systemd user service. On aeon it runs in the foreground in a terminal, like CLIProxyAPI there.
@@ -36,7 +36,7 @@ A touch closes the stream at the `message_start` event, so it costs a cache read
 
 The [`idle-compact`](../mods/README.md) mod runs in each interactive session. Every 30 seconds, it tells the keeper whether the session is quiet (`POST /_keepalive/poll`). When the keeper asks, the mod compacts the session and reports the result (`POST /_keepalive/compacted`). A session without a mod report in the last 90 seconds gets touches only. A failed compaction also falls back to touches.
 
-The touch repeats the stored request byte for byte, with one exception. While its retrieval tool is active, Headroom forwards a streamed request with `stream: false`. The keeper stores such a request with `stream: true`, because the touch must stream. The flag is not part of the cached prompt, so the touch still reads the same cache entry.
+The touch repeats the stored request byte for byte, with one exception. The keeper stores a request that has `stream: false` with `stream: true`, because the touch must stream. The flag is not part of the cached prompt, so the touch still reads the same cache entry.
 
 The keeper stops for a session in these cases:
 
@@ -65,7 +65,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now cache-keepalive.service
 ```
 
-Deploy the `idle-compact` mod as `../mods/README.md` describes. Then point Headroom at the keeper. `host/cachyos/headroom/settings.json` sets `anthropic_base_url` to `http://127.0.0.1:8318`. Copy it to `~/.headroom/settings.json`. Then restart the Headroom proxy.
+Deploy the `idle-compact` mod as `../mods/README.md` describes. `claude/cachyos/settings.json` sets `ANTHROPIC_BASE_URL` to `http://127.0.0.1:8318`, so Claude Code sends its requests through the keeper.
 
 ### aeon
 
@@ -75,7 +75,7 @@ aeon runs no unit. Deploy the `idle-compact` mod as `../mods/README.md` describe
 ln -sfn "$PWD/claude/cache-keepalive/cache-keepalive" ~/.local/bin/cache-keepalive
 ```
 
-`container/aeon/headroom/settings.json` sets `anthropic_base_url` to `http://127.0.0.1:8318`. Copy it to `~/.headroom/settings.json`. Headroom reads this file only when its proxy starts. `headroom wrap` stops its proxy when its last session ends, so the next `headroom wrap` uses the keeper.
+`claude/aeon/settings.json` sets `ANTHROPIC_BASE_URL` to `http://127.0.0.1:8318`, so Claude Code sends its requests through the keeper.
 
 Before you start a session, start the keeper in its own terminal. Leave it running:
 
@@ -83,7 +83,7 @@ Before you start a session, start the keeper in its own terminal. Leave it runni
 cache-keepalive
 ```
 
-Ctrl+C stops it. While the keeper is stopped, Headroom cannot reach CLIProxyAPI, and every request fails.
+Ctrl+C stops it. While the keeper is stopped, Claude Code cannot reach CLIProxyAPI, and every request fails.
 
 ## Check
 

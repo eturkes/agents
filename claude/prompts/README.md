@@ -12,7 +12,7 @@ Use `steered/resume.md` to name the next work and its end point. Use `steered/ma
 Start each fresh session with this command. Replace `<gpt-model>` with the GPT model for the teammates. Replace `<level>` with the effort level that you choose for the session.
 
 ```sh
-CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> ANTHROPIC_MODEL=claude-opus-5-5 headroom wrap claude --1m --code-memory none --effort <level>
+CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> claude --effort <level>
 ```
 
 Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teammate model. Choose the model and the effort level for the phase:
@@ -67,7 +67,7 @@ Claude Code reads a whole message that starts with `/advisor` as the advisor mod
 To run Fable 5.1 as the main agent, start the session with the Fable profile. Replace `<gpt-model>` and `<level>` as for an Opus session.
 
 ```sh
-CLAUDE_CONFIG_DIR=$HOME/.claude/fable CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> ANTHROPIC_MODEL=claude-fable-5-1 headroom wrap claude --code-memory none --effort <level>
+CLAUDE_CONFIG_DIR=$HOME/.claude/fable CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> claude --effort <level>
 ```
 
 With `CLAUDE_CONFIG_DIR`, Claude Code reads its global `CLAUDE.md` and `settings.json` from `~/.claude/fable`. The other entries in that folder link into `~/.claude`, so Fable and Opus sessions share transcripts, history, MCP servers, agents, plugins and mods.
