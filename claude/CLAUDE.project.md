@@ -6,6 +6,7 @@
 
 - Install/configure project-local; work within the launch dir + children; every file there = yours to edit.
 - Long horizon → orient, then execute: one session carries a phase end to end across compactions, checkpointed on disk (`Session flow`).
+- Gate command = the full check chain `.claude/rules/` records; it prints each step's wall-clock (a suite: its slowest tests), since every run blocks the critical path. Iteration runs the fast gate recorded beside it: the steps + tests the change reaches, parallel + cached. A step dominating the full gate → a unit (`Tasks` or `.agent/deferred.md`) that speeds it at equal strength: every check still runs + fires on its planted bad input (parallel runner, content-keyed build cache, incremental target, faster tool). Timing output, the fast gate + equal-strength speedups leave the grading checks unchanged; a check leaving the full gate = a gate change (global `Engineering`).
 
 ## Session flow
 
