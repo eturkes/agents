@@ -8,7 +8,7 @@ Use in any phase. When you want to stop right away and continue later, replace `
 
 My request above outranks the rest of this body. Pause this session now for a fresh one to resume. In-flight work stops where it stands; the repo ends consistent: the working branch holds checked commits alone, everything else sits on snapshot branches, and the resume note names it all. The open finish line stays open and moves to disk.
 
-1. Teammates: each running one → `TaskStop` now, its marker unawaited → prove quiescence → each worktree's leftover changes → a commit on its `wt/<name>` branch, unmerged (global `Subagents` Worktrees close). Deliverables stay as written, unharvested.
+1. Teammates: each running one → `TaskStop` now, its marker unawaited → prove quiescence → each worktree's leftover changes → a commit on its `wt/<name>` branch, unmerged (`CLAUDE.md` `Teammates` worktree close). Deliverables stay as written, unharvested.
 2. Processes you started — servers, watchers, background shells → stopped by PID, their ports free.
 3. Your own work: work whose last gate run passed on its current bytes → scoped commits; anything edited since its last passing run, or never run → one snapshot commit on a `wip/<topic>` branch, built through a temporary index (`GIT_INDEX_FILE`) so the main index + working tree stay as they are; gitignored secrets stay out of it.
 4. Rulings from this session that bind later work → their owning files (contract, `Decisions`, `.claude/rules/`).

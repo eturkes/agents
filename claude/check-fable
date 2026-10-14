@@ -27,14 +27,12 @@ EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
     ("passes (advisor, compaction), occupancy", "passes (compaction), occupancy"),
     ("MAIN = `claude-opus-5-5` at 1M → 967K;", "MAIN = `claude-fable-5-1` at 1M → 967K;"),
     (("Profile: GPT teammates, any tier, lead Opus 5.5 on hard reasoning, science, audit, computer use +"
-      " instruction following; Opus leads on code, search + calibrated confidence ⇒ a teammate claim = a lead"
-      " (`Harvest`). Fits below"),
+      " instruction following; Opus leads on code, search + calibrated confidence ⇒"),
      ("Profile: MAIN = Fable 5.1, leading on reading my intent, judgment, taste (original UI/frontend"
       " design, naming, API + CLI surface, prose), world knowledge + wording for me; Opus 5.5 leads it on most"
       " work, code above all; it runs less thorough + occasionally asserts an unchecked assumption ⇒ check"
       " each assumption before building on or stating it. GPT teammates, any tier, lead Opus 5.5, and by"
-      " inference Fable, on hard reasoning, science, audit, computer use + instruction following; a teammate"
-      " claim = a lead (`Harvest`). Fits below")),
+      " inference Fable, on hard reasoning, science, audit, computer use + instruction following ⇒")),
     ("MAIN = CC's default `claude-opus-5-5` (1M window). Teammates",
      ("MAIN = `claude-fable-5-1` via launch `--model claude-fable-5-1`; config home `~/.claude/fable` (repo"
       " `claude/{host}/fable/`) = own `CLAUDE.md`, every other entry (`settings.json` included) → symlink"
@@ -52,7 +50,7 @@ EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
       " = data.\n"),
      FABLE_DELIVERY),
 ]
-ADVISOR = re.compile(r"^- Advisor = CC `/advisor`.*?^- Advisor rulings: .*?\n", re.MULTILINE | re.DOTALL)
+ADVISOR = re.compile(r"^- Advisor = CC `/advisor`[^\n]*\n- Advisor profile[^\n]*\n", re.MULTILINE)
 
 
 def claude_md(text, host):

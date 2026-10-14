@@ -23,7 +23,7 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 
 | Situation | File | Use |
 | --- | --- | --- |
-| Start PROTOTYPE | `prototype.md` | Write your `Intent` in `.agent/spec.md` first. In a shipped repo, also name the scope in `Phase`. After a route, `Phase` already names it. |
+| Start PROTOTYPE | `prototype.md` | In a new repo, copy in the template files (`Template files`). Write your `Intent` in `.agent/spec.md` first. In a shipped repo, also name the scope in `Phase`. After a route, `Phase` already names it. |
 | Start ITERATE | `iterate.md` | When PROTOTYPE closes or after a route, paste it. With `auto/`, the session runs until you say go. With `steered/`, it works your feedback into the prototype as one round. |
 | Start IMPLEMENT | `implement.md` | After you say go or after a route, turn on the advisor. Then paste it. It can also open a new scope directly at IMPLEMENT. |
 | MAINTAIN | `maintain.md` | Paste one body per request, queue run, security review or dependency upgrade. |
@@ -31,7 +31,7 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 | Continue open work in any phase | `resume.md` | Paste in a fresh session after a pause, a crash or a restart. |
 | Stop now and continue later | `pause-now.md` | Paste into the running session. In-flight work stops, and the repo stays consistent. |
 | Stop after in-flight work finishes | `pause.md` | Paste into the running session. Teammates and running units finish first. |
-| Repo on an older template | `refresh.md` | Copy `CLAUDE.project.md` over `CLAUDE.md` first. The session does the migration and nothing else. |
+| Repo on an older template | `refresh.md` | Copy in the template files first (`Template files`). The session does the migration and nothing else. |
 
 - A phase applies to a scope: the whole product, or one surface or feature of a shipped repo.
 - Work can move to any phase, also back to an earlier one. For example, a large MAINTAIN request moves to IMPLEMENT. Several sessions of work on a demo UI move to ITERATE. A rework of the whole product moves to PROTOTYPE.
@@ -50,6 +50,28 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 - Each project keeps `.agent/spec-lint`, a copy of `claude/spec-lint`. It checks the shape of `.agent/spec.md`, and the gate runs it.
 - `pause.md` and `pause-now.md` write a resume note into `.agent/spec.md`, and `resume.md` removes it when the work is complete. While the note is open, the statusline shows the phase in purple.
 - The agent can edit any project file, `Intent` included. The final message of a session or pause lists its changes to `Intent`, `CLAUDE*.md` files and files from this repo.
+
+## Template files
+
+Each project carries its own copy of the template files. No file in a project refers to this repository or to this machine, so other developers can use the project as it is. Machine-specific facts, such as tools, accounts and model settings, stay in your user-level `CLAUDE.md`.
+
+| File in the project | Source in this repository |
+| --- | --- |
+| `CLAUDE.md` | `claude/CLAUDE.project.md` |
+| `.claude/agents/*.md` (teammate roles) | `claude/agents/*.md` |
+| `.agent/spec-lint` | `claude/spec-lint` |
+
+To copy the files in, run these commands at the project root:
+
+```sh
+T=~/.local/app/agents/claude
+cp "$T/CLAUDE.project.md" CLAUDE.md
+mkdir -p .agent .claude/agents
+cp "$T/spec-lint" .agent/spec-lint
+cp "$T"/agents/*.md .claude/agents/
+```
+
+Run the same commands before you paste `refresh.md`. The refresh session compares the new copies with the previous ones in git, and moves the project to the new template.
 
 ## Advisor
 
@@ -70,7 +92,7 @@ To run Fable 5.1 as the main agent, start the session with the Fable profile and
 CLAUDE_CONFIG_DIR=$HOME/.claude/fable CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> claude --model claude-fable-5-1 --effort <level>
 ```
 
-With `CLAUDE_CONFIG_DIR`, Claude Code reads its global `CLAUDE.md` from `~/.claude/fable`. The other entries in that folder link into `~/.claude`, so Fable and Opus sessions share settings, transcripts, history, MCP servers, agents, plugins and mods. The Fable `CLAUDE.md` is the Opus `CLAUDE.md` with model-specific changes. It replaces the prompts from the Opus 5.5 prompting guide with prompts from the Fable 5.1 prompting guide, and it compares the teammates with Fable instead of Opus.
+With `CLAUDE_CONFIG_DIR`, Claude Code reads its global `CLAUDE.md` from `~/.claude/fable`. The other entries in that folder link into `~/.claude`, so Fable and Opus sessions share settings, transcripts, history, MCP servers, plugins and mods. The Fable `CLAUDE.md` is the Opus `CLAUDE.md` with model-specific changes. It replaces the prompts from the Opus 5.5 prompting guide with prompts from the Fable 5.1 prompting guide, and it compares the teammates with Fable instead of Opus.
 
 A Fable session has no advisor. Skip the advisor steps in this README and in the prompt headers.
 
