@@ -49,15 +49,15 @@ def events(usage):
 
 def block_events(usage):
     """A text block, as CLIProxyAPI streams it: one event per chunk."""
-    first, ping, stop = events(usage)
+    first, _, stop = events(usage)
     return [first,
-            b'event: content_block_start\ndata: {"type":"content_block_start","index":0,'
-            b'"content_block":{"type":"text","text":""}}\n\n',
-            b'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,'
-            b'"delta":{"type":"text_delta","text":"hi"}}\n\n',
+            (b'event: content_block_start\ndata: {"type":"content_block_start","index":0,'
+             b'"content_block":{"type":"text","text":""}}\n\n'),
+            (b'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,'
+             b'"delta":{"type":"text_delta","text":"hi"}}\n\n'),
             b'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
-            b'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},'
-            b'"usage":{"output_tokens":1}}\n\n',
+            (b'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},'
+             b'"usage":{"output_tokens":1}}\n\n'),
             stop]
 
 
