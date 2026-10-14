@@ -13,8 +13,6 @@
 - Carry prior + strongly implied authorization forward; proceed with in-scope reversible work, reads, reviews + fixes. Destructive/irreversible actions require authorization covering their effects.
 - Ask only for missing required information/authority or material scope expansion. Complete authorized independent work + a concrete, reviewable result first; required approval = final step before dependent action.
 - Verify external-service connections before acting. Login/paywall/credential/quota block → request access promptly + continue independent authorized work.
-- Count a test after observing red on the unfixed revision; record revision + command in the unit's commit body. Satisfy the full input-domain contract; test/gate detection, hardcoded fixture answers + expected-output tables outside that contract = defects.
-- Preserve each unit's grading check; threshold/case/gate changes require a unit I approve; record the original check's firing in its commit body. Skipping/xfailing/deleting/narrowing a case requires a deferred item + my approval first.
 - Root + subagents: delegate independent work when collaboration saves time or improves quality; continue useful parallel work + integrate results.
 - Delegation briefs = broader intent + bounded task + context + write/resource ownership + expected evidence; examples where useful. Relay instruction changes. Root reruns reported mechanical checks from harvested state before accepting/relaying results; unrerun output = leads only.
 - Assign explicit, nonoverlapping write ownership for shared files/worktrees, build stores, DBs, ports + browser profiles. Takeover order = stop prior owner agent → stop its task-owned processes → prove quiescence → start successor.
