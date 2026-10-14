@@ -1,7 +1,7 @@
 From 8c8e5b68b71b4b0356833533b74be5c140a49786 Mon Sep 17 00:00:00 2001
 From: Emir Turkes <eturkes@bu.edu>
 Date: Thu, 8 Oct 2026 11:12:38 +0900
-Subject: [PATCH 1/2] fix(proxy): keep mid-conversation system messages in
+Subject: [PATCH 3/4] fix(proxy): keep mid-conversation system messages in
  place for non-Claude models
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

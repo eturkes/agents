@@ -20,9 +20,10 @@ The installed build adds hard termination for timed-out image-compression worker
 
 The source is `~/.local/app/headroom`, a clone of `headroomlabs-ai/headroom`. Branch `fix/image-pool-hard-termination` applies four commits to upstream tag `v0.40.0`: the guard, the prompt fix, the system-message fix, and the block-stop hold. All four commits match the [CachyOS build](../../../host/cachyos/headroom/README.md#image-worker-termination-guard), which describes the worker controls, the three fixes, and their tests.
 
-If the branch has only the guard and the prompt fix, apply the patches for the other two commits. Run this command in `~/.local/app/headroom`:
+If the branch lacks any of the four commits, create it again from `v0.40.0` and apply all four patches. Run these commands in `~/.local/app/headroom`:
 
 ```sh
+git checkout -B fix/image-pool-hard-termination v0.40.0
 git am ~/.local/app/agents/host/cachyos/headroom/patches/*.patch
 ```
 

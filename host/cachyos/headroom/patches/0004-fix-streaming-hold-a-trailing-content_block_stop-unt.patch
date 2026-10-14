@@ -1,7 +1,7 @@
 From 88e3caf1ecd4a3b27d4c9f45f731541e04630697 Mon Sep 17 00:00:00 2001
 From: Emir Turkes <eturkes@bu.edu>
 Date: Thu, 8 Oct 2026 11:58:11 +0900
-Subject: [PATCH 2/2] fix(streaming): hold a trailing content_block_stop until
+Subject: [PATCH 4/4] fix(streaming): hold a trailing content_block_stop until
  the next chunk
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
