@@ -23,25 +23,25 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 
 | Situation | File | Use |
 | --- | --- | --- |
-| Start PROTOTYPE | `prototype.md` | In a new repo, copy in the template files (`Template files`). Write your `Intent` in `.agent/spec.md` first. In a shipped repo, also name the scope in `Phase`. After a route, `Phase` already names it. |
+| Start PROTOTYPE | `prototype.md` | Write your `Intent` in `.agent/spec.md` first. A new repository also needs the template files (`Template files`). In a shipped repository, also name the scope in `Phase`. After a route, `Phase` already names it. |
 | Start ITERATE | `iterate.md` | When PROTOTYPE closes or after a route, paste it. With `auto/`, the session runs until you say go. With `steered/`, it works your feedback into the prototype as one round. |
 | Start IMPLEMENT | `implement.md` | After you say go or after a route, turn on the advisor. Then paste it. It can also open a new scope directly at IMPLEMENT. |
 | MAINTAIN | `maintain.md` | Paste one body per request, queue run, security review or dependency upgrade. |
 | Move work to another phase | `route.md` | Make your request in any session, or paste this body after it. |
 | Continue open work in any phase | `resume.md` | Paste in a fresh session after a pause, a crash or a restart. |
-| Stop now and continue later | `pause-now.md` | Paste into the running session. In-flight work stops, and the repo stays consistent. |
+| Stop now and continue later | `pause-now.md` | Paste into the running session. In-flight work stops, and the repository stays consistent. |
 | Stop after in-flight work finishes | `pause.md` | Paste into the running session. Teammates and running units finish first. |
-| Repo on an older template | `refresh.md` | Copy in the template files first (`Template files`). The session does the migration and nothing else. |
+| Repository on an older template | `refresh.md` | Copy in the template files first (`Template files`). The session does the migration and nothing else. |
 
-- A phase applies to a scope: the whole product, or one surface or feature of a shipped repo.
+- A phase applies to a scope: the whole product, or one surface or feature of a shipped repository.
 - Work can move to any phase, also back to an earlier one. For example, a large MAINTAIN request moves to IMPLEMENT. Several sessions of work on a demo UI move to ITERATE. A rework of the whole product moves to PROTOTYPE.
 - Before a route, the agent asks you to confirm it, unless your request names the phase. The session then saves the open work in commits, sets up the next phase and ends. Its final message names the body for the next session.
 - To skip this extra session, paste the steered body of the target phase into a fresh session. Put your request in its slot.
-- Open work that a route leaves is suspended in `Tasks`. It continues after the routed work, or joins it when both reach the same phase.
+- A route suspends the open work that it leaves in `Tasks`. That work continues after the routed work, or joins the routed work when both reach the same phase.
 - PROTOTYPE and ITERATE are quick. They help you understand and decide the business logic and the direction. Each of your rulings goes into `Decisions` in `.agent/spec.md`. The prototype only shows the direction.
 - IMPLEMENT then builds the best version of the software from your rulings. It selects the best stack again, and that stack can be the same as the prototype stack. IMPLEMENT takes as long as the best version needs.
 - ITERATE on a surface that exists only as shipped code works on a copy. After your go, IMPLEMENT re-implements the approved changes in the shipped code.
-- The template sets default structures, for example the prototype location, CI and the review ledger. A rule in `.claude/rules/` can adapt or retire one of them for a repo, and every prompt follows that rule.
+- The template sets default structures, for example the prototype location, CI and the review ledger. A rule in `.claude/rules/` can adapt or retire one of them for a repository, and every prompt follows that rule.
 - Teammates run at the effort level of the session.
 - The agent decides when to use a teammate or the advisor. The phase and the depth of the work set how often the agent uses each one. The instruction files name the situations where each can help. To require a teammate or an advisor consultation, name it in your request.
 - The agent works on a body until its `Met when` condition holds. It asks you questions whenever your input can improve the work, and it continues after you answer.
@@ -49,11 +49,11 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 - To continue an interrupted run in the same session, send `continue`. In a fresh session, paste `resume.md`.
 - Each project keeps `.agent/spec-lint`, a copy of `claude/spec-lint`. It checks the shape of `.agent/spec.md`, and the gate runs it.
 - `pause.md` and `pause-now.md` write a resume note into `.agent/spec.md`, and `resume.md` removes it when the work is complete. While the note is open, the statusline shows the phase in purple.
-- The agent can edit any project file, `Intent` included. The final message of a session or pause lists its changes to `Intent`, `CLAUDE*.md` files and files from this repo.
+- The agent can edit any project file, `Intent` included. The final message of a session or pause lists its changes to `Intent`, `CLAUDE*.md` files and files from this repository.
 
 ## Template files
 
-Each project carries its own copy of the template files. No file in a project refers to this repository or to this machine, so other developers can use the project as it is. Machine-specific facts, such as tools, accounts and model settings, stay in your user-level `CLAUDE.md`.
+Each project carries its own copy of the template files. No file in a project refers to this repository or to this machine. Thus, other developers can use the project as it is. Machine-specific facts, such as tools, accounts and model settings, stay in your user-level `CLAUDE.md`.
 
 | File in the project | Source in this repository |
 | --- | --- |
@@ -71,7 +71,7 @@ cp "$T/spec-lint" .agent/spec-lint
 cp "$T"/agents/*.md .claude/agents/
 ```
 
-Run the same commands before you paste `refresh.md`. The refresh session compares the new copies with the previous ones in git, and moves the project to the new template.
+Run the same commands before you paste `refresh.md`. The refresh session compares the new copies with the previous copies in git. Then it moves the project to the new template.
 
 ## Advisor
 

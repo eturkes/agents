@@ -4,7 +4,7 @@ paths: ["claude/spec-lint", "claude/check-spec-lint"]
 
 # Spec lint
 
-- Each phase-flow project keeps a byte copy at `.agent/spec-lint`. The copy commands in `claude/prompts/README.md` (`Template files`) place it, so a change here reaches a project at its next refresh.
+- Each phase-flow project keeps a byte copy at `.agent/spec-lint`, placed by the copy commands in `claude/prompts/README.md` `Template files` ⇒ a change here reaches a project at its next refresh.
 
 Checks (gawk, busybox awk, then mawk in Debian):
 

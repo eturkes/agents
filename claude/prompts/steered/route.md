@@ -1,6 +1,6 @@
 # Route
 
-Use in any phase. Replace `<request>` with the work that needs another phase, and name the phase if you know it. Paste everything below the rule, into a running session or a fresh one. Start the next session with the body that the final message names.
+Use: any phase. `<request>` → the work needing another phase (+ the phase, if known) → paste everything below the rule into a running or a fresh session. Next session = the body the final message names.
 
 ---
 

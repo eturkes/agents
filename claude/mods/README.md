@@ -1,23 +1,22 @@
 # Claude Code mods
 
-Each folder here is one Claude Code mod: a plugin of function hooks. A mod runs inside the Claude Code process. It receives live engine events, so it does not parse transcript files.
+Folder = one CC mod = a plugin of function hooks running inside the CC process on live engine events ⇒ no transcript parsing.
 
-| Mod | Hosts | What it does |
+| Mod | Hosts | Does |
 | --- | --- | --- |
-| `context-alert` | cachyos, aeon | Gives one notice per session, loop and tier as context nears compaction. A session resumed within seven days of its last notice keeps the notices it already gave. The main loop gets a notice at 65K and 27K below its compaction point. A teammate gets a notice at 82K and 35K below its compaction point. |
-| `agent-flow` | cachyos, aeon | Appends the deliverable note to every subagent brief. Performs a subagent `Write` that Claude Code rejects for a report file name. Adds the deliverable line to compaction instructions. Asks a long run that wrote nothing at stop. Holds the first `TaskStop` on a mid-turn teammate. Shows a line under the prompt hint with the model and context use of each running agent, idle teammates included, against its compaction trigger. The entries flow onto more lines when the row is full. |
-| `idle-compact` | cachyos, aeon | Tells [`cache-keepalive`](../cache-keepalive/README.md) every 30 seconds whether the session is quiet. Quiet means that no turn runs, and that the last turn left no background task or scheduled wakeup. When the keeper asks at its 55-minute mark, the mod compacts the session. It runs in interactive sessions only. |
-| `turn-email` | cachyos | Sends one email per completed main turn that you start. It also sends one when a run ends with no work in flight, and one per dialog that waits for you. The relay setup is in `../cachyos/turn-email/README.md`. |
+| `context-alert` | cachyos, aeon | One notice per session, loop + tier as context nears compaction: main loop at 65K + 27K below its compaction point, teammate at 82K + 35K. A session resumed within 7 days of its last notice keeps the notices already given. |
+| `agent-flow` | cachyos, aeon | Appends the deliverable note to every subagent brief; performs a subagent `Write` CC rejects for a report filename; adds the deliverable line to compaction instructions; asks a long run that wrote nothing at stop; holds the first `TaskStop` on a mid-turn teammate; line under the prompt hint = each running agent's model + context use against its compaction trigger, idle teammates included, wrapping onto more lines when full. |
+| `idle-compact` | cachyos, aeon | Every 30 s tells [`cache-keepalive`](../cache-keepalive/README.md) whether the session is quiet (no running turn; last turn left no background task or scheduled wakeup); compacts the session when the keeper asks at its 55-min mark. Interactive sessions alone. |
+| `turn-email` | cachyos | One email per completed main turn I start, one per run ending with no work in flight, one per dialog waiting on me. Relay setup = `../cachyos/turn-email/README.md`. |
 
 ## Load
 
-Claude Code loads each folder that the settings `env` key `CLAUDE_CODE_PLUGIN_DIRS` names. The settings files `../cachyos/settings.json` and `../aeon/settings.json` name the deployed copies under `~/.claude/mods/`. Mods need Claude Code 2.1.288 or newer.
-
-An interactive session watches these folders. When you deploy a change, running sessions reload the mod.
+- CC loads each folder named in settings `env` `CLAUDE_CODE_PLUGIN_DIRS`; `../cachyos/settings.json` + `../aeon/settings.json` name the deployed copies under `~/.claude/mods/`. Needs CC ≥ 2.1.288.
+- Interactive sessions watch these folders ⇒ a deployed change reloads the mod in running sessions.
 
 ## Deploy
 
-Run from the repository root. On aeon, leave out `turn-email`.
+From the repo root; aeon omits `turn-email`.
 
 ```sh
 mkdir -p ~/.claude/mods
@@ -28,9 +27,8 @@ done
 
 ## Check
 
-The engine writes the API types into `.claude-plugin/types/` when it loads a mod. The settings load only the deployed copies, so `tsc` needs a copy of those types in the repository folder. That folder ignores itself in git.
-
-Run these checks from the repository root for each mod before you commit a change:
+- The engine writes the API types into `.claude-plugin/types/` when it loads a mod; settings load the deployed copies alone ⇒ `tsc` needs a copy of those types in the repo folder (self-ignored in git).
+- Per mod, from the repo root, before each commit:
 
 ```sh
 rsync -a --delete ~/.claude/mods/<name>/.claude-plugin/types/ claude/mods/<name>/.claude-plugin/types/
@@ -39,6 +37,5 @@ claude plugin test claude/mods/<name>
 tsc -p claude/mods/<name>
 ```
 
-If the mod is not deployed on this host, copy the types of a different deployed mod. The types are the same for all mods, except for the MCP tool types. If no mod is deployed, type-check with the `tsconfig.json` from the header of the plugin-authoring skill's `types/claude-code.d.ts`.
-
-Each mod's `tsconfig.json` sets `noEmit`. Without the types, `tsc` fails and writes no files.
+- Mod undeployed on this host → copy another deployed mod's types (identical across mods, MCP tool types aside); none deployed → type-check with the `tsconfig.json` from the header of the plugin-authoring skill's `types/claude-code.d.ts`.
+- Each mod's `tsconfig.json` sets `noEmit` ⇒ types missing → `tsc` fails + writes nothing.

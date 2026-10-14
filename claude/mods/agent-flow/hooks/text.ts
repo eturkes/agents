@@ -6,20 +6,20 @@ import type { AgentFlowAgent } from '../types'
 // findings/analysis .md files …", whose own exception reads "Files written as input to
 // another tool are fine". The brief files the deliverable under that exception.
 export const SPAWN_NOTE =
-  'When your task names an output file, that file is the deliverable and the input to the validator the brief names, so the Notes clause "Files written as input to another tool are fine" covers it. Write it early, keep it current, then point your final message at it with the headline. Mark each claim you could not confirm as unconfirmed, naming where you looked. Work held only in this conversation ends with the run.'
+  'Output file named in your task = the deliverable + the input to the validator the brief names ⇒ the Notes clause "Files written as input to another tool are fine" covers it. Write it early + keep it current; final message = its path + the headline. Each claim you could not confirm → marked unconfirmed + where you looked. Work held only in this conversation ends with the run.'
 
 // Auto-compaction can drop a brief's paths and marker; only the summary survives it.
 export const COMPACT_NOTE =
-  'The summary must carry verbatim: every path this run must write or update, the completion marker or "Met when" condition it was given, its write allowlist and git posture, the ids of any rows still unfilled, and the exact next action.'
+  'Summary carries verbatim: every path this run must write or update, its completion marker or "Met when" condition, its write allowlist + git posture, the ids of rows still unfilled, the exact next action.'
 
 /** CC's Write rejects a subagent's /^(REPORT|SUMMARY|FINDINGS|ANALYSIS).*\.md$/i file with this error. */
 export const REPORT_REJECTION = 'Subagents should return findings as text'
 
 export const wroteNothing = (n: number) =>
-  `No Write, Edit or commit call appears across your ${n} tool calls, so the findings of this run may exist only in this conversation, which ends with it. If your task named an output file, write it now. If the correct outcome is that nothing needed writing, state that in your final message.`
+  `${n} tool calls, no Write, Edit or commit ⇒ this run's findings may live only in this conversation, which ends with it. Output file named in your task → write it now; nothing needed writing → say so in your final message.`
 
 export function stopHold(name: string, marker: string | undefined, targets: readonly string[]): string {
-  return `${name} is mid-turn. Wait for its turn to end with ${marker ?? 'its completion marker'}: a stop now cuts the in-flight call and any row it is still changing. To stop it anyway (budget, supersession, takeover, cancellation), call TaskStop again, then re-read every file it wrote.${targets.length ? ` Its Write/Edit targets: ${targets.join(', ')}.` : ''}`
+  return `${name} = mid-turn → wait for its turn end + ${marker ?? 'its completion marker'}: a stop now cuts the in-flight call + any row it is still changing. Stop anyway (budget, supersession, takeover, cancellation) → TaskStop again, then re-read every file it wrote.${targets.length ? ` Write/Edit targets: ${targets.join(', ')}.` : ''}`
 }
 
 /** A short lookup answers in its message; a run this long without a write likely lost its findings. */

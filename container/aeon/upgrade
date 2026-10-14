@@ -14,12 +14,12 @@ case ":$PATH:" in
   *) export PATH="$PNPM_HOME/bin:$PATH" ;;
 esac
 
-# --- Rust: rustup, toolchains, and cargo-installed CLIs ---
+# --- Rust: rustup, toolchains + cargo-installed CLIs ---
 rustup self update
 rustup update
 cargo install-update -a
 
-# --- Python: uv and uv-managed tools ---
+# --- Python: uv + uv-managed tools ---
 uv self update
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 
@@ -31,7 +31,7 @@ timeout 30 uv cache prune || echo "uv cache in use (resident uvx tool); prune sk
 # Project pins govern -g too → use HOME for user-global updates.
 pnpm --dir "$HOME" self-update
 
-# npm lives as a pnpm global, so upgrade it explicitly.
+# npm = a pnpm global → upgraded explicitly.
 pnpm --dir "$HOME" add -g npm@latest
 
 # --- ChromiumFish ---
@@ -69,11 +69,11 @@ fi
 
 pnpm --dir "$HOME" store prune
 
-# --- Lean: elan and stable toolchain ---
+# --- Lean: elan + stable toolchain ---
 elan self update
 
-# 'elan toolchain install' exits non-zero when 'stable' already resolves to the
-# newest installed release; ignore just that so 'set -e' doesn't abort the run.
+# `elan toolchain install` exits non-zero once `stable` already resolves to the newest
+# installed release → that case alone is ignored, else `set -e` aborts the run.
 out="$(elan toolchain install stable 2>&1)" && rc=0 || rc=$?
 printf '%s\n' "$out"
 [[ $rc -eq 0 || "$out" == *"already installed"* ]] || exit "$rc"

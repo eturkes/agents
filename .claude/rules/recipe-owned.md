@@ -4,10 +4,10 @@ paths: ["host/cachyos/recipe-owned", "host/cachyos/check-recipe-owned", "host/ca
 
 # Recipe ownership
 
-- `apply` and `rollback` in `ac-loss-policy`, `intel-graphics-policy` and `nvidia-prime-policy` replace or remove a deployed file only when `recipe-owned <source> <target>` passes: the target is a regular file that holds the current or a committed version of the source. Symlinks, other file types and unknown content are refused.
-- Ownership comes from git history, so commit a source change before you deploy it. Otherwise the deployed edit looks foreign once the source moves on.
+- `apply` + `rollback` in `ac-loss-policy`, `intel-graphics-policy`, `nvidia-prime-policy` replace or remove a deployed file only when `recipe-owned <source> <target>` passes: target = regular file holding the current or a committed source version; symlinks, other file types + unknown content → refused.
+- Ownership = git history ⇒ commit a source change before deploying it; else the deployed edit reads as foreign once the source moves on.
 
-Checks (`check-recipe-owned` needs user namespaces and passwordless `sudo -n`):
+Checks (`check-recipe-owned` needs user namespaces + passwordless `sudo -n`):
 
 ```sh
 python -B host/cachyos/check-recipe-owned -q

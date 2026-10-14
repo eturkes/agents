@@ -4,9 +4,9 @@ paths: ["claude/CLAUDE.project.md", "claude/agents/**", "claude/spec-lint", "cla
 
 # Portable template files
 
-- Projects copy `claude/CLAUDE.project.md`, `claude/agents/*.md` and `claude/spec-lint` (`claude/prompts/README.md` `Template files`); Codex projects copy `codex/AGENTS.project.md`. Projects must work for other developers, so these files name nothing outside the project: no home or machine paths, no reference to this repo, no machine-specific tools or model routing, no pointers into user-level `CLAUDE.md` or `AGENTS.md` sections.
-- Machine facts go to the host files: `claude/<host>/CLAUDE.md` and `codex/<host>/AGENTS.md`.
-- A change to a template file reaches a project at its next refresh, which I start.
+- Projects copy `claude/CLAUDE.project.md`, `claude/agents/*.md` + `claude/spec-lint` (`claude/prompts/README.md` `Template files`); Codex projects copy `codex/AGENTS.project.md`. Projects stay portable across machines + users ⇒ these files name nothing outside the project: home or machine paths, this repo, machine-specific tools, model routing, user-level `CLAUDE.md`/`AGENTS.md` sections.
+- Machine facts → host files: `claude/<host>/CLAUDE.md`, `codex/<host>/AGENTS.md`.
+- A template change reaches a project at its next refresh, started by me.
 
 Checks:
 

@@ -1,6 +1,6 @@
 # Iterate
 
-When `Phase` is `ITERATE`, use this body. It can also open a scope directly at ITERATE. Start a fresh session at the project root. Paste everything below the rule. The session runs until you say go.
+Use: `Phase` = `ITERATE`, or a scope opening directly at ITERATE. Fresh session at the project root → paste everything below the rule; it runs until your go.
 
 ---
 

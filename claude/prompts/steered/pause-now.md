@@ -1,6 +1,6 @@
 # Pause now
 
-Use in any phase. When you want to stop right away and continue later, replace `<request>` with your steering. It can name work to let finish first. Then paste this body into the running session. In-flight work stops where it stands, and the repo stays consistent. To let in-flight work finish first, use `pause.md`. Continue later with `resume.md`.
+Use: any phase, stopping at once to continue later; `<request>` → your steering (it can name work to let finish first) → paste into the running session. In-flight work stops where it stands; the repository stays consistent. In-flight work finishing first → `pause.md`; continue later → `resume.md`.
 
 ---
 

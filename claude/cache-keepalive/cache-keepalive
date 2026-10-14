@@ -54,7 +54,6 @@ class Entry:
 
 
 def has_1h_marker(request):
-    """True when a cache_control breakpoint asks for the 1h TTL."""
     def marked(block):
         control = block.get("cache_control") if isinstance(block, dict) else None
         return isinstance(control, dict) and control.get("ttl") == "1h"

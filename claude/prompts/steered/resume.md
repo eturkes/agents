@@ -1,6 +1,6 @@
 # Resume
 
-Use in any phase. Start a fresh session at the project root. Replace `<request>` with the next work and its end point. Paste everything below the rule.
+Use: any phase. Fresh session at the project root; `<request>` → the next work + its end point → paste everything below the rule.
 
 ---
 

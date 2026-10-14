@@ -278,9 +278,9 @@ esac
 pnpm update -g --latest
 
 stage 'Headless browser (chromiumfish)'
-# Browser startup requires executable chrome_crashpad_handler. If fetched cache
-# lacks it, install Chrome for Testing handler matching MAJOR.MINOR.BUILD.
-# Persistent cache ⇒ one repair per browser-version bump.
+# Browser startup requires an executable chrome_crashpad_handler; absent from the fetched cache →
+# the Chrome for Testing handler matching MAJOR.MINOR.BUILD. Persistent cache ⇒ one repair per
+# browser-version bump.
 if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
   pnpm -C "$HOME/.local/share/chromiumfish" update --latest
   chromiumfish fetch

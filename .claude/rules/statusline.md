@@ -4,9 +4,9 @@ paths: ["claude/statusline", "claude/check-statusline"]
 
 # Statusline
 
-- `~/.claude/statusline` is a copy. After a change, run `cp claude/statusline ~/.claude/statusline`.
+- `~/.claude/statusline` = copy → after a change: `cp claude/statusline ~/.claude/statusline`.
 
-Checks (gawk, busybox awk, then mawk and dash in Debian):
+Checks (gawk, busybox awk, then mawk + dash in Debian):
 
 ```sh
 claude/check-statusline

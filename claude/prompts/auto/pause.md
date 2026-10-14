@@ -1,6 +1,6 @@
 # Pause
 
-Use in any phase. When you want to stop after in-flight work finishes, paste this body into the running session. To stop right away, use `pause-now.md`. Continue later with `resume.md`.
+Use: any phase, stopping once in-flight work finishes → paste into the running session. Stop at once → `pause-now.md`; continue later → `resume.md`.
 
 ---
 

@@ -21,7 +21,7 @@ FABLE_DELIVERY = (
     " (~one focused test per stated behavior); scratch checks stay scratch.\n"
     "- Edit tokens scale with bytes emitted → surgical edit over whole-file rewrite wherever both yield the"
     " same bytes.\n"
-    "- Plain prose on every surface: each sentence states a fact, an action, or a result.\n"
+    "- Plain prose in messages to me + human-facing text: each sentence states a fact, an action, or a result.\n"
 )
 EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
     ("passes (advisor, compaction), occupancy", "passes (compaction), occupancy"),

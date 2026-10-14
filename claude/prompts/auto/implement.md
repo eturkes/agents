@@ -1,6 +1,6 @@
 # Implement
 
-After you say go at the end of ITERATE or after a route, use this body. It can also open a scope directly at IMPLEMENT; a repo without the template files gets them first (README `Template files`). Start a fresh session at the project root. Turn on the advisor (README `Advisor`). Paste everything below the rule.
+Use: ITERATE go, a route, or a scope opening directly at IMPLEMENT. Template files absent → copy them in (README `Template files`). Fresh session at the project root + advisor on (README `Advisor`) → paste everything below the rule.
 
 ---
 

@@ -1,6 +1,6 @@
 # Route
 
-Use in any phase. The agent follows this body when a request needs another phase. To start a route yourself, paste this body into the running session after your request. Start the next session with the body that the final message names.
+Use: any phase. The agent follows this body when a request needs another phase; to route yourself, paste it into the running session after your request. Next session = the body the final message names.
 
 ---
 

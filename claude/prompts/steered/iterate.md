@@ -1,6 +1,6 @@
 # Iterate
 
-When `Phase` is `ITERATE`, use this body. It can also open a scope directly at ITERATE. Start a fresh session at the project root. Replace `<request>` with your feedback or steering. Paste everything below the rule. The session works your feedback into the prototype as one round, then stops. Send the next round as a new message. To close ITERATE, say go.
+Use: `Phase` = `ITERATE`, or a scope opening directly at ITERATE. Fresh session at the project root; `<request>` → your feedback or steering → paste everything below the rule. One round per message: the feedback lands in the prototype, then the session stops; next round = a new message; your go closes ITERATE.
 
 ---
 

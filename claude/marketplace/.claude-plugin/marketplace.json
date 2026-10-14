@@ -46,8 +46,8 @@
     },
     {
       "name": "markdown-lsp",
-      "description": "Markdown LSP via Marksman: link + reference diagnostics, heading symbols",
-      "version": "1.0.0+5ed1b71df2c3",
+      "description": "Markdown LSP via Marksman: link and reference diagnostics, heading symbols",
+      "version": "1.0.0+b67cd93b745d",
       "source": "./plugins/markdown-lsp",
       "category": "development",
       "strict": false,

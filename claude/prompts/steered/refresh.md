@@ -1,12 +1,12 @@
 # Refresh
 
-For a phase-flow repo on an older template, use this body, one session per repo. At the project root, copy in the template files (README `Template files`). Start a fresh session. Replace `<request>` with your steering. Paste everything below the rule.
+Use: a phase-flow repository on an older template, one session per repository. At the project root: copy in the template files (README `Template files`) → fresh session; `<request>` → your steering → paste everything below the rule.
 
 ---
 
 <request>
 
-My request above outranks the rest of this body. This session moves the repo to the current template and does nothing else. The template files are copied in, uncommitted: `CLAUDE.md`, `.claude/agents/*.md`, `.agent/spec-lint`; the delta = their `git diff HEAD`. Scope = the steps below + the checks that prove them; every other finding (bug, stale doc, improvement) becomes one `.agent/deferred.md` row with its acceptance check. Ask me whenever a step needs a ruling.
+My request above outranks the rest of this body. This session moves the repo to the current template. The template files are copied in, uncommitted: `CLAUDE.md`, `.claude/agents/*.md`, `.agent/spec-lint`; the delta = their `git diff HEAD`. Scope = the steps below + the checks that prove them; every other finding (bug, stale doc, improvement) becomes one `.agent/deferred.md` row with its acceptance check. Ask me whenever a step needs a ruling.
 
 1. Orient. `git status` = the template files alone modified or added, else ask me; read the new `CLAUDE.md` in full + the whole delta (`git diff HEAD -- CLAUDE.md .claude/agents .agent/spec-lint`, new files included). A unit branch awaiting landing (each linked worktree's branch in `git worktree list` + each branch the resume note names) whose landing would revert the refresh (an exact-tree landing does) → ask me before editing.
 2. Obligations = every clause the delta adds or changes. Per clause: this repo's practice follows it, or a `.claude/rules/` ruling keyed on that clause adapts, retires or marks it inapplicable (ask me where the choice is mine); a term, path or value the delta renames, changes or retires → live law follows it, its obligation recording the old form; a changed `.agent/spec.md` layout → the spec follows it, preservation proven by script (unit ids before = unit ids after). A line the delta removes that held this repo's own law (a local edit to the old copy) → its owning `.claude/rules/` file; a role file the template does not ship = the repo's own → kept.

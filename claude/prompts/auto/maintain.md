@@ -1,6 +1,6 @@
 # Maintain
 
-When `Phase` is `MAINTAIN`, use this body. Start a fresh session at the project root. Paste one body: the text between its two rules. For a request or a named set of rows, use `steered/maintain.md`.
+Use: `Phase` = `MAINTAIN`. Fresh session at the project root → paste one body = the text between its two rules. A request or named rows → `steered/maintain.md`.
 
 ## Queue
 
