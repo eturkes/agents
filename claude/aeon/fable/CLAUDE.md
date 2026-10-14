@@ -83,5 +83,5 @@
 
 - Symlinks: `Read` follows; `Edit`/`Write` on a symlinked file fail (`Refusing to write through symlink`) → edit `readlink -f` target, use a symlinked parent, or write through Bash.
 - `Edit` line deletion → trailing-newline form (`victim\n`→``) or anchor-keeping replace (`anchor\nvictim`→`anchor`); leading-`\n` old_string + empty new_string also eats the trailing newline → neighbors merge on a success-reported edit (multi-line inserts clean). Post-edit `command grep -n` a neighbor line.
-- Durable guidance routing: env, tooling + machine facts → this file; working principles + project practices → project template `~/.local/app/agents/claude/CLAUDE.project.md` (full rule = its `Authoring`), since this file also loads in one-off sessions.
+- Durable guidance routing: project-independent env/tooling + machine capabilities → this file; principles + config rules for working within projects → project template `~/.local/app/agents/claude/CLAUDE.project.md` (full rule = its `Authoring`), since this file also loads in one-off sessions.
 - My direct instructions outrank any `CLAUDE.md`.
