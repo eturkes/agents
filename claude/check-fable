@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fable drift gate: claude/<host>/fable/CLAUDE.md = host CLAUDE.md + EDITS − advisor bullets;
-fable/settings.json = host settings.json + env.ANTHROPIC_MODEL = MODEL. Mismatch → diff, exit 1."""
+fable/settings.json = host settings.json (MAIN model = launch `--model`). Mismatch → diff, exit 1."""
 import difflib
 import json
 import pathlib
@@ -8,18 +8,17 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent
-MODEL = "claude-fable-5-1"
 EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
     ("passes (advisor, compaction), occupancy", "passes (compaction), occupancy"),
-    ("MAIN = `claude-opus-5-5[1m]` at 1M → 967K;", "MAIN = `claude-fable-5-1` at 1M → 967K;"),
+    ("MAIN = `claude-opus-5-5` at 1M → 967K;", "MAIN = `claude-fable-5-1` at 1M → 967K;"),
     ("⇒ a teammate claim = a lead (`Harvest`). Fits below",
      "⇒ a teammate claim = a lead (`Harvest`). MAIN = Fable 5.1: Opus 5.5 leads it on most work, code above"
      " all; Fable leads on reading my intent, judgment, taste (original UI/frontend design, naming, API + CLI"
      " surface, prose), world knowledge + wording for me, yet runs less thorough + occasionally asserts an"
      " unchecked assumption ⇒ check each assumption before building on or stating it. Fits below"),
-    ("MAIN = `claude-opus-5-5[1m]`. Teammates",
-     "MAIN = `claude-fable-5-1`; config home `~/.claude/fable` (repo `claude/{host}/fable/`) = own"
-     " `CLAUDE.md` + `settings.json`, every other entry → symlink into `~/.claude` (`claude/link-profile`)."
+    ("MAIN = CC's unpinned default `claude-opus-5-5` (1M window). Teammates",
+     "MAIN = `claude-fable-5-1` via launch `--model claude-fable-5-1`; config home `~/.claude/fable` (repo"
+     " `claude/{host}/fable/`) = own `CLAUDE.md` + `settings.json` (= host copy), every other entry → symlink into `~/.claude` (`claude/link-profile`)."
      " Teammates"),
 ]
 ADVISOR = re.compile(r"^- Advisor = CC `/advisor`.*?^- Advisor rulings: .*?\n", re.M | re.S)
@@ -37,9 +36,7 @@ def claude_md(text, host):
 
 
 def settings_json(text, _host):
-    d = json.loads(text)
-    d["env"]["ANTHROPIC_MODEL"] = MODEL
-    return json.dumps(d, indent=2, sort_keys=True)
+    return json.dumps(json.loads(text), indent=2, sort_keys=True)
 
 
 n = fail = 0

@@ -15,7 +15,7 @@ Start each fresh session with this command. Replace `<gpt-model>` with the GPT m
 CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> claude --effort <level>
 ```
 
-Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teammate model. Choose the model and the effort level for the phase:
+Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teammate model. The settings files also set no main model and no effort level. Without other flags, the session runs Opus 5.5 with a 1M context window at `medium` effort. To change the effort level, use `--effort`, also when you resume a session. The `/effort` command writes the level into `settings.json`, and then the file differs from this repository. Choose the model and the effort level for the phase:
 
 - In PROTOTYPE and ITERATE, the agent gives separate parts of the work to small teammates that run in parallel. Choose a cheap model and a low effort level. For design choices such as the UI, these phases build several different variants, including at least one unconventional idea. You compare the variants and pick one or combine them.
 - In IMPLEMENT, the agent uses teammates for deep work wherever they can make it more correct. Deep work is core logic, or any unit whose defect would reach you unseen. The agent does most other work alone. This phase also does more research on state-of-the-art methods. Choose a strong model and a high effort level.
@@ -64,10 +64,10 @@ Claude Code reads a whole message that starts with `/advisor` as the advisor mod
 
 ## Fable as MAIN
 
-To run Fable 5.1 as the main agent, start the session with the Fable profile. Replace `<gpt-model>` and `<level>` as for an Opus session.
+To run Fable 5.1 as the main agent, start the session with the Fable profile and the `--model` flag. Replace `<gpt-model>` and `<level>` as for an Opus session.
 
 ```sh
-CLAUDE_CONFIG_DIR=$HOME/.claude/fable CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> claude --effort <level>
+CLAUDE_CONFIG_DIR=$HOME/.claude/fable CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> claude --model claude-fable-5-1 --effort <level>
 ```
 
 With `CLAUDE_CONFIG_DIR`, Claude Code reads its global `CLAUDE.md` and `settings.json` from `~/.claude/fable`. The other entries in that folder link into `~/.claude`, so Fable and Opus sessions share transcripts, history, MCP servers, agents, plugins and mods.
