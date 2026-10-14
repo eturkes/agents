@@ -20,12 +20,12 @@ ln -s ../../.claude.json "$b/other/.claude.json"
 run fable; ck missing-deploy 2 "link-profile: $p/CLAUDE.md missing: deploy it first"
 run; ck no-name 2 'usage: link-profile [--check] <name>'
 run ../x; ck dotted-name 2 'usage: link-profile [--check] <name>'
-echo fable > "$p/CLAUDE.md"; echo '{}' > "$p/settings.json"
-run fable; ck fresh 0 'fable: 4 changes, 0 conflicts' \
+echo fable > "$p/CLAUDE.md"
+run fable; ck fresh 0 'fable: 5 changes, 0 conflicts' \
   '[ "$(readlink "$p/agents")" = ../agents ]' '[ "$(readlink "$p/history.jsonl")" = ../history.jsonl ]' \
   '[ "$(readlink "$p/.credentials.json")" = ../.credentials.json ]' \
   '[ "$(readlink "$p/.claude.json")" = ../../.claude.json ] && [ -f "$p/.claude.json" ]' \
-  '[ ! -L "$p/CLAUDE.md" ] && [ "$(cat "$p/CLAUDE.md")" = fable ]' '[ ! -L "$p/settings.json" ]' \
+  '[ ! -L "$p/CLAUDE.md" ] && [ "$(cat "$p/CLAUDE.md")" = fable ]' '[ "$(readlink "$p/settings.json")" = ../settings.json ]' \
   '[ ! -e "$p/other" ] && [ ! -e "$p/fable" ]'
 run fable; ck idempotent 0 'fable: 0 changes, 0 conflicts'
 run --check fable; ck check-clean 0 'fable: 0 changes needed, 0 conflicts'
@@ -44,6 +44,11 @@ rm "$b/history.jsonl"
 run fable; ck dangling 0 'fable: 1 changes, 0 conflicts' '[ ! -L "$p/history.jsonl" ]'
 rm "$p/agents" && ln -s /nowhere "$p/agents"
 run fable; ck relink 0 'fable: 1 changes, 0 conflicts' '[ "$(readlink "$p/agents")" = ../agents ]'
+rm "$p/settings.json" && cp "$b/settings.json" "$p/settings.json"
+run fable; ck identical-copy 0 'fable: 1 changes, 0 conflicts' '[ "$(readlink "$p/settings.json")" = ../settings.json ]'
+rm "$p/settings.json" && echo '{}' > "$p/settings.json"
+run fable; ck differing-copy 1 'fable: 0 changes, 1 conflicts' '[ ! -L "$p/settings.json" ]'
+rm "$p/settings.json" && ln -s ../settings.json "$p/settings.json"
 rm "$p/.claude.json" && echo '{}' > "$p/.claude.json"
 run fable; ck real-claude-json 1 'fable: 0 changes, 1 conflicts' '[ ! -L "$p/.claude.json" ]'
 if [ "$fail" -eq 0 ]; then echo "link-profile: $n/$n cases pass"; else echo "link-profile: $fail/$n cases FAIL"; exit 1; fi

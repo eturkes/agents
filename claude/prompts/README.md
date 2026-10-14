@@ -70,7 +70,7 @@ To run Fable 5.1 as the main agent, start the session with the Fable profile and
 CLAUDE_CONFIG_DIR=$HOME/.claude/fable CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model> claude --model claude-fable-5-1 --effort <level>
 ```
 
-With `CLAUDE_CONFIG_DIR`, Claude Code reads its global `CLAUDE.md` and `settings.json` from `~/.claude/fable`. The other entries in that folder link into `~/.claude`, so Fable and Opus sessions share transcripts, history, MCP servers, agents, plugins and mods.
+With `CLAUDE_CONFIG_DIR`, Claude Code reads its global `CLAUDE.md` from `~/.claude/fable`. The other entries in that folder link into `~/.claude`, so Fable and Opus sessions share settings, transcripts, history, MCP servers, agents, plugins and mods.
 
 A Fable session has no advisor. Skip the advisor steps in this README and in the prompt headers.
 
@@ -78,8 +78,8 @@ To deploy or update the profile, run these commands from the repository root. Re
 
 ```sh
 mkdir -p ~/.claude/fable
-cp claude/<host>/fable/CLAUDE.md claude/<host>/fable/settings.json ~/.claude/fable/
+cp claude/<host>/fable/CLAUDE.md ~/.claude/fable/
 claude/link-profile fable
 ```
 
-After a Claude Code update or a new entry in `~/.claude`, run `claude/link-profile fable` again. `claude/link-profile --check fable` lists the changes that the profile needs and leaves the files as they are.
+If `~/.claude/fable/settings.json` is a copy of `~/.claude/settings.json`, `link-profile` replaces the copy with a link. After a Claude Code update or a new entry in `~/.claude`, run `claude/link-profile fable` again. `claude/link-profile --check fable` lists the changes that the profile needs and leaves the files as they are.

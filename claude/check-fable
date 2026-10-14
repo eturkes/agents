@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Fable drift gate: claude/<host>/fable/CLAUDE.md = host CLAUDE.md + EDITS − advisor bullets;
-fable/settings.json = host settings.json (MAIN model = launch `--model`). Mismatch → diff, exit 1."""
+"""Fable drift gate: claude/<host>/fable/CLAUDE.md = host CLAUDE.md + EDITS − advisor bullets.
+Mismatch → diff, exit 1."""
 import difflib
-import json
 import pathlib
 import re
 import sys
@@ -18,7 +17,8 @@ EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
      " unchecked assumption ⇒ check each assumption before building on or stating it. Fits below"),
     ("MAIN = CC's unpinned default `claude-opus-5-5` (1M window). Teammates",
      "MAIN = `claude-fable-5-1` via launch `--model claude-fable-5-1`; config home `~/.claude/fable` (repo"
-     " `claude/{host}/fable/`) = own `CLAUDE.md` + `settings.json` (= host copy), every other entry → symlink into `~/.claude` (`claude/link-profile`)."
+     " `claude/{host}/fable/`) = own `CLAUDE.md`, every other entry (`settings.json` included) → symlink"
+     " into `~/.claude` (`claude/link-profile`)."
      " Teammates"),
 ]
 ADVISOR = re.compile(r"^- Advisor = CC `/advisor`.*?^- Advisor rulings: .*?\n", re.M | re.S)
@@ -35,29 +35,22 @@ def claude_md(text, host):
     return text
 
 
-def settings_json(text, _host):
-    return json.dumps(json.loads(text), indent=2, sort_keys=True)
-
-
 n = fail = 0
 for host in ("cachyos", "aeon"):
-    for name, fable in (("CLAUDE.md", claude_md), ("settings.json", settings_json)):
-        n += 1
-        src, dst = ROOT / host / name, ROOT / host / "fable" / name
-        rel = str(dst.relative_to(ROOT.parent))
-        have = dst.read_text(encoding="utf-8")
-        if name == "settings.json":
-            have = json.dumps(json.loads(have), indent=2, sort_keys=True)
-        try:
-            want = fable(src.read_text(encoding="utf-8"), host)
-        except ValueError as e:
-            fail += 1
-            print(f"FAIL {rel}: {e}")
-            continue
-        if have != want:
-            fail += 1
-            print(f"FAIL {rel}")
-            sys.stdout.writelines(difflib.unified_diff(want.splitlines(True), have.splitlines(True),
-                                                       "expected", rel, n=0))
+    n += 1
+    src, dst = ROOT / host / "CLAUDE.md", ROOT / host / "fable" / "CLAUDE.md"
+    rel = str(dst.relative_to(ROOT.parent))
+    try:
+        want = claude_md(src.read_text(encoding="utf-8"), host)
+    except ValueError as e:
+        fail += 1
+        print(f"FAIL {rel}: {e}")
+        continue
+    have = dst.read_text(encoding="utf-8")
+    if have != want:
+        fail += 1
+        print(f"FAIL {rel}")
+        sys.stdout.writelines(difflib.unified_diff(want.splitlines(True), have.splitlines(True),
+                                                   "expected", rel, n=0))
 print(f"check-fable: {n - fail}/{n} files match")
 sys.exit(fail > 0)
