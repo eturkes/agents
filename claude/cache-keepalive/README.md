@@ -20,7 +20,9 @@ Claude Code also has its own keepalive. It runs only when `ANTHROPIC_BASE_URL` i
 
 The relay forwards the body of every request and response unchanged. It sets the `Host` header for the upstream and drops hop-by-hop headers.
 
-In a streamed response, the relay can delay one event. When a chunk ends with a `content_block_stop` event, the relay holds that event and sends it together with the next chunk. Claude Code writes the transcript entries of an in-process teammate every 100 ms, and it adds the final usage and `stop_reason` when `message_delta` arrives. CLIProxyAPI can send `message_delta` more than 100 ms after the last `content_block_stop`. Without the hold, such an entry reaches disk without its final usage. It stores a request when all of these hold:
+In a streamed response, the relay can delay one event. When a chunk ends with a `content_block_stop` event, the relay holds that event and sends it together with the next chunk. Claude Code writes the transcript entries of an in-process teammate every 100 ms, and it adds the final usage and `stop_reason` when `message_delta` arrives. CLIProxyAPI can send `message_delta` more than 100 ms after the last `content_block_stop`. Without the hold, such an entry reaches disk without its final usage.
+
+The relay stores a request when all of these hold:
 
 - The request is a `POST` to `/v1/messages` with a `claude` model.
 - The `x-claude-code-request-class` header is `main`. Claude Code sends this header only when the settings `env` key `CLAUDE_CODE_GATEWAY_HINT_HEADERS` is `1`.

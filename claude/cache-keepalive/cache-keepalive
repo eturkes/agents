@@ -363,8 +363,8 @@ def split_block_stop(data):
     """(send now, hold): a trailing complete content_block_stop event waits for the next chunk.
 
     CC writes an in-process teammate's transcript entry on a 100 ms timer and adds usage + stop_reason
-    at message_delta. CLIProxyAPI sends message_delta up to ~150 ms after the last content_block_stop
-    (4 of 32 gpt-6-luna responses > 100 ms), so those entries reached disk without final usage.
+    at message_delta; CLIProxyAPI can send message_delta >100 ms after the last content_block_stop →
+    without the hold, that entry reaches disk without final usage.
     """
     if not data.endswith(b"\n\n"):
         return data, b""
