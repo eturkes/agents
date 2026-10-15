@@ -1,152 +1,106 @@
 ---
 name: vm-instructions
-description: "Regenerate VM policies, install pinned controller deltas, and create instruction-only active versions."
+description: "VM policies → PromptVM controller releases + native instruction-only versions; verify historical receipts."
 ---
 
 # VM instructions
 
-Apply [scope/invariants](../../../codex/void/AGENTS.md). Run host recipes in Bash from the `agents/` root; keep transient baselines/stages outside tracked paths.
+Scope/invariants → [VM instruction maintenance](../../../codex/void/AGENTS.md). Host commands = Bash from `agents/`, `python3.12 -B`; guest operator = `/usr/bin/python3 -I -B`. Transient stages/baselines → outside tracked paths.
 
-## Current immutable fleet runtime
+## Ownership + invariants
 
-Live controllers are canonical in `../promptvm/promptvm/deployment/`. The legacy
-mutable-controller recipes below are historical references; do not overwrite
-frozen controller, policy or receipt files in `eturkes.com/ops` or installed
-`/usr/local/libexec` trees for a live policy change.
+- Live source = `../promptvm/promptvm/deployment/`; controller changes, including policy constants → one verified PromptVM wheel. Canonical build/release/recovery procedure = `../promptvm/docs/deployed-vms.md`.
+- Frozen `../eturkes.com/ops` controller/policy payloads, `/usr/local/libexec` trees + original receipts = immutable recovery assets. Historical engine path/pin = `runtime-policy.py:{ENGINE,ENGINE_SHA256}`; `runtime-policy.py stage` + generated `--guest-install`/`--guest-recover` → matching historical procedure. Live releases → PromptVM.
+- Canonical edit/chat payloads = `codex/void/{vm}/AGENTS.md`, `codex/void/AGENTS.chat.md`; materialization preserves installation constants + normalized nonpolicy AST. Shared chat changes affect all three profiles.
+- Preserved = source path/type/content identity outside root `AGENTS.md`; report/private/runtime/older-history/manifest/commit + VM `.codex/` auth/config bytes. Active instruction changes → native linked-child/identical-head no-op via `update-workspace.py --release SHA256`.
+- Release rollback tests precede source transitions. Runtime rollback = pre-source-child phase; committed/uncertain work → forward reconciliation with its matching runtime, because native receipts bind durable ancestry.
 
-1. Edit `codex/void/{vm}/AGENTS.md`, then use `runtime-policy.py source` against
-   the corresponding live controller. Copy its policy-only constant delta into
-   the live source and its policy bytes into
-   `../promptvm/promptvm/deployment/{vm}/workspace-AGENTS.md`. Rehab's live
-   controller selects that packaged file rather than its frozen historical file.
-2. Run `test_*.py` in `codex/void`; run `runtime-policy.py check-source` on each
-   live controller (Rehab adds `--workspace` pointing at its packaged policy),
-   and `cmp` each canonical policy against the corresponding packaged policy.
-   Run PromptVM's unit, Linux and unchanged historical compatibility checks and
-   the sibling site's `./scripts/check`. Commit and repeat local policy gates.
-3. Build one PromptVM wheel, stage/activate it with `scripts/deploy-vms`, and
-   complete rollback tests **before** instruction-only source transitions.
-4. Retain the canonical policy and unmodified `update-workspace.py` as root-owned
-   reviewed artifacts outside Projects. Stop only that VM's web/controller pair,
-   prove quiescence, and run the existing operator with `--release WHEEL_SHA256`
-   plus the selected immutable controller's SHA-256 and canonical policy SHA-256.
-   This verifies the immutable distribution and uses the unchanged native
-   linked-child/no-op transaction functions. Exit 3 still requires forward
-   reconciliation; do not roll runtime back across a committed source child.
-5. Require exactly one linked child, unchanged non-instruction source/report and
-   private/runtime/history preimages, and a repeated identical-head no-op. Start
-   controller then web; run the unchanged authenticated baseline checker between
-   VMs. Keep every receipt and original version.
+## Target bindings
 
-## Targets
-
-| VM | SSH peer | Host known-hosts file | Prefix | Active project |
-|---|---|---|---|---|
-| nanoha | `nanoha@172.31.102.2` | `~/.ssh/known_hosts` | `apex` | `/home/nanoha/Projects/apex_ps` |
-| naoto | `naoto@172.31.101.2` | `~/.ssh/known_hosts_naoto` | `tau` | `/home/naoto/Projects/tau-mutant-integration-ng` |
-| rehab | `rehab@172.31.103.2` | `~/.ssh/known_hosts_rehab` | `rehab` | `/home/rehab/Projects/rehab` |
-
-- Installed controller = `/usr/local/libexec/{prefix}-dashboard/{prefix}_dashboard/orchestrator.py`; local source = `../eturkes.com/ops/{vm}/{prefix}_dashboard/orchestrator.py`.
-- State/socket = `/var/lib/{prefix}-dashboard/store.json`, `/run/{prefix}-dashboard/control.sock`; history = `/home/{vm}/Projects/.{prefix}-history`.
-- Services = `/var/service/{prefix}-dashboard-{web,orchestrator}`; Rehab = `/var/service/rehab-{web,orchestrator}`.
-- Rehab installed workspace policy = `/usr/local/libexec/rehab-dashboard/workspace-AGENTS.md`.
-- Engine = `../eturkes.com/ops/prompt-history-agent-update.py`; exact digest owned by `runtime-policy.py:ENGINE_SHA256`.
+- Profiles = `nanoha`, `naoto`, `rehab`. SSH accounts/peers/known-hosts + connection options → `../promptvm/scripts/deploy-vms` (`TARGETS`, `ssh_options`); host-key fingerprints → pinned historical engine. Services/entry points → `../promptvm/scripts/guest-deploy.py`; project/state/socket/history paths → selected controller constants.
+- Live root = `/usr/local/lib/promptvm/releases/{wheel-sha256}`; active pointer = `/usr/local/lib/promptvm/current`. Controller = `{release-root}/promptvm/deployment/{vm}/orchestrator.py`; packaged policy = sibling `workspace-AGENTS.md`.
 
 ## Prepare + regenerate
 
-1. Inspect both repositories' status + applicable instructions. Resolve user paths; set `policy_vm`, `policy_source` + target variables from the table. Allocate `policy_stage=$(mktemp -d "${TMPDIR:-/tmp}/agents-policy.XXXXXXXX")`. Discover host `python3.12` and guest `python3`; guest operator/interpreter = `/usr/bin/python3 -I -B`.
-2. Verify the selected SSH connection + `sudo -n true`. Use `ssh -F none -T`, port `22`, `BatchMode=yes`, `GlobalKnownHostsFile=/dev/null`, the resolved `UserKnownHostsFile`, `StrictHostKeyChecking=yes`, `HostKeyAlgorithms=ssh-ed25519`, `UpdateHostKeys=no`, `ConnectTimeout=5`. Match the engine's pinned host-key fingerprint.
-3. Capture authenticated baseline: `python3.12 -B codex/void/check-web.py --output "$policy_stage/web-before.json"`. Credentials stay in `~/.local/share/eturkes/web-credentials.txt`; the checker consumes them privately.
-4. Read the installed controller through verified SSH into `$policy_stage/before.py`; compare local/remote SHA-256 and set `policy_before_sha`. For Rehab, capture `$policy_stage/workspace-before.md` + `policy_workspace_before_sha` likewise. Record current project target, saved head, version/checkpoint inventory + old manifest/commit hashes; inspect private inputs through hashes only.
-5. Edit canonical payloads. For each VM, materialize local source into a fresh staging directory:
+1. Inspect affected repositories' status + instructions; preserve unrelated edits. Resolve user paths; set `policy_vm`, `policy_source=../promptvm/promptvm/deployment/$policy_vm/orchestrator.py` + selected target bindings. Allocate `policy_stage=$(mktemp -d "${TMPDIR:-/tmp}/agents-policy.XXXXXXXX")`.
+2. Verify selected SSH connection + `sudo -n true` with canonical connection options + pinned fingerprint. Capture authenticated baseline: `python3.12 -B codex/void/check-web.py --output "$policy_stage/web-before.json"`. Checker-owned credential reads stay private.
+3. Record release/service bindings, active project target, saved head, version/checkpoint inventory + preserved-byte hashes. Private inputs → hashes only.
+4. Edit canonical payloads; materialize each affected live controller:
 
    ```sh
    python3.12 -B codex/void/runtime-policy.py source "$policy_vm" \
-     --controller "$policy_source" --output "$policy_stage/source"
+     --controller "$policy_source" --output "$policy_stage/$policy_vm/source"
    ```
 
-   Review the policy-only delta; copy `controller.py` into its local ops source. Copy `codex/void/$policy_vm/AGENTS.md` to `../eturkes.com/ops/$policy_vm/project-AGENTS.md`. Repeat materialization; `cmp` the controller output to prove idempotence. Keep Naoto's installation placeholders literal; preserve the agent's Git boundary + controller-owned saved versions when aligning wording.
+   Review the policy-only delta; copy staged `controller.py` → `"$policy_source"`, canonical policy → `../promptvm/promptvm/deployment/$policy_vm/workspace-AGENTS.md`. Rehab reads that packaged file. Repeat into a fresh replay directory; `cmp` both outputs + live source → idempotence.
+5. Run the local policy gate below + PromptVM's unit, actual Linux isolation + unchanged historical compatibility gates per its release procedure. Commit cohesive policy/source units; rerun local gates from committed state.
 
-   Refresh Nanoha's `EXPECTED_APP_POLICY_TREE_SHA256` from the existing digest implementation:
+## Release live controllers
 
-   ```sh
-   python3.12 -I -B - <<'PY'
-   from pathlib import Path
-   import subprocess
-   import sys
-   root = Path('../eturkes.com/ops/nanoha')
-   source = (root / 'provision-guest.sh').read_text()
-   body = source.split('app_policy_digest()\n', 1)[1].split("<<'PY'\n", 1)[1].split('\nPY\n', 1)[0]
-   names = ('apex_dashboard', 'project-AGENTS.md', 'codex-config.toml',
-            'enable-render-firewall.sh', 'freeze-render-library.sh', 'lock-codex-home.sh')
-   subprocess.run([sys.executable, '-I', '-B', '-', *(str(root / name) for name in names)],
-                  input=body.encode(), check=True)
-   PY
-   ```
+Release commands = from `../promptvm/`, per its canonical procedure. `policy_wheel` = reviewed wheel's absolute path; `policy_release` = wheel SHA-256. `scripts/deploy-vms --wheel "$policy_wheel" --stage` stages without service changes; `--activate --test-rollback` activates, tests rollback + reactivates. Default = all profiles sequentially; `--profile "$policy_vm"` selects one. Same wheel → all targeted VMs; authenticated web/backend gates run between transitions. Snapshots + service preimages + `/var/lib/promptvm-deployments/{vm}-{wheel-sha256}/` receipts remain retained.
 
-   Replace only that expected pin. Set the active-policy SHA in `../eturkes.com/ops/rehab/README.md` to `sha256sum codex/void/rehab/AGENTS.md`; preserve older receipts.
-6. Run the local gate below. Materialize the guest transaction from the verified **installed** baseline, independent of local template placeholders:
+Verify each guest's active immutable package:
 
-   ```sh
-   python3.12 -B codex/void/runtime-policy.py stage "$policy_vm" \
-     --controller "$policy_stage/before.py" --before-sha256 "$policy_before_sha" \
-     --output "$policy_stage/runtime"
-   ```
+```sh
+sudo -n env PYTHONPATH=/usr/local/lib/promptvm/current \
+  /usr/bin/python3 -B -m promptvm.release verify
+```
 
-   Rehab adds `--workspace "$policy_stage/workspace-before.md" --workspace-before-sha256 "$policy_workspace_before_sha"`. Review `manifest.json` + candidate payloads; rerun with identical inputs and compare outputs byte-for-byte. An already-canonical runtime needs no new transaction; reuse its matching retained review directory + verified installed digest.
+Require active pointer + runit entry points → `policy_release`; installed controller bytes = reviewed wheel member; packaged policy = canonical bytes. `policy_controller_sha` = approved controller SHA-256; `policy_sha` = canonical instruction SHA-256. Already-active matching release → verification only.
 
-## Install runtime + active policy
+## Historical receipt checks
 
-Stage one VM at a time; keep the others serving. Feed `runtime/guest-update.py` unchanged through verified SSH to `/usr/bin/python3 -I -B - MODE VM` under `sudo -n`.
+Verify the retained review's original manifest/script/preimage hashes; run its unchanged `guest-update.py --guest-check VM` through verified SSH + the isolated guest interpreter under `sudo -n`. `installed` = historical receipt verified; `ready` = historical preimage, with live deployment still owned by PromptVM. Receipt failures → matching historical recovery procedure. Historical results + live release verification remain separate.
 
-1. Retain `/var/lib/agent-policy-reviews/{transaction_id}/` as a root-owned mode-`0700` receipt directory, outside Projects. Store root-owned mode-`0600` files: `baseline-controller.py`, Rehab `baseline-workspace-AGENTS.md`, `guest-update.py`, `manifest.json`, `update-workspace.py`, canonical `AGENTS.md`, then `version-update.json`. Verify transferred SHA-256 + the installed baseline digest before replacement. Set `policy_guest_stage` to this directory, `policy_sha` to the canonical policy digest, `policy_controller_sha` to the candidate digest. Temporary uploads stay separate.
-2. Run `--guest-check VM`; require `ready` or `installed`. For `ready`, run `--guest-install VM`; then require `--guest-check VM` = `installed` + the installed candidate digest. The engine owns locking, rollback + service/health gates. Resolve runtime transaction failures with the same generated script's `--guest-recover VM` **before** starting the workspace transition.
-3. Stop web first; require controller state `busy=false`, `stage=ready|error`. Stop controller next. Require both `sv status` results to be `down`, the control socket absent as file **and** symlink, and the stored state idle. The operator reacquires both native locks and repeats these checks.
-4. Run on the guest with the verified paths/digests:
+## Instruction-only active versions
+
+One VM at a time; others keep serving.
+
+1. Retain per-VM rollback point + immediate pre-transition identifiers/hashes. Create root-owned mode-`0700` review directory under `/var/lib/promptvm-policy-updates/`, outside Projects; set `policy_guest_stage`. Retain mode-`0600` copies of unchanged `update-workspace.py`, canonical `AGENTS.md`, approved release/controller/policy/operator digests + baseline identifiers. Transferred bytes = host review bytes; temporary uploads stay separate.
+2. Stop web; require controller `busy=false`, `stage=ready|error`; stop controller. Require both `sv status` results = `down`, service processes/job cgroups quiescent, control socket absent as file + symlink, stored state idle. Operator reacquires native locks + repeats its quiescence checks.
+3. Run on guest with verified paths/digests; live invocation always supplies `--release` (omission selects the historical controller):
 
    ```sh
    sudo -n /usr/bin/python3 -I -B "$policy_guest_stage/update-workspace.py" "$policy_vm" \
+     --release "$policy_release" \
      --instructions "$policy_guest_stage/AGENTS.md" --sha256 "$policy_sha" \
      --controller-sha256 "$policy_controller_sha" --summary 'Align workspace instruction policy'
    policy_rc=$?
    ```
 
-   Capture rc + JSON immediately; save the outcome in `version-update.json`. Exit `0`: require `changed=true`, one child of the recorded head, one added checkpoint, canonical instruction digest; an existing match returns `changed=false` with the same head. Repeat the operator while stopped; require that identical-head no-op and retain its outcome separately.
-5. Exit `1` means an uncommitted failure: inspect the reported gate + retained evidence before retrying. Exit `3` means **committed/uncertain**: retain current runtime/policy, pointers, releases + transaction evidence; recover forward through installed-controller startup reconciliation. Establish the durable head before retrying. Runtime rollback belongs only to the pre-workspace phase.
-6. Start controller first; require a ready controller socket/state, then start web. Preserve any recovery evidence until this phase + final checks succeed.
+   Capture rc + JSON immediately → retained `version-update.json`. Operator verifies immutable distribution + controller digest before its native transition.
+4. rc `0`, `changed=true` → exactly one child of recorded head, one added checkpoint + canonical instruction digest; existing match → `changed=false`, same head. Repeat identical arguments while stopped → unchanged head/version/checkpoint inventory; retain separate no-op outcome.
+5. rc `1` = uncommitted failure → inspect gate + evidence before retry. rc `3` = committed/uncertain → matching installed-controller startup reconciliation; establish durable head before retry. Retain runtime/policy, pointers, releases + transaction evidence.
+6. Start controller → ready socket/state → start web → authenticated baseline comparison before advancing to another VM.
 
 ## Verification + delivery
 
-The workspace operator requires saved-head source/report/private bindings, path/type/content equality outside root `AGENTS.md`, unchanged report/private/runtime hashes, unchanged old manifest/commit bytes, and exactly one linked child/checkpoint. Retain its JSON outcome + baseline identifiers. Confirm the active policy with `cmp` against canonical bytes; require the repeated operator's unchanged head/version/checkpoint inventory. Saved history remains the original evidence, including its older instruction text.
-
-Run authenticated post-checks:
+Compare active policy to canonical bytes; verify preserved identities/hashes + immutable release/controller/packaged-policy pins against approved baselines. Run authenticated post-check:
 
 ```sh
 python3.12 -B codex/void/check-web.py \
   --baseline "$policy_stage/web-before.json" --output "$policy_stage/web-after.json"
 ```
 
-Require HTTPS page/health/state/versions `200`, unauthenticated `401`, Nanoha/Naoto report `200` + baseline body SHA equality, and Rehab embedded application health `200`. Require final installed controller/workspace SHA pins; a staged runtime transaction also requires guest `--guest-check VM` = `installed`. Keep `.codex/` auth/config contents unchanged. Remove temporary uploads/stages after successful validation; retain the content-addressed review directory for exact replay. The engine removes its own transient backup/journal after successful installation.
+Require page/health/state/versions `200`, unauthenticated `401`, Nanoha/Naoto report `200` + baseline body SHA equality, Rehab embedded application health `200`. Successful validation → remove temporary uploads/stages; retain original versions, rollback points + release/policy receipts for exact replay.
 
-Local gate; rerun after commit from committed state:
+Local policy gate; rerun from committed state:
 
 ```sh
 set -euo pipefail
 PYTHONDONTWRITEBYTECODE=1 python3.12 -B -m unittest discover -s codex/void -p 'test_*.py' -q
-for policy_pair in nanoha:apex naoto:tau rehab:rehab; do
-  policy_vm=${policy_pair%:*}
-  policy_prefix=${policy_pair#*:}
+for policy_vm in nanoha naoto rehab; do
+  policy_package="../promptvm/promptvm/deployment/$policy_vm"
   policy_extra=()
   if [ "$policy_vm" = rehab ]; then
-    policy_extra=(--workspace ../eturkes.com/ops/rehab/project-AGENTS.md)
+    policy_extra=(--workspace "$policy_package/workspace-AGENTS.md")
   fi
   python3.12 -B codex/void/runtime-policy.py check-source "$policy_vm" \
-    --controller "../eturkes.com/ops/$policy_vm/${policy_prefix}_dashboard/orchestrator.py" \
-    "${policy_extra[@]}"
-  cmp "codex/void/$policy_vm/AGENTS.md" "../eturkes.com/ops/$policy_vm/project-AGENTS.md"
+    --controller "$policy_package/orchestrator.py" "${policy_extra[@]}"
+  cmp "codex/void/$policy_vm/AGENTS.md" "$policy_package/workspace-AGENTS.md"
 done
 (
-  cd ../eturkes.com
+  cd ../eturkes.com || exit
   ./scripts/check
 )
 ```
