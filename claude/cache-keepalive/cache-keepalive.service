@@ -1,5 +1,5 @@
 [Unit]
-Description=Prompt-cache keepalive between Headroom and CLIProxyAPI
+Description=Prompt-cache keepalive between Claude Code and CLIProxyAPI
 After=cli-proxy-api.service
 
 [Service]

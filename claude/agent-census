@@ -163,7 +163,6 @@ def lead_stops(path):
 
 
 def teammate(path):
-    """Brief, marker time, turn state per record time, write times, last durable write per marker."""
     t: dict = {"brief": "", "marker": None, "states": [], "times": [], "last_write": None, "gap": None,
                "calls": 0}
     for e, m in records(path):

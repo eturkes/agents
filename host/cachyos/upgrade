@@ -252,7 +252,6 @@ paru -Syu
 
 stage 'Python tools (uv)'
 # uv = pacman-managed (`paru -Syu` above moves it); this step owns uv-installed tools.
-# headroom-ai = local wheel pin → the wheel stays on disk; pin lifecycle: $repo_root/host/cachyos/headroom/README.md
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 uv tool upgrade --all
 
 stage 'MoonBit'
@@ -279,9 +278,9 @@ esac
 pnpm update -g --latest
 
 stage 'Headless browser (chromiumfish)'
-# Browser startup requires executable chrome_crashpad_handler. If fetched cache
-# lacks it, install Chrome for Testing handler matching MAJOR.MINOR.BUILD.
-# Persistent cache ⇒ one repair per browser-version bump.
+# Browser startup requires an executable chrome_crashpad_handler; absent from the fetched cache →
+# the Chrome for Testing handler matching MAJOR.MINOR.BUILD. Persistent cache ⇒ one repair per
+# browser-version bump.
 if [[ -d "$HOME/.local/share/chromiumfish" ]]; then
   pnpm -C "$HOME/.local/share/chromiumfish" update --latest
   chromiumfish fetch

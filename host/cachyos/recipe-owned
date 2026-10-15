@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Usage: recipe-owned <source> <target>
+# Exit 0 = <target> is a regular file holding <source>'s bytes or a committed version of <source>:
+# a deployment its recipe may replace or remove. 1 = foreign. Other = history unreadable.
+set -euo pipefail
+(($# == 2)) || { echo 'Usage: recipe-owned <source> <target>' >&2; exit 2; }
+source=$1 target=$2
+[[ -f "$target" && ! -L "$target" ]] || exit 1
+cmp -s -- "$source" "$target" && exit 0
+# Root without SUDO_UID (rollback timers) → git rejects the user-owned repository; the caller already runs its code.
+git=(git -c safe.directory='*' -C "$(dirname -- "$source")")
+blob=$("${git[@]}" hash-object --stdin < "$target")
+# first-parent diffs of merges → conflict resolutions count as committed versions.
+commits=$("${git[@]}" log --all --diff-merges=first-parent --format=%H --find-object="$blob" -- "$(basename -- "$source")")
+[[ -n "$commits" ]]

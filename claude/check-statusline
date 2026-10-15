@@ -160,6 +160,16 @@ ck resume-fenced ':maintain' '```
 Phase: MAINTAIN'
 ck resume-comment ':maintain' '<!-- - [ ] RESUME: x -->
 Phase: MAINTAIN'
+ck routed-section 33:iterate '## Phase
+
+ITERATE — demo UI
+> Work on the demo UI for the next couple sessions.
+> Phase: IMPLEMENT after that.
+Suspended: IMPLEMENT — api (`Tasks` rows M3 on)'
+ck routed-field 31:implement 'Phase: IMPLEMENT — plugins
+> Build a plugin system.
+> Phase: ITERATE never.
+Suspended: ITERATE — demo UI'
 ck parent-dir 31:implement 'Phase: IMPLEMENT' a/b
 ck repo-root ':no phase' 'Phase: IMPLEMENT' r/s r
 printf '%d/%d passed\n' $((n - fail)) "$n"

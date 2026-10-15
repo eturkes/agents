@@ -1,7 +1,8 @@
 {
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "local-proxy",
-    "ANTHROPIC_MODEL": "claude-opus-5-5[1m]",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8318",
+    "ENABLE_TOOL_SEARCH": "true",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h",
     "CLAUDE_CODE_GATEWAY_HINT_HEADERS": "1",
@@ -46,7 +47,8 @@
       "Bash(nano:*)",
       "Bash(emacs:*)",
       "Bash(ed:*)",
-      "WebFetch"
+      "WebFetch",
+      "ScheduleWakeup"
     ],
     "defaultMode": "bypassPermissions"
   },
@@ -73,7 +75,8 @@
     "workshop": "off",
     "artifact-components": "off",
     "commit": "off",
-    "pr": "off"
+    "pr": "off",
+    "plugin-authoring": "off"
   },
   "hooks": {
     "SessionStart": [
@@ -104,6 +107,17 @@
             "type": "command",
             "command": "\"$HOME/.local/bin/project-snapshots\" hook",
             "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -c 'select(.permission_mode == \"bypassPermissions\") | {hookSpecificOutput: {hookEventName: \"PermissionRequest\", decision: {behavior: \"allow\"}}}'"
           }
         ]
       }

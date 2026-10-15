@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """Keep the prompt cache of live Claude Code sessions warm across long waits.
 
-Relay Headroom → CLIProxyAPI; stores each session's last main-thread request. --interval s without one →
+Relay Claude Code → CLIProxyAPI; stores each session's last main-thread request. --interval s without one →
 quiet session (idle-compact mod report: no turn, no background work) → the mod compacts it, touches end;
 else ≤ --touches touches: re-send the request as a stream, cut at message_start ⇒ the cache read renews the
 1h entry. CC's own keepalive needs a direct api.anthropic.com connection → off behind these proxies.
@@ -54,7 +54,6 @@ class Entry:
 
 
 def has_1h_marker(request):
-    """True when a cache_control breakpoint asks for the 1h TTL."""
     def marked(block):
         control = block.get("cache_control") if isinstance(block, dict) else None
         return isinstance(control, dict) and control.get("ttl") == "1h"
@@ -114,8 +113,7 @@ class Keeper:
         if not (isinstance(model, str) and model.startswith("claude")) or not has_1h_marker(request):
             return None
         if request.get("stream") is not True:
-            # Headroom sends stream:false while its retrieval tool is active; a touch must stream to stop
-            # at message_start, and the flag sits outside the cached prompt.
+            # A touch must stream to stop at message_start; the flag sits outside the cached prompt.
             request["stream"] = True
             body = json.dumps(request).encode()
         forwarded = [(k, v) for k, v in headers.items() if k.lower() not in HOP]
@@ -336,9 +334,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         chunked = length is None
         self.send_header(*(("Transfer-Encoding", "chunked") if chunked else ("Content-Length", length)))
         self.end_headers()
+        sse = (resp.getheader("Content-Type") or "").startswith("text/event-stream")
+        held = b""
         try:
             while data := resp.read1(65536):
-                self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data) if chunked else data)
+                if sse:
+                    data, held = split_block_stop(held + data)
+                if data:
+                    self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data) if chunked else data)
+            if held:
+                self.wfile.write(b"%x\r\n%s\r\n" % (len(held), held) if chunked else held)
             if chunked:
                 self.wfile.write(b"0\r\n\r\n")
         except (OSError, http.client.HTTPException):
@@ -351,6 +356,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+
+def split_block_stop(data):
+    """(send now, hold): a trailing complete content_block_stop event waits for the next chunk.
+
+    CC writes an in-process teammate's transcript entry on a 100 ms timer and adds usage + stop_reason
+    at message_delta; CLIProxyAPI can send message_delta >100 ms after the last content_block_stop →
+    without the hold, that entry reaches disk without final usage.
+    """
+    if not data.endswith(b"\n\n"):
+        return data, b""
+    cut = data.rfind(b"\n\n", 0, len(data) - 2)
+    start = cut + 2 if cut >= 0 else 0
+    if data[start:].split(b"\n", 1)[0].partition(b":")[2].strip() == b"content_block_stop":
+        return data[:start], data[start:]
+    return data, b""
 
 
 def error(message):

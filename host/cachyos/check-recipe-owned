@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""Ownership guard: recipes replace + remove their own stale deployments; foreign, symlinked + special files stay refused."""
+
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+OWNED = HERE / "recipe-owned"
+AC_LOSS = {
+    "ac-loss-suspend": "/usr/local/libexec/ac-loss-suspend",
+    "ac-loss-suspend.service": "/etc/systemd/system/ac-loss-suspend.service",
+    "ac-loss-suspend.timer": "/etc/systemd/system/ac-loss-suspend.timer",
+    "upower-critical.conf": "/etc/UPower/UPower.conf.d/90-remote-workstation.conf",
+}
+INTEL = {
+    "intel-graphics-display": "/usr/local/libexec/intel-graphics-display",
+    "intel-graphics-xorg.conf": "/etc/X11/xorg.conf.d/90-intel-graphics.conf",
+    "intel-graphics-sddm.conf": "/etc/sddm.conf.d/90-intel-graphics.conf",
+}
+LEGACY = {
+    "nvidia-prime-display": "/usr/local/libexec/nvidia-prime-display",
+    "nvidia-prime-xorg.conf": "/etc/X11/xorg.conf.d/90-nvidia-prime.conf",
+    "nvidia-prime-sddm.conf": "/etc/sddm.conf.d/90-nvidia-prime.conf",
+}
+TARGET_DIRS = sorted({str(Path(target).parent) for table in (AC_LOSS, INTEL, LEGACY) for target in table.values()})
+STUBS = {
+    "sudo": '#!/bin/sh\n[ "$1" = -n ] || exit 95\nshift\nprintf "%s\\n" "$*" >> "$STUB_LOG"\nexec "$@"\n',
+    # ac-loss-policy's post-apply check reads unit state; answer as a healthy, freshly applied observer.
+    "systemctl": """#!/bin/sh
+[ "$1" = show ] || exit 0
+unit=$2
+shift 2
+for property; do
+  case $property in
+    FragmentPath) echo "/etc/systemd/system/$unit" ;;
+    DropInPaths) echo ;;
+    NeedDaemonReload) echo no ;;
+    ActiveState) echo ActiveState=inactive ;;
+    Result) echo Result=success ;;
+    ExecMainStatus) echo ExecMainStatus=0 ;;
+    ExecMainStartTimestampMonotonic) echo ExecMainStartTimestampMonotonic=1 ;;
+    ExecMainExitTimestampMonotonic) echo ExecMainExitTimestampMonotonic=2 ;;
+  esac
+done
+""",
+    "busctl": "#!/bin/sh\necho 's \"PowerOff\"'\n",
+}
+
+
+def older(source):
+    """Newest committed version of a recipe source that differs from its working-tree bytes."""
+    current = (HERE / source).read_bytes()
+    log = subprocess.run(["git", "-C", str(HERE), "log", "--format=%H", "--", source],
+                         capture_output=True, text=True, check=True).stdout.split()
+    for commit in log:
+        blob = subprocess.run(["git", "-C", str(HERE), "show", f"{commit}:./{source}"],
+                              capture_output=True, check=True).stdout
+        if blob != current:
+            return blob
+    raise AssertionError(f"no older committed version of {source}")
+
+
+class Helper(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="recipe-owned-check-")
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q")
+        self.source = self.repo / "policy.conf"
+        for version in ("v1\n", "v2\n"):
+            self.source.write_text(version)
+            self.commit()
+        (self.repo / "other.conf").write_text("elsewhere\n")
+        self.commit()
+        self.source.write_text("v3\n")
+        self.target = self.root / "deployed"
+
+    def git(self, *arguments):
+        subprocess.run(["git", "-C", str(self.repo), *arguments], check=True, capture_output=True)
+
+    def commit(self):
+        self.git("add", "-A")
+        self.git("-c", "user.name=check", "-c", "user.email=check@localhost", "commit", "-qm", "version")
+
+    def owned(self, *prefix, source=None):
+        return subprocess.run([*prefix, str(OWNED), str(source or self.source), str(self.target)],
+                              capture_output=True, text=True, timeout=10, check=False)
+
+    def test_working_tree_and_committed_versions_are_owned(self):
+        for version in ("v3\n", "v2\n", "v1\n"):
+            self.target.write_text(version)
+            self.assertEqual(self.owned().returncode, 0, version)
+
+    def test_merge_resolution_is_owned(self):
+        self.source.write_text("v2\n")
+        self.git("checkout", "-qb", "side")
+        self.source.write_text("side\n")
+        self.commit()
+        self.git("checkout", "-q", "-")
+        self.source.write_text("main\n")
+        self.commit()
+        subprocess.run(["git", "-C", str(self.repo), "merge", "-q", "side"], capture_output=True, check=False)
+        self.source.write_text("resolved\n")
+        self.commit()
+        self.source.write_text("v4\n")
+        self.target.write_text("resolved\n")
+        self.assertEqual(self.owned().returncode, 0)
+
+    def test_version_on_unmerged_branch_is_owned(self):
+        self.git("checkout", "-qb", "worktree")
+        self.source.write_text("branch\n")
+        self.commit()
+        self.git("checkout", "-q", "-")
+        self.target.write_text("branch\n")
+        self.assertEqual(self.owned().returncode, 0)
+
+    def test_unknown_bytes_and_blobs_of_other_paths_are_foreign(self):
+        for version in ("v9\n", "elsewhere\n"):
+            self.target.write_text(version)
+            self.assertEqual(self.owned().returncode, 1, version)
+
+    def test_symlink_directory_fifo_and_absence_are_foreign(self):
+        copy = self.root / "copy"
+        copy.write_text("v1\n")
+        self.target.symlink_to(copy)
+        self.assertEqual(self.owned().returncode, 1)
+        self.target.unlink()
+        self.assertEqual(self.owned().returncode, 1)
+        self.target.mkdir()
+        self.assertEqual(self.owned().returncode, 1)
+        self.target.rmdir()
+        os.mkfifo(self.target)
+        self.assertEqual(self.owned().returncode, 1)
+
+    def test_current_bytes_need_no_history(self):
+        loose = self.root / "loose.conf"
+        loose.write_text("v1\n")
+        self.target.write_text("v1\n")
+        self.assertEqual(self.owned(source=loose).returncode, 0)
+        self.target.write_text("v2\n")
+        result = self.owned(source=loose)
+        self.assertNotIn(result.returncode, (0, 1))
+        self.assertIn("not a git repository", result.stderr)
+
+    def test_root_without_sudo_uid_reads_history(self):
+        # Rollback timers run recipes as root without SUDO_UID; git then rejects the user-owned repository.
+        self.target.write_text("v1\n")
+        result = self.owned("sudo", "-n", "env", "-i", f"PATH={os.environ['PATH']}")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class Recipes(unittest.TestCase):
+    def setUp(self):
+        for directory in TARGET_DIRS:
+            self.assertTrue(Path(directory).is_dir(), f"missing bind point {directory}")
+        directory = tempfile.TemporaryDirectory(prefix="recipe-owned-recipes-")
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        binaries = self.root / "bin"
+        binaries.mkdir()
+        for name, source in STUBS.items():
+            (binaries / name).write_text(source)
+            (binaries / name).chmod(0o755)
+        self.log = self.root / "stub.log"
+        self.log.touch()
+        self.environment = dict(os.environ, PATH=f"{binaries}{os.pathsep}{os.environ['PATH']}", STUB_LOG=str(self.log))
+        for directory in TARGET_DIRS:
+            self.scratch(directory).mkdir(parents=True)
+
+    def scratch(self, path):
+        return self.root / "binds" / path.strip("/").replace("/", "_")
+
+    def file(self, target):
+        return self.scratch(str(Path(target).parent)) / Path(target).name
+
+    def place(self, table, **contents):
+        """Deploy every source of a table; keyword = source name with `-`/`.` → `_`, value = replacement bytes."""
+        for source, target in table.items():
+            data = contents.get(source.replace("-", "_").replace(".", "_"), (HERE / source).read_bytes())
+            self.file(target).write_bytes(data)
+            self.file(target).chmod(0o755 if "display" in source or source == "ac-loss-suspend" else 0o644)
+
+    def run_recipe(self, recipe, mode):
+        binds = [part for directory in TARGET_DIRS for part in (str(self.scratch(directory)), directory)]
+        script = 'while [ "$1" != -- ]; do mount --bind "$1" "$2"; shift 2; done; shift; exec "$@"'
+        return subprocess.run(
+            ["unshare", "--user", "--map-root-user", "--mount", "--", "sh", "-c", script, "sh", *binds, "--",
+             str(HERE / recipe), mode],
+            env=self.environment, capture_output=True, text=True, timeout=120, check=False,
+        )
+
+    def assert_deployed(self, table):
+        for source, target in table.items():
+            self.assertEqual(self.file(target).read_bytes(), (HERE / source).read_bytes(), target)
+
+    def assert_absent(self, table):
+        for target in table.values():
+            self.assertFalse(self.file(target).exists() or self.file(target).is_symlink(), target)
+
+    def assert_refused(self, result):
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("Refusing", result.stderr)
+        self.assertNotIn("install ", self.log.read_text())
+
+    def test_ac_loss_apply_replaces_stale_deployment(self):
+        self.place(AC_LOSS, ac_loss_suspend=older("ac-loss-suspend"))
+        result = self.run_recipe("ac-loss-policy", "apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_deployed(AC_LOSS)
+
+    def test_ac_loss_rollback_removes_stale_deployment(self):
+        self.place(AC_LOSS, ac_loss_suspend=older("ac-loss-suspend"))
+        result = self.run_recipe("ac-loss-policy", "rollback")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_absent(AC_LOSS)
+
+    def test_ac_loss_apply_refuses_foreign_file(self):
+        self.place(AC_LOSS, upower_critical_conf=b"[UPower]\nCriticalPowerAction=Hibernate\n")
+        result = self.run_recipe("ac-loss-policy", "apply")
+        self.assert_refused(result)
+        self.assertEqual(self.file(AC_LOSS["upower-critical.conf"]).read_bytes(),
+                         b"[UPower]\nCriticalPowerAction=Hibernate\n")
+
+    def test_ac_loss_apply_refuses_symlink(self):
+        copy = self.root / "copy"
+        copy.write_bytes((HERE / "ac-loss-suspend").read_bytes())
+        self.file(AC_LOSS["ac-loss-suspend"]).symlink_to(copy)
+        result = self.run_recipe("ac-loss-policy", "apply")
+        self.assert_refused(result)
+        self.assertTrue(self.file(AC_LOSS["ac-loss-suspend"]).is_symlink())
+
+    def test_ac_loss_apply_refuses_dangling_symlink(self):
+        self.file(AC_LOSS["ac-loss-suspend.timer"]).symlink_to(self.root / "missing")
+        result = self.run_recipe("ac-loss-policy", "apply")
+        self.assert_refused(result)
+        self.assertTrue(self.file(AC_LOSS["ac-loss-suspend.timer"]).is_symlink())
+
+    def test_intel_apply_replaces_stale_deployments_of_both_policies(self):
+        self.place(INTEL, intel_graphics_display=older("intel-graphics-display"))
+        self.place(LEGACY, nvidia_prime_display=older("nvidia-prime-display"))
+        result = self.run_recipe("intel-graphics-policy", "apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_deployed(INTEL)
+        self.assert_absent(LEGACY)
+
+    def test_intel_rollback_removes_stale_deployment(self):
+        self.place(INTEL, intel_graphics_display=older("intel-graphics-display"))
+        result = self.run_recipe("intel-graphics-policy", "rollback")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_absent(INTEL)
+        self.assert_deployed(LEGACY)
+
+    def test_intel_apply_refuses_foreign_file(self):
+        self.place(INTEL, intel_graphics_xorg_conf=b'Section "Device"\nEndSection\n')
+        result = self.run_recipe("intel-graphics-policy", "apply")
+        self.assert_refused(result)
+        self.assertEqual(self.file(INTEL["intel-graphics-xorg.conf"]).read_bytes(), b'Section "Device"\nEndSection\n')
+
+    def test_nvidia_rollback_removes_stale_deployment(self):
+        self.place(LEGACY, nvidia_prime_display=older("nvidia-prime-display"))
+        result = self.run_recipe("nvidia-prime-policy", "rollback")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_absent(LEGACY)
+
+    def test_nvidia_apply_refuses_foreign_file(self):
+        self.file(LEGACY["nvidia-prime-sddm.conf"]).write_bytes(b"[General]\n")
+        result = self.run_recipe("nvidia-prime-policy", "apply")
+        self.assert_refused(result)
+        self.assertEqual(self.file(LEGACY["nvidia-prime-sddm.conf"]).read_bytes(), b"[General]\n")
+
+
+if __name__ == "__main__":
+    unittest.main()

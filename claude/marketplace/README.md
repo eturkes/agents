@@ -17,14 +17,29 @@ Claude Code's built-in `LSP` tool and passive diagnostics drive every plugin her
 4. Add an `lspServers` entry to `.claude-plugin/marketplace.json`. Include the command and `extensionToLanguage` mapping.
 5. Add `plugins/<name>-lsp/<machine>/README.md` with the installation and upgrade procedure.
 6. Keep platform steps in the machine README. Keep the shared `lspServers` entry in the marketplace manifest.
-7. Enable the plugin in `enabledPlugins` within each machine's `settings.json`.
-8. Record the plugin in `installed_plugins.json`.
-9. Add the server to `upgrade-servers`. Include the upstream version resolver, installation procedure, and successful `initialize` response.
+7. Stage the new files with `git add`. Then run `./stamp-versions` to set the plugin version.
+8. Enable the plugin in `enabledPlugins` within each machine's `settings.json`.
+9. Record the plugin in `installed_plugins.json`.
+10. Add the server to `upgrade-servers`. Include the upstream version resolver, installation procedure, and successful `initialize` response.
 
 The platform upgrade entry points call `upgrade-servers`:
 
-- Aeon: `~/.local/app/agents/container/aeon/upgrade`
+- aeon: `~/.local/app/agents/container/aeon/upgrade`
 - CachyOS: `~/.local/app/agents/host/cachyos/upgrade`
+
+## Plugin versions
+
+Claude Code updates an installed plugin only when its `version` string changes. Thus `./stamp-versions` derives each version from the plugin content: `1.0.0+` and a 12-digit hash of the marketplace entry and the plugin files that git tracks.
+
+After you change a plugin folder or its marketplace entry, stage new files with `git add`. Then run `./stamp-versions` and commit the manifest together with the change. `./stamp-versions --check` changes no files. It exits with `1` and names each plugin that has a stale version.
+
+You update the installed plugins manually. After a pull that changes a version, run this command from this folder:
+
+```sh
+for p in $(jq -r '.plugins[].name' .claude-plugin/marketplace.json); do claude plugin update "$p@global" --scope user; done
+```
+
+A plugin without a change reports that it is already at the latest version. To use the new versions, restart Claude Code or send `/reload-plugins`. For the official plugins, first refresh their catalog with `claude plugin marketplace update claude-plugins-official`. Then run `claude plugin update <name>@claude-plugins-official --scope user` for each official plugin.
 
 ## Upgrades
 

@@ -1,0 +1,62 @@
+#!/bin/sh
+# check-spec-lint — spec-lint cases, both ways. Usage: check-spec-lint [awk] (e.g. `busybox awk`).
+# rc 0 = every case as expected; each miss prints FAIL + spec-lint output.
+d=$(dirname "$0"); L=$d/spec-lint; t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+AWK=${1:-awk}; export AWK
+n=0; fail=0
+run() { # name, expected rc, expected output fragment ('' = none); spec in $t/spec.md
+  n=$((n + 1)); out=$("$L" "$t/spec.md" 2>&1); rc=$?
+  if [ "$rc" -ne "$2" ] || { [ -n "$3" ] && ! printf '%s\n' "$out" | grep -q -F -- "$3"; }; then
+    printf 'FAIL %s: rc=%s want=%s\n%s\n' "$1" "$rc" "$2" "$out"; fail=$((fail + 1))
+  fi
+}
+base() { cat <<'EOF'
+# demo spec
+
+## Intent
+
+Demo.
+
+## Artifacts
+
+- `src/` — run `make`.
+
+## Decisions
+
+- D1: one.
+
+## Tasks
+
+- [ ] U1 build the parser.
+  - Accept: suite green.
+- [x] abc1234 U0 scaffold.
+- Queue = `.agent/deferred.md`.
+
+## Phase
+
+IMPLEMENT — the whole product
+EOF
+}
+edit() { base | sed "$1" > "$t/spec.md"; }
+
+base > "$t/spec.md"; run valid 0 ''
+base | sed 's/$/\r/' > "$t/spec.md"; run crlf 0 ''
+edit 's/^IMPLEMENT — /Phase: IMPLEMENT — /'; run phase-prefix 0 ''
+base > "$t/spec.md"; printf '\n> Rework the dashboard.\n> Keep the CLI.\n\nSuspended: IMPLEMENT — the whole product\n' >> "$t/spec.md"; run routed 0 ''
+edit 's/^- `src\/` — run `make`\.$/```\n## Fake\n```/'; run fenced-heading 0 ''
+edit '/^## Decisions$/,/^- D1: one\.$/d'; run missing-section 1 'expected `Decisions`'
+edit 's/^## Decisions$/## Tasks0/'; run misnamed-section 1 'section `Tasks0`'
+base > "$t/spec.md"; printf '\n## Notes\n' >> "$t/spec.md"; run extra-section 1 'none after `Phase`'
+edit 's/^- \[x\] abc1234 /- /'; run bare-row 1 'Tasks row'
+edit 's/^- \[x\] abc1234 /- [x] /'; run sha-less-row 1 'Tasks row'
+edit 's/^- Queue = `\.agent\/deferred\.md`\.$/- [ ] U2 last row./'; run no-pointer 1 'pointer to .agent/deferred.md'
+edit 's/^IMPLEMENT — the whole product$/MAINTAIN, scope = the whole product/'; run phase-form 1 'Phase line 1'
+base > "$t/spec.md"; printf 'M1 closed, M2 closed.\n' >> "$t/spec.md"; run phase-history 1 'history'
+base > "$t/spec.md"; printf '\nSuspended: IMPLEMENT — api\n> late quote\n' >> "$t/spec.md"; run quote-after-suspended 1 'request quote after'
+edit '/^IMPLEMENT — the whole product$/d'; run empty-phase 1 'Phase is empty'
+edit 's/^IMPLEMENT — the whole product$/IMPLEMENT — the whole product. M1 closed./'; run phase-narrative 0 ''
+edit 's/^IMPLEMENT — the whole product$/IMPLEMENT — the CLI, e.g. its parser/'; run phase-abbrev 0 ''
+"$L" "$t/absent.md" > /dev/null 2>&1; rc=$?; n=$((n + 1)); [ "$rc" -eq 2 ] || { echo "FAIL unreadable: rc=$rc want=2"; fail=$((fail + 1)); }
+
+echo "check-spec-lint ($AWK): $((n - fail))/$n cases pass"
+[ "$fail" -eq 0 ]

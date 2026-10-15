@@ -1,4 +1,4 @@
-# R language server on Aeon
+# R language server on aeon
 
 The `languageserver` R package provides diagnostics through `lintr`, definitions, and hover for `.R` files. The plugin starts it through `Rscript`.
 

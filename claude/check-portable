@@ -1,0 +1,20 @@
+#!/bin/sh
+# check-portable — the files projects copy (README `Template files` + the Codex template) name nothing
+# outside the project: home or machine paths, this repo, machine-specific tools, model routing, pointers
+# into user-level law. Usage: check-portable [file…] (default: those files; `-` = stdin).
+# rc 0 = clean, 1 = hits on stdout, 2 = unreadable.
+root=$(cd "$(dirname "$0")/.." && pwd) || exit 2
+[ $# -gt 0 ] || set -- "$root/claude/CLAUDE.project.md" "$root"/claude/agents/*.md "$root/claude/spec-lint" \
+  "$root/codex/AGENTS.project.md"
+w='[^[:alnum:]_-]'
+# User-level law pointer = `global` + backtick + a file or a Capitalized section name; lowercase code after
+# `global` (`global \`timeout\``) = ordinary prose.
+# shellcheck disable=SC2088  # a literal `~/` is the pattern
+pat="~/|\\\$\\{?HOME|/home/|/Users/|/var/home/|/run/host|/opt/|/usr/(local/)?s?bin/|\\.local/app"
+pat="$pat|global \`(CLAUDE|AGENTS)\\.md|(global|user-level) \`[A-Z][a-z]|\`(CLAUDE|AGENTS)\\.md\` \`[A-Z]"
+pat="$pat|webtext|webcap|chromiumfish"
+pat="$pat|[Bb]rowser[Oo][Ss]|context-gauge|context-alert|agent-census|notify-scan|cache-keepalive|bgcmd"
+pat="$pat|[Cc][Ll][Ii][Pp]roxy|cli-proxy|claude-(fable|opus|sonnet|haiku)-|gpt-[0-9]"
+pat="$pat|(^|$w)(Neo|zmx|GPT)($w|\$)"
+LC_ALL=C grep -nHE -- "$pat" "$@"
+case $? in 0) exit 1 ;; 1) exit 0 ;; *) exit 2 ;; esac

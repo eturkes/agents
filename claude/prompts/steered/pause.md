@@ -1,6 +1,6 @@
 # Pause
 
-Use in any phase. When you want to stop now and continue later, replace `<request>` with your steering. It can name the work to stop early. Then paste this body into the running session. Continue later with `resume.md`.
+Use: any phase, stopping once in-flight work finishes; `<request>` → your steering (it can name work to stop early) → paste into the running session. Stop at once → `pause-now.md`; continue later → `resume.md`.
 
 ---
 
@@ -8,7 +8,7 @@ Use in any phase. When you want to stop now and continue later, replace `<reques
 
 My request above outranks the rest of this body. Pause this session for a fresh one to resume. The open finish line stays open and moves to disk; new work waits. In-flight work reaches its own end.
 
-1. Teammates: each running one reaches its marker, then gets harvested per global `Subagents` and stopped with `TaskStop`. Each worktree ends committed on its branch, unmerged.
+1. Teammates: each running one reaches its marker, then gets harvested per `CLAUDE.md` `Teammates` and stopped with `TaskStop`. Each worktree ends committed on its branch, unmerged.
 2. Processes you started — servers, watchers, background shells → stopped by PID, their ports free.
 3. Checked, cohesive work → scoped commits with the gates its unit requires. The rest → one snapshot commit on a `wip/<topic>` branch, built through a temporary index (`GIT_INDEX_FILE`) so the main index + working tree stay as they are; gitignored secrets stay out of it.
 4. Rulings from this session that bind later work → their owning files (contract, `Decisions`, `.claude/rules/`).

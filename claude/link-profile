@@ -1,0 +1,56 @@
+#!/bin/sh
+# Profile ~/.claude/<name> = a CLAUDE_CONFIG_DIR owning CLAUDE.md alone; each other
+# ~/.claude entry → link ../<entry>, ~/.claude.json → ../../.claude.json (relative ⇒ valid under any
+# mount path) ⇒ settings, transcripts, history, MCP, agents, plugins + mods stay shared. CC creates state dirs
+# lazily ⇒ a profile-only entry moves into ~/.claude; empty dir or byte-identical file → link; other
+# real on both sides = conflict.
+# Usage: link-profile [--check] <name>  (--check: report only; exit 1 = change needed | conflict)
+case $1 in -h|--help) sed -n '2,/^[^#]/s/^# \{0,1\}//p' "$0"; exit 0 ;; esac
+check=
+[ "$1" = --check ] && { check=1; shift; }
+name=$1
+case $name in ''|.*|*/*) echo 'usage: link-profile [--check] <name>' >&2; exit 2 ;; esac
+b=$HOME/.claude p=$HOME/.claude/$name n=0 c=0
+[ -f "$p/CLAUDE.md" ] && [ ! -L "$p/CLAUDE.md" ] ||
+  { echo "link-profile: $p/CLAUDE.md missing: deploy it first" >&2; exit 2; }
+change() { n=$((n + 1)); echo "$1"; shift; [ -n "$check" ] || "$@"; }
+relink() { rm "$1" && ln -s "$2" "$1"; }
+swap() { rmdir "$p/$1" && ln -s "../$1" "$p/$1"; }
+migrate() { mv "$p/$1" "$b/$1" && ln -s "../$1" "$p/$1"; }
+for e in "$b"/* "$b"/.[!.]* "$b"/..?*; do
+  [ -e "$e" ] || [ -L "$e" ] || continue
+  x=${e##*/} t=$p/${e##*/}
+  case $x in CLAUDE.md|"$name") continue ;; esac
+  [ -L "$e/.claude.json" ] && continue  # another profile
+  if [ -L "$t" ]; then
+    [ "$(readlink "$t")" = "../$x" ] || change "relink $x" relink "$t" "../$x"
+  elif [ -d "$t" ] && [ -z "$(ls -A "$t")" ]; then
+    change "link $x (empty dir replaced)" swap "$x"
+  elif [ -f "$t" ] && [ -f "$e" ] && cmp -s "$t" "$e"; then
+    change "link $x (identical copy replaced)" relink "$t" "../$x"
+  elif [ -e "$t" ]; then
+    c=$((c + 1)); echo "conflict $x: real in both $p and $b"
+  else
+    change "link $x" ln -s "../$x" "$t"
+  fi
+done
+for e in "$p"/* "$p"/.[!.]* "$p"/..?*; do
+  [ -e "$e" ] || [ -L "$e" ] || continue
+  x=${e##*/}
+  case $x in CLAUDE.md|.claude.json) continue ;; esac
+  if [ -L "$e" ]; then
+    [ -e "$e" ] || [ -e "$b/$x" ] || [ -L "$b/$x" ] || change "drop $x (dangling)" rm "$e"
+  elif [ ! -e "$b/$x" ] && [ ! -L "$b/$x" ]; then
+    change "migrate $x into $b" migrate "$x"
+  fi
+done
+t=$p/.claude.json
+if [ -L "$t" ]; then
+  [ "$(readlink "$t")" = ../../.claude.json ] || change "relink .claude.json" relink "$t" ../../.claude.json
+elif [ -e "$t" ]; then
+  c=$((c + 1)); echo "conflict .claude.json: real file in $p (a session ran before linking)"
+else
+  change "link .claude.json" ln -s ../../.claude.json "$t"
+fi
+echo "$name: $n changes${check:+ needed}, $c conflicts"
+[ "$c" -eq 0 ] && { [ -z "$check" ] || [ "$n" -eq 0 ]; }

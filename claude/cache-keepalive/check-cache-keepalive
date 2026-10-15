@@ -28,12 +28,14 @@ LOG = []
 class Up:
     seen, cut = [], []
     status, usage, pause = 200, {"cache_read_input_tokens": 900, "cache_creation_input_tokens": 0}, 0.0
+    blocks, stall, drop, merge = False, 0.0, 0, False
 
     @classmethod
     def reset(cls, **kw):
         cls.seen, cls.cut = [], []
         cls.status, cls.pause = 200, 0.0
         cls.usage = {"cache_read_input_tokens": 900, "cache_creation_input_tokens": 0}
+        cls.blocks, cls.stall, cls.drop, cls.merge = False, 0.0, 0, False
         for k, v in kw.items():
             setattr(cls, k, v)
 
@@ -43,6 +45,20 @@ def events(usage):
     return [f"event: message_start\ndata: {json.dumps(start)}\n\n".encode(),
             b'event: ping\ndata: {"type":"ping"}\n\n',
             b'event: message_stop\ndata: {"type":"message_stop"}\n\n']
+
+
+def block_events(usage):
+    """A text block, as CLIProxyAPI streams it: one event per chunk."""
+    first, _, stop = events(usage)
+    return [first,
+            (b'event: content_block_start\ndata: {"type":"content_block_start","index":0,'
+             b'"content_block":{"type":"text","text":""}}\n\n'),
+            (b'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,'
+             b'"delta":{"type":"text_delta","text":"hi"}}\n\n'),
+            b'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+            (b'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},'
+             b'"usage":{"output_tokens":1}}\n\n'),
+            stop]
 
 
 GZ = gzip.compress(b"plain body " * 50)
@@ -82,15 +98,21 @@ class Upstream(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
-        first, *rest = events(Up.usage)
+        first, *rest = (block_events if Up.blocks else events)(Up.usage)
         self.wfile.write(b"%x\r\n%s\r\n" % (len(first), first))
         ready, _, _ = select.select([self.connection], [], [], Up.pause)
         if ready and self.connection.recv(1, socket.MSG_PEEK) == b"":
             Up.cut.append(self.path)
             self.close_connection = True
             return
-        for event in rest:
-            self.wfile.write(b"%x\r\n%s\r\n" % (len(event), event))
+        chunks = rest[:len(rest) - Up.drop]
+        if Up.merge:  # the block's events up to content_block_stop share one chunk
+            i = next(i for i, event in enumerate(chunks) if b"content_block_stop" in event)
+            chunks = [b"".join(chunks[:i + 1]), *chunks[i + 1:]]
+        for chunk in chunks:
+            self.wfile.write(b"%x\r\n%s\r\n" % (len(chunk), chunk))
+            if b"content_block_stop" in chunk:
+                time.sleep(Up.stall)
         self.wfile.write(b"0\r\n\r\n")
 
 
@@ -187,6 +209,55 @@ def relays_sse_and_arms_main():
     status, _, _ = post(server, conn=conn)  # same client connection again
     assert status == 200 and len(Up.seen) == 2, "keep-alive connection not reusable"
     assert list(entries(server)) == ["s1"], "main request not armed"
+
+
+def arrivals(server):
+    """(arrival time, bytes) per piece the relay delivers for one streamed request."""
+    conn = http.client.HTTPConnection(*server.server_address, timeout=10)
+    conn.request("POST", "/v1/messages", body=body(model="gpt-6-luna"), headers={"Content-Type": "application/json"})
+    resp = conn.getresponse()
+    pieces = []
+    while piece := resp.read1(65536):
+        pieces.append((time.monotonic(), piece))
+    return pieces
+
+
+@check
+def block_stop_waits_for_message_delta():
+    Up.reset(blocks=True, stall=0.3)
+    pieces = arrivals(proxy())
+    assert b"".join(p for _, p in pieces) == b"".join(block_events(Up.usage)), "SSE bytes changed in transit"
+    stop = next(t for t, p in pieces if b"content_block_stop" in p)
+    delta = next(t for t, p in pieces if b"message_delta" in p)
+    assert delta - stop < 0.1, f"content_block_stop arrived {delta - stop:.3f}s ahead of message_delta"
+
+
+@check
+def block_stop_sharing_a_chunk_waits_alone():
+    Up.reset(blocks=True, stall=0.3, merge=True)
+    pieces = arrivals(proxy())
+    assert b"".join(p for _, p in pieces) == b"".join(block_events(Up.usage)), "SSE bytes changed in transit"
+    text = next(t for t, p in pieces if b"content_block_delta" in p)
+    stop = next(t for t, p in pieces if b"content_block_stop" in p)
+    delta = next(t for t, p in pieces if b"message_delta" in p)
+    assert delta - stop < 0.1, f"content_block_stop arrived {delta - stop:.3f}s ahead of message_delta"
+    assert delta - text > 0.2, "events ahead of content_block_stop were held with it"
+
+
+@check
+def other_events_pass_at_once():
+    Up.reset(blocks=True, pause=0.3)
+    pieces = arrivals(proxy())
+    start = next(t for t, p in pieces if b"message_start" in p)
+    block = next(t for t, p in pieces if b"content_block_start" in p)
+    assert block - start > 0.2, "message_start held for the next chunk"
+
+
+@check
+def held_block_stop_flushes_at_stream_end():
+    Up.reset(blocks=True, drop=2)
+    pieces = arrivals(proxy())
+    assert b"".join(p for _, p in pieces) == b"".join(block_events(Up.usage)[:-2]), "held content_block_stop lost"
 
 
 @check

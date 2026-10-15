@@ -1,0 +1,72 @@
+#!/bin/sh
+# Notify-set edits (global CLAUDE.md `Delivery`) of one session, from its transcripts
+# (MAIN + teammates) + git, which keep what compaction drops from recall.
+# Output: line 1 = totals (tool_calls=0 = nothing parsed); `edit` rows = notify-set
+# files edited, `.agent/spec.md` once its `Intent` changed; `lead` rows = Bash writes
+# naming a notify path, to confirm; the `Intent` diff, pre-session commit → working tree.
+# POSIX sh + jq. Usage: notify-scan [-h | <transcript>]   (default = `context-gauge -p`)
+case $1 in -h|--help) sed -n '2,/^[^#]/s/^# \{0,1\}//p' "$0"; exit 0 ;; esac
+main=${1:-$(context-gauge -p)}
+[ -f "$main" ] || { echo "notify-scan: no transcript: $main" >&2; exit 1; }
+agents=$(readlink -f "$HOME/.local/app/agents" 2>/dev/null) || agents=$HOME/.local/app/agents
+t=$(mktemp -d) || exit 1
+trap 'rm -rf "$t"' EXIT
+set -- "$main"
+for f in "${main%.jsonl}"/subagents/*.jsonl "${main%.jsonl}"/subagents/workflows/*/*.jsonl; do
+  [ -f "$f" ] && set -- "$@" "$f"
+done
+n=$#
+# CC repeats one assistant message across entries → unique tool_use ids.
+jq -n -R -r '[inputs | fromjson? | select(.type == "assistant") | .message.content[]?
+    | select(type == "object" and .type == "tool_use")] | unique_by(.id)[]
+  | if .name == "Edit" or .name == "Write" or .name == "NotebookEdit" or .name == "MultiEdit"
+    then "E\t" + (.input.file_path // .input.notebook_path // "")
+    elif .name == "Bash" then "B\t" + ((.input.command // "") | gsub("[\r\n\t]"; " "))
+    else "O" end' "$@" > "$t/calls" || exit 1
+h=$(printf '%s' "$HOME" | sed 's/[].[\\*^$+?(){}|]/\\&/g')
+# CC runtime state under ~/.claude/ = outside the notify set, yet named by most transcript reads.
+rt='/\.claude/(projects|tasks|todos|teams|sessions|session-env|shell-snapshots|plugins|backups|cache|paste-cache|downloads|jobs|daemon|file-history|history\.jsonl|\.)'
+: > "$t/edits"
+while IFS= read -r line; do
+  case $line in E*) p=${line#E	} ;; *) continue ;; esac
+  case ${p##*/} in CLAUDE*.md) echo "$p" >> "$t/edits"; continue ;; esac
+  r=$(readlink -f "$p" 2>/dev/null) || r=$p
+  printf '%s\n' "$p" "$r" | grep -Eq "^$h$rt" && continue
+  case $r in "$agents"/*) git -C "$agents" check-ignore -q -- "$r" && continue ;; esac
+  for q in "$p" "$r"; do
+    case $q in
+      "$agents"/*|"$HOME"/.local/app/agents/*|"$HOME"/.claude/*|"$HOME"/.codex/*|"$HOME"/AGENTS.md)
+        echo "$p" >> "$t/edits"; break ;;
+    esac
+  done
+done < "$t/calls"
+sort -u -o "$t/edits" "$t/edits"
+tok="CLAUDE[[:alnum:]._-]*\\.md|\\.local/(app/agents|bin/)|(~|\\\$HOME|\\\$\\{HOME\\}|$h)/(\\.claude/|\\.codex/|AGENTS\\.md)"
+# A redirect counts once it targets a notify path: a bare `>` also sits in strings, arrows + heredocs.
+rd=">>?[[:space:]]*[\"']?[^[:space:]\"';|&<>]*($tok)"
+wr='(^|[^[:alnum:]_.-])((sed|perl)[^|;&]*[[:space:]]-(-in-place|[[:alnum:]]*i)|(tee|cp|mv|install|ln|rm|rsync|truncate|patch|touch|unlink)([[:space:]]|$))|(^|[[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+(apply|am|checkout|restore|reset|commit|merge|rebase|stash|cherry-pick|mv|rm)([[:space:]]|$)|--apply|write_(text|bytes)'
+sed -n 's/^B	//p' "$t/calls" | grep -E "$tok" | while IFS= read -r c; do
+  s=$(printf '%s\n' "$c" | sed -E "s#(~|\\\$HOME|\\\$\\{HOME\\}|$h)${rt}[^[:space:]\"';|&<>]*##g")
+  printf '%s\n' "$s" | grep -Eq "$tok" && printf '%s\n' "$s" | grep -Eq -e "$rd" -e "$wr" && printf '%s\n' "$c" | cut -c1-300
+done > "$t/leads"
+intent=no-spec
+# `git -C ""` = the caller's cwd → a transcript without cwd skips the Intent check.
+d=$(jq -R -r 'fromjson? | select(.cwd) | .cwd' "$main" | head -1)
+root=$([ -n "$d" ] && git -C "$d" rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$root" ] && [ -f "$root/.agent/spec.md" ]; then
+  start=$(jq -R -r 'fromjson? | select(.timestamp) | .timestamp' "$main" | head -1)
+  base=$(git -C "$root" rev-list -1 --before="$start" HEAD 2>/dev/null)
+  sect='/^## /{f=($0 ~ /^## Intent[[:space:]]*$/)} f'
+  if [ -z "$base" ]; then intent=no-base
+  else
+    git -C "$root" show "$base:.agent/spec.md" 2>/dev/null | awk "$sect" > "$t/a"
+    awk "$sect" "$root/.agent/spec.md" > "$t/b"
+    if cmp -s "$t/a" "$t/b"; then intent=unchanged; else intent=changed; echo "$root/.agent/spec.md" >> "$t/edits"; fi
+  fi
+fi
+printf 'transcripts=%s tool_calls=%s edits=%s leads=%s intent=%s\n' "$n" "$(wc -l < "$t/calls" | tr -d ' ')" \
+  "$(wc -l < "$t/edits" | tr -d ' ')" "$(wc -l < "$t/leads" | tr -d ' ')" "$intent"
+sed 's/^/edit	/' "$t/edits"
+sed 's/^/lead	/' "$t/leads"
+[ "$intent" = changed ] && diff -u --label "Intent@$(printf '%.7s' "$base")" --label "Intent@worktree" "$t/a" "$t/b"
+exit 0
