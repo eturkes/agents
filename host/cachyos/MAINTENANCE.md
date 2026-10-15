@@ -50,7 +50,7 @@ The checkpoint shares the current root filesystem and user-space packages; revie
 
 ### Desktop recovery
 
-- Apps = BrowserOS Neo + ChatGPT; shared policy = `desktop-recovery.conf` (`Restart=always`, `RestartSec=5s`, `ExitType=main`).
+- Apps = BrowserOS Neo + ChatGPT; shared restart policy = `desktop-recovery.conf`.
 - Replay from repo root; reload preserves running apps:
 
 ```bash

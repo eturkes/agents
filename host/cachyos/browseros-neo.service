@@ -1,12 +1,13 @@
 [Unit]
 Description=BrowserOS Neo
 PartOf=graphical-session.target
-After=graphical-session.target
+# Stops run in reverse start order → Neo exits (≤10 s profile flush) before psd's shutdown unsync.
+After=graphical-session.target psd.service
 
 [Service]
 Type=exec
 ExecStart=%h/.local/bin/browseros-neo
-TimeoutStopSec=5s
+TimeoutStopSec=10s
 
 [Install]
 WantedBy=xdg-desktop-autostart.target
