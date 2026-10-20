@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Probe x11vnc input during a blocked update without opening the desktop display."""
+
+import argparse
+import json
+import os
+import shlex
+import signal
+import socket
+import struct
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+WIDTH, HEIGHT = 1920, 1080
+# 250 ms separates interactive input from a multi-second blocked framebuffer write.
+INPUT_LIMIT_MS = 250
+BLOCK_SECONDS = 2
+
+
+def receive(sock, count):
+    result = bytearray()
+    while len(result) < count:
+        chunk = sock.recv(count - len(result))
+        if not chunk:
+            raise EOFError("VNC server closed the connection")
+        result.extend(chunk)
+    return bytes(result)
+
+
+def pointer_received(events, position):
+    if not events.exists():
+        return False
+    for line in events.read_text().splitlines():
+        fields = line.split()
+        if (
+            len(fields) >= 5
+            and fields[0] == "Pointer"
+            and tuple(map(int, fields[2:5])) == (*position, 0)
+        ):
+            return True
+    return False
+
+
+def wait_pointer(events, position, seconds):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if pointer_received(events, position):
+            return True
+        time.sleep(0.005)
+    return False
+
+
+def connect(port, server):
+    deadline = time.monotonic() + 5
+    while True:
+        sock = socket.socket()
+        # The 8 MB raw update must exceed the receive window and socket buffers.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        sock.settimeout(5)
+        try:
+            sock.connect(("127.0.0.1", port))
+            return sock
+        except ConnectionRefusedError:
+            sock.close()
+            if time.monotonic() >= deadline or server.poll() is not None:
+                raise
+            time.sleep(0.02)
+
+
+def handshake(sock):
+    assert receive(sock, 12) == b"RFB 003.008\n"
+    sock.sendall(b"RFB 003.008\n")
+    methods = receive(sock, receive(sock, 1)[0])
+    assert 1 in methods, methods
+    sock.sendall(b"\x01")
+    assert receive(sock, 4) == bytes(4)
+    sock.sendall(b"\x01")
+    info = receive(sock, 24)
+    assert struct.unpack("!HH", info[:4]) == (WIDTH, HEIGHT)
+    receive(sock, struct.unpack("!I", info[20:])[0])
+    # Raw encoding makes the transmission larger than either socket's buffer.
+    sock.sendall(struct.pack("!BBHi", 2, 0, 1, 0))
+
+
+def pointer(sock, position):
+    sock.sendall(struct.pack("!BBHH", 5, 0, *position))
+
+
+def probe(mode):
+    with tempfile.TemporaryDirectory(prefix="vnc-input-") as folder:
+        base = Path(folder)
+        frame, events = base / "frame", base / "events"
+        frame.write_bytes(os.urandom(WIDTH * HEIGHT * 4))
+        with socket.socket() as reservation:
+            reservation.bind(("127.0.0.1", 0))
+            port = reservation.getsockname()[1]
+        command = [
+            "x11vnc",
+            "-rawfb",
+            f"map:{frame}@{WIDTH}x{HEIGHT}x32",
+            "-rfbport",
+            str(port),
+            "-rfbportv6",
+            "-1",
+            "-listen",
+            "127.0.0.1",
+            "-nopw",
+            "-forever",
+            "-cursor",
+            "none",
+            "-pipeinput",
+            f"cat > {shlex.quote(str(events))}",
+            mode,
+        ]
+        with (base / "server.log").open("w") as log:
+            server = subprocess.Popen(
+                command, stdout=log, stderr=log, start_new_session=True
+            )
+            try:
+                with connect(port, server) as sock:
+                    handshake(sock)
+                    # A positive control proves the input observer works before congestion.
+                    pointer(sock, (12, 34))
+                    assert wait_pointer(events, (12, 34), 1), (
+                        "Idle input was not delivered"
+                    )
+                    sock.sendall(struct.pack("!BBHHHH", 3, 0, 0, 0, WIDTH, HEIGHT))
+                    header = receive(sock, 16)
+                    assert struct.unpack("!BBHHHHHi", header) == (
+                        0,
+                        0,
+                        1,
+                        0,
+                        0,
+                        WIDTH,
+                        HEIGHT,
+                        0,
+                    ), header.hex()
+                    started = time.monotonic()
+                    pointer(sock, (123, 234))
+                    delivered = wait_pointer(events, (123, 234), BLOCK_SECONDS)
+                    input_ms = (
+                        (time.monotonic() - started) * 1000 if delivered else None
+                    )
+                    result = {
+                        "mode": mode,
+                        "idle_input": "PASS",
+                        "input_ms_while_output_blocked": (
+                            round(input_ms, 3) if input_ms is not None else None
+                        ),
+                        "input_limit_ms": INPUT_LIMIT_MS,
+                        "blocked_seconds": BLOCK_SECONDS,
+                    }
+                    if not delivered:
+                        # Release the blocked write to distinguish input backlog from loss.
+                        deadline = time.monotonic() + 3
+                        sock.settimeout(0.05)
+                        while time.monotonic() < deadline:
+                            try:
+                                if not sock.recv(262144):
+                                    raise EOFError("VNC server closed while draining")
+                            except TimeoutError:
+                                pass
+                            if pointer_received(events, (123, 234)):
+                                result["input_ms_after_drain"] = round(
+                                    (time.monotonic() - started) * 1000, 3
+                                )
+                                break
+                        assert "input_ms_after_drain" in result, "Input never arrived"
+                    result["status"] = (
+                        "PASS"
+                        if input_ms is not None and input_ms <= INPUT_LIMIT_MS
+                        else "FAIL"
+                    )
+                    return result
+            except Exception:
+                print((base / "server.log").read_text())
+                raise
+            finally:
+                try:
+                    os.killpg(server.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    server.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    os.killpg(server.pid, signal.SIGKILL)
+                    server.wait()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--nothreads", action="store_true", help="Measure the single-threaded baseline."
+    )
+    args = parser.parse_args()
+    # The default probe follows the managed unit's threading policy.
+    unit = Path(__file__).with_name("x11vnc.service").read_text()
+    command = next(
+        line.removeprefix("ExecStart=")
+        for line in unit.splitlines()
+        if line.startswith("ExecStart=")
+    )
+    threaded = "-threads" in shlex.split(command)
+    result = probe("-nothreads" if args.nothreads or not threaded else "-threads")
+    print(json.dumps(result))
+    return int(result["status"] != "PASS")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

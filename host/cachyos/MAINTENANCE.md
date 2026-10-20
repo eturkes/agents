@@ -127,6 +127,44 @@ The probe imports only the four desktop environment keys and never changes the d
 Scope = X-server stalls; physical panel latency, rendered-frame timing, hotplug and active screencast latency require separate checks.
 On-demand capture can still query hardware; this fix removes the unconditional polling path.
 
+### VNC input responsiveness
+
+`x11vnc.service` shares the X11 console through loopback TCP 5900; clients forward it through SSH.
+Keep `-localhost -nopw` together and preserve the SSH-only access path.
+`-threads` separates client input from framebuffer output. A blocked update must not prevent pointer input.
+Without threads, LibVNCServer processes client messages and writes updates on the same event loop.
+[Threaded and synchronous event loops](https://github.com/LibVNC/libvncserver/blob/LibVNCServer-0.9.15/src/libvncserver/main.c),
+[blocking socket writes](https://github.com/LibVNC/libvncserver/blob/LibVNCServer-0.9.15/src/libvncserver/sockets.c).
+
+Replay from the repository root when no VNC clients are connected; only the VNC server restarts:
+
+```bash
+set -euo pipefail
+if [[ -n $(ss -Htn state established '( sport = :5900 )') ]]; then
+  echo 'Disconnect VNC clients before restarting x11vnc.' >&2
+  exit 1
+fi
+install -Dm644 host/cachyos/x11vnc.service "$HOME/.config/systemd/user/x11vnc.service"
+systemctl --user daemon-reload
+systemd-analyze --user verify "$HOME/.config/systemd/user/x11vnc.service"
+systemctl --user restart x11vnc.service
+cmp host/cachyos/x11vnc.service "$HOME/.config/systemd/user/x11vnc.service"
+systemctl --user is-active x11vnc.service
+```
+
+`host/cachyos/check-vnc-input` follows the managed unit's threading mode.
+It starts an isolated loopback server with a synthetic 1920×1080 raw framebuffer and routes input to a temporary file.
+An idle pointer event proves the observer works. An 8 MB raw update fills the socket buffers while the client stops reading.
+A second pointer event must arrive within 250 ms without draining the update; the output remains blocked for up to 2 seconds.
+`--nothreads` measures the baseline and must fail: the event arrives only after the reader resumes.
+The probe leaves the desktop and active VNC connections untouched and removes its server processes and temporary files.
+
+Checks = `ruff check host/cachyos/check-vnc-input`, Python syntax, `host/cachyos/check-vnc-input`,
+`host/cachyos/check-x11-latency`, deployed unit byte equality + `systemd-analyze --user verify`.
+Scope = input delivery under output backpressure; viewer rendering, SSH/WAN queueing and long-session latency require a real client session.
+x11vnc's speed/latency estimate sees the loopback SSH endpoint, not the remote viewer.
+Preserve GPU routing, compositor and encoding defaults; change those only with separate evidence.
+
 ### Kernel recovery
 
 Use `sudo -n host/cachyos/kernel-recovery check --capture-prefix` for initial-capture validation.

@@ -1,0 +1,14 @@
+[Unit]
+Description=VNC sharing of the t25-480 Plasma X11 console
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+# Separate input from framebuffer writes so a slow reader cannot stall the pointer.
+ExecStart=/usr/bin/x11vnc -display ${DISPLAY} -auth ${XAUTHORITY} -rfbport 5900 -localhost -nopw -forever -nevershared -threads
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target
