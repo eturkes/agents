@@ -4,25 +4,26 @@
 // Default capture path: adds full-page PNG, working prefers-color-scheme dark + settle waits over Chrome's
 // own capture switches. Those switches (browser binary alone) = the fallback for flag-level control
 // (`--window-size`, `--user-agent`, `--force-device-scale-factor`, proxy) or a missing node stack.
-//
-// Usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]
-//   --full-page        whole scroll height in PNG (PDF spans the document always)
-//   --dark             render the page's prefers-color-scheme: dark styles
-//   --width N          viewport width, default 1280
-//   --height N         viewport height, default 800
-//   --selector CSS     wait for this element before capture
-//   --wait MS          settle delay after load, default 0
-//   --timeout MS       navigation timeout, default 45000
-//   --user-data-dir D  capture as this profile's user; runs against a copy of D
-//   --profile-directory P
-//                      profile inside D, default = D's Local State last_used
-// Writes every requested artifact + prints one path per line; `--dom -` prints the HTML instead.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+
+const USAGE = `usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]
+  --full-page        whole scroll height in PNG (PDF spans the document always)
+  --dark             render same-origin prefers-color-scheme: dark styles; cross-origin sheets
+                     (reported) + matchMedia themes stay light
+  --width N          viewport width, default 1280
+  --height N         viewport height, default 800
+  --selector CSS     wait for this element before capture
+  --wait MS          settle delay after load, default 0
+  --timeout MS       navigation timeout, default 45000
+  --user-data-dir D  capture as this profile's user; runs against a copy of D
+  --profile-directory P
+                     profile inside D, default = D's Local State last_used
+Writes every requested artifact + prints one path per line; \`--dom -\` prints the HTML instead.`;
 
 const FLAGS = new Set(["--full-page", "--dark"]);
 const VALUED = new Set([
@@ -52,6 +53,9 @@ function parseArgs(argv) {
       const v = inline ?? argv[++i];
       if (v === undefined) die(`${a} needs a value`);
       opts[a.slice(2)] = v;
+    } else if (a === "--help" || a === "-h") {
+      process.stdout.write(`${USAGE}\n`);
+      process.exit(0);
     } else if (a.startsWith("-")) die(`unknown option ${a}`);
     else if (opts.url) die("pass one url");
     else opts.url = a;
@@ -69,7 +73,7 @@ function resolveModule(pkg) {
 }
 
 const opts = parseArgs(process.argv.slice(2));
-if (!opts.url) die("usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [options]");
+if (!opts.url) die(USAGE.split("\n", 1)[0]);
 if (!opts.pdf && !opts.png && !opts.dom) die("choose at least one of --pdf, --png, --dom");
 
 const { ChromiumFish, BASE_ARGS, binaryPath } = await import(`${resolveModule("chromiumfish")}/dist/index.js`);

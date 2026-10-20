@@ -120,6 +120,8 @@ def main() -> int:
     if name == "--list-tools":
         print(json.dumps(result, indent=2))
         return 0
+    # Text = the result: BrowserOS pairs it with a stub structuredContent, and clients that render
+    # structuredContent alone show snapshot/read/grep/run empty.
     for item in result.get("content", []):
         if item.get("type") == "text":
             print(item["text"])
