@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 CONFIG = "projects"
@@ -177,7 +177,7 @@ class ProjectSnapshots:
     def record_error(self, error):
         try:
             self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
-            line = json.dumps({"time": datetime.now(timezone.utc).isoformat(timespec="seconds"), "error": clean(error)}) + "\n"
+            line = json.dumps({"time": datetime.now(UTC).isoformat(timespec="seconds"), "error": clean(error)}) + "\n"
             descriptor = os.open(self.state / "errors.jsonl", os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
             try:
                 os.write(descriptor, line.encode())
@@ -186,6 +186,25 @@ class ProjectSnapshots:
                 os.close(descriptor)
         except OSError as failure:
             print(f"project-snapshots: cannot save the error: {failure}", file=sys.stderr)
+
+    def clear_errors(self):
+        # Rename first: a hook appending meanwhile lands in the archive or a fresh log, never lost.
+        reviewed = self.state / f".errors-{uuid.uuid4().hex}.jsonl"
+        try:
+            os.rename(self.state / "errors.jsonl", reviewed)
+        except FileNotFoundError:
+            print("Recorded hook errors: none.")
+            return
+        data = reviewed.read_bytes()
+        archive = self.state / "errors-cleared.jsonl"
+        descriptor = os.open(archive, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            os.write(descriptor, data)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        reviewed.unlink()
+        print(f"Cleared {len(data.splitlines())} recorded hook errors. Archive: {archive}")
 
     def state_path(self, session):
         return self.state / (hashlib.sha256(session.encode()).hexdigest() + ".json")
@@ -330,6 +349,7 @@ class ProjectSnapshots:
                     except (ValueError, KeyError, TypeError):
                         print("ERROR: unreadable diagnostic record.")
                 print(f"Error log: {errors}")
+                print("After review: project-snapshots clear-errors archives them.")
         print("\nInspect a pair: snapper -c projects status PRE..POST")
         print("Delete selected IDs: snapper -c projects delete ID [ID ...]")
         print("Use the IDs above. Select both IDs to remove a complete pair.")
@@ -389,7 +409,7 @@ class ProjectSnapshots:
 
 def main():
     parser = argparse.ArgumentParser(description="Create Claude session snapshots or inspect their storage.")
-    parser.add_argument("action", choices=("hook", "report", "check", "install-hooks"))
+    parser.add_argument("action", choices=("hook", "report", "check", "install-hooks", "clear-errors"))
     action = parser.parse_args().action
     manager = ProjectSnapshots()
     try:

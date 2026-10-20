@@ -25,8 +25,8 @@ Busy uv cache → skip pruning (`UV_LOCK_TIMEOUT=0`), preserve active processes;
 - Coverage = stock `pacman -Dk`, bcachefs + NVIDIA DKMS for every installed kernel, recovery checkpoint, system/user failed units, crash policy, NVIDIA access, Codex, Codexify, BrowserOS Neo, configuration files + project snapshot storage.
 - Status = `PASS` check succeeded; `REVIEW` manual decision; `FAIL` action required. Exit = `0` clear, `1` failure, `2` review, `64` usage/PTY.
 - Failed units → compare with the pre-update baseline; standalone checks label current failures without attributing them to updates.
-- `CACHY_UPDATE_NOTICE` alone → review; other package-record errors → failure. Preserve the marker and stock check.
-- Snapshot retention = manual; the report shows storage without deleting snapshots.
+- `CACHY_UPDATE_NOTICE` alone → review until its notice ID is acknowledged (`upgrade --acknowledge-notice` after reading the notice pacman printed → `~/.local/state/agent-upgrade/cachy-notice`), then pass until the ID changes; other package-record errors → failure. Preserve the marker and stock check.
+- Snapshot retention = manual; the report shows storage without deleting snapshots. Reviewed hook errors → `project-snapshots clear-errors` (archive = `errors-cleared.jsonl`).
 - Retain the running kernel until authorized reboot. Check affected services; after browser changes, inspect a real headless capture.
 
 Verification = `bash -n host/cachyos/upgrade`, `shellcheck host/cachyos/upgrade`, `ruff check host/cachyos/check-upgrade`, `python -B host/cachyos/check-upgrade -q`.

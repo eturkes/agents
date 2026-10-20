@@ -200,6 +200,23 @@ class ProjectSnapshots(unittest.TestCase):
         self.assertEqual(self.backend.rows, [])
         self.assertIn("ERROR", self.report())
 
+    def test_cleared_errors_leave_the_report_and_stay_archived(self):
+        for _ in range(2):
+            with self.assertRaises(self.module.SnapshotError):
+                self.manager.hook({})
+        self.assertIn("Recorded hook errors: 2", self.report())
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.manager.clear_errors()
+        self.assertIn("Cleared 2", output.getvalue())
+        self.assertNotIn("ERROR", self.report())
+        self.assertEqual(len((self.state / "errors-cleared.jsonl").read_text().splitlines()), 2)
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.manager.clear_errors()
+        self.assertIn("none", output.getvalue())
+        with self.assertRaises(self.module.SnapshotError):
+            self.manager.hook({})
+        self.assertIn("Recorded hook errors: 1", self.report())
+
     def test_post_failure_preserves_pre_and_retry_recovers(self):
         self.hook()
         self.backend.fail_create = True

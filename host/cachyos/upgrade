@@ -3,9 +3,10 @@ set -euo pipefail
 export LC_ALL=C
 
 usage() {
-  echo 'Usage: upgrade [--check]'
+  echo 'Usage: upgrade [--check | --acknowledge-notice]'
   echo 'Update packages and tools, then check system health.'
   echo '--check: Check system health and snapshot storage without updating or cleaning anything.'
+  echo '--acknowledge-notice: Record the current CachyOS update notice as read; checks pass until it changes.'
   echo 'Exit codes: 0 = clear; 1 = failure; 2 = review needed; 64 = usage or terminal required.'
 }
 
@@ -13,6 +14,7 @@ if (($# > 1)); then usage >&2; exit 64; fi
 case ${1:-} in
   '') mode=upgrade ;;
   --check) mode=check ;;
+  --acknowledge-notice) mode=acknowledge ;;
   -h|--help) usage; exit 0 ;;
   *) usage >&2; exit 64 ;;
 esac
@@ -23,6 +25,7 @@ fi
 
 script_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
 repo_root=$(readlink -f -- "$script_dir/../..")
+notice_ack="$HOME/.local/state/agent-upgrade/cachy-notice"
 passed=0 review=0 failed=0
 declare -A failed_before baseline_ok
 
@@ -101,15 +104,29 @@ check_services() {
     printf '    Next: Inspect each listed unit with systemctl --%s status UNIT.\n' "$scope"
   fi
 }
+# CachyOS pacman stores the last shown update notice ID as a bare file in its local database.
+cachy_notice() {
+  local db
+  db=$(pacman-conf DBPath) || return
+  tr -d '[:space:]' < "${db%/}/local/CACHY_UPDATE_NOTICE"
+}
 check_packages() {
+  local records notice
   capture pacman -Dk
+  records=$check_output
   if ((check_status == 0)); then
     report PASS 'Package database'
-  elif ((check_status == 1)) && [[ -n $check_output ]] &&
-       ! grep -Evq "^error: 'CACHY_UPDATE_NOTICE': (description file|file list) is missing$" <<< "$check_output"; then
-    report REVIEW 'Package database: CachyOS acknowledgement marker (pacman -Dk exit 1)'
-    details "$check_output"
-    echo '    Next: Read the CachyOS update notice. Preserve the marker until you review its instructions.'
+  elif ((check_status == 1)) && [[ -n $records ]] &&
+       ! grep -Evq "^error: 'CACHY_UPDATE_NOTICE': (description file|file list) is missing$" <<< "$records"; then
+    notice=$(cachy_notice 2>&1) || notice=''
+    if [[ -n $notice && -f $notice_ack && $notice == "$(<"$notice_ack")" ]]; then
+      report PASS "Package database (CachyOS notice $notice already acknowledged)"
+    else
+      report REVIEW 'Package database: unacknowledged CachyOS update notice (pacman -Dk exit 1)'
+      details "$records"
+      [[ -z $notice ]] || details "Notice ID: $notice"
+      echo '    Next: Read the notice pacman printed during the update. Preserve the marker; then run upgrade --acknowledge-notice.'
+    fi
   else
     report FAIL "Package database (pacman -Dk exit $check_status)"
     details "$check_output"
@@ -218,6 +235,16 @@ postflight() {
   echo 'All checks completed without reported issues.'
 }
 
+if [[ $mode == acknowledge ]]; then
+  if ! notice=$(cachy_notice) || [[ -z $notice ]]; then
+    echo 'No CachyOS update notice marker found; nothing to acknowledge.' >&2
+    exit 1
+  fi
+  mkdir -p -- "${notice_ack%/*}"
+  printf '%s\n' "$notice" > "$notice_ack"
+  echo "Acknowledged CachyOS update notice $notice."
+  exit 0
+fi
 if [[ $mode == check ]]; then
   postflight
   exit 0

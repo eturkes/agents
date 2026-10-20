@@ -12,11 +12,13 @@ snapper -c projects list
 snapper -c projects status PRE..POST
 snapper -c projects diff PRE..POST
 snapper -c projects delete ID
+project-snapshots clear-errors
 ```
 
 - `PRE`/`POST`/`ID` = snapshot numbers from the list; browse `~/Projects/.snapshots/ID/snapshot/` before restoring.
 - Storage shares the live filesystem ⇒ file history, no protection against device failure.
 - Report = snapshot-attributed data apart from shared history + current data; bcachefs counters = data attribution, not exact deletion savings or complete physical storage. `upgrade` + `upgrade --check` show the same report, deleting nothing.
+- Hook errors stay in the report until reviewed; `clear-errors` moves them to `errors-cleared.jsonl` beside the log.
 
 ## Caches
 

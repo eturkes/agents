@@ -51,7 +51,7 @@ class Upgrade(unittest.TestCase):
         self.bin.mkdir()
         dispatcher = f"#!{sys.executable}\n" + DISPATCH
         names = [
-            "sudo", "pacman", "dkms", "systemctl", "nvidia-smi", "codex", "codexify",
+            "sudo", "pacman", "pacman-conf", "dkms", "systemctl", "nvidia-smi", "codex", "codexify",
             "browseros-call", "pacdiff", "paru", "uv", "moon", "git", "pnpm", "chromiumfish",
         ]
         for name in names:
@@ -63,6 +63,7 @@ class Upgrade(unittest.TestCase):
         (self.home / ".local/share/chromiumfish").mkdir(parents=True)
         self.settings = {
             "pacman -Dk": ["No database errors have been found!\n", 0],
+            "pacman-conf": [str(self.root / "db") + "/\n", 0],
             "pacman -Qql": ["/usr/lib/modules/7.0-test/pkgbase\n/usr/lib/modules/6.9-test/pkgbase\n", 0],
             "dkms": [
                 "".join(f"{module}/1, {kernel}, x86_64: installed\n"
@@ -118,19 +119,48 @@ class Upgrade(unittest.TestCase):
         self.assertEqual(code, 64, output)
         self.assertFalse(calls, calls)
 
-    def test_marker_is_reviewed_and_stock_check_runs(self):
+    def notice(self, identifier):
         self.settings["pacman -Dk"] = [
             ("error: 'CACHY_UPDATE_NOTICE': description file is missing\n"
              "error: 'CACHY_UPDATE_NOTICE': file list is missing\n"), 1,
         ]
+        marker = self.root / "db/local/CACHY_UPDATE_NOTICE"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(identifier)
+
+    def test_marker_is_reviewed_and_stock_check_runs(self):
+        self.notice("notice-1")
         code, output, calls = self.run_upgrade("--check")
         self.assertEqual(code, 2, output)
         self.assertIn("REVIEW", output)
         self.assertIn("CACHY_UPDATE_NOTICE", output)
+        self.assertIn("notice-1", output)
         self.assertIn(["pacman", "-Dk"], calls)
         self.assertNotIn("FAIL", output)
 
+    def test_acknowledged_notice_passes_until_it_changes(self):
+        self.notice("notice-1")
+        code, output, calls = self.run_upgrade("--acknowledge-notice")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("pacman", {call[0] for call in calls})
+        self.assertEqual((self.home / ".local/state/agent-upgrade/cachy-notice").read_text(), "notice-1\n")
+        code, output, calls = self.run_upgrade("--check")
+        self.assertEqual(code, 0, output)
+        self.assertIn("notice-1 already acknowledged", output)
+        self.assertIn(["pacman", "-Dk"], calls)
+        self.notice("notice-2")
+        code, output, _ = self.run_upgrade("--check")
+        self.assertEqual(code, 2, output)
+        self.assertIn("Notice ID: notice-2", output)
+
+    def test_acknowledge_without_marker_fails(self):
+        code, output, _ = self.run_upgrade("--acknowledge-notice")
+        self.assertEqual(code, 1, output)
+        self.assertFalse((self.home / ".local/state/agent-upgrade/cachy-notice").exists())
+
     def test_package_error_beside_marker_stays_failure(self):
+        self.notice("notice-1")
+        self.run_upgrade("--acknowledge-notice")
         self.settings["pacman -Dk"] = [
             ("error: 'CACHY_UPDATE_NOTICE': file list is missing\n"
              "error: 'broken-package': description file is missing\n"), 1,
