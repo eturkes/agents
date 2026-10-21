@@ -411,7 +411,8 @@ def parse(argv):
     p.add_argument("--upstream", default="http://127.0.0.1:8317")
     p.add_argument("--interval", type=float, default=3300, help="seconds without a cache read before a compaction or a touch")
     p.add_argument("--ttl", type=float, default=3600, help="cache entry lifetime; the keeper stops for the session after it")
-    p.add_argument("--touches", type=int, default=5, help="touches per stored request while the session is not quiet")
+    # break-even: 19 touch reads × 0.1 = a miss's 1-h write 2.0 - a hit's read 0.1
+    p.add_argument("--touches", type=int, default=19, help="touches per stored request while the session is not quiet")
     p.add_argument("--tick", type=float, default=30)
     p.add_argument("--touch-timeout", type=float, default=180)
     p.add_argument("--upstream-timeout", type=float, default=900, help="idle read timeout on relayed requests")

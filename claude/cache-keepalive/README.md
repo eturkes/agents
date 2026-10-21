@@ -22,13 +22,13 @@ CachyOS = systemd user service; aeon = foreground in a terminal, like CLIProxyAP
 - Stored request = all of: `POST /v1/messages` with a `claude` model; header `x-claude-code-request-class: main` (sent only under settings `env` `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1`); an `X-Claude-Code-Session-Id` header + a cache breakpoint with `ttl: "1h"`; upstream status 200. Per session = the newest alone.
 - 55 min without a main-thread request →
   - quiet session (no running turn; last turn left no background task or scheduled wakeup) → mod `idle-compact` compacts it: the compaction reads the cache, the next prompt writes only the short summary; keeper stops for the session.
-  - else (waiting at an AskUserQuestion dialog, or work still running) → a touch = the stored request re-sent, renewing the 1-h entry; ≤5 per session.
+  - else (waiting at an AskUserQuestion dialog, or work still running) → a touch = the stored request re-sent, renewing the 1-h entry; ≤19 per session (Cost).
 - Touch = stream closed at `message_start` ⇒ a cache read + almost no output. Byte-identical to the stored request, except a stored `stream: false` becomes `stream: true`: touches stream, and the flag sits outside the cached prompt ⇒ same cache entry.
 - [`idle-compact`](../mods/README.md) runs in each interactive session: every 30 s → quiet or not (`POST /_keepalive/poll`); on the keeper's ask → compacts + reports (`POST /_keepalive/compacted`). No mod report for 90 s, or a failed compaction → touches only.
-- Keeper stops for a session once: the mod compacted it; 5 touches done + its next 55-min mark reached; touches fail until the entry expires; upstream rejects a touch with 400/401/403/404/413/422; two touches in a row write more than they read.
+- Keeper stops for a session once: the mod compacted it; touch budget spent + its next 55-min mark reached; touches fail until the entry expires; upstream rejects a touch with 400/401/403/404/413/422; two touches in a row write more than they read.
 - Stopped session stays listed; its next main-thread request restarts it; it leaves the list once its CC process ends (process + launch dir from `~/.claude/sessions/<pid>.json`).
 - Stored requests live in memory ⇒ a keeper restart drops them; each session re-stores on its next main-thread request.
-- Cost: cache read = 0.1× base input, 1-h write = 2× ⇒ ~20 touches = one rewrite of the same context.
+- Cost (API list ratios): touch = cache read = 0.1× base input; resume after a lapse = 1-h write = 2× vs a hit's 0.1× ⇒ miss excess 1.9× = 19 touches ⇒ budget 19 = ski-rental break-even: waits ≤ ~18 h cost touches alone; longer ones ≤ 2× the hindsight best (touch through | never touch).
 
 ## Install
 
@@ -65,4 +65,4 @@ journalctl --user -u cache-keepalive.service
 
 ## Options
 
-`--interval` (3300 s) = idle time before a compaction or touch; `--touches` (5) = max touches per stored request; `--ttl` (3600 s) = cache lifetime; `--listen` + `--upstream` = addresses. Change one: CachyOS → the unit's `ExecStart`; aeon → the `cache-keepalive` command.
+`--interval` (3300 s) = idle time before a compaction or touch; `--touches` (19) = max touches per stored request; `--ttl` (3600 s) = cache lifetime; `--listen` + `--upstream` = addresses. Change one: CachyOS → the unit's `ExecStart`; aeon → the `cache-keepalive` command.
