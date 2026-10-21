@@ -123,6 +123,14 @@ reset_source() {
   git -C "$src" clean --quiet -fd
 }
 run_tests() { (cd -- "$src" && go test "${packages[@]}" -run "$tests" -count=1); }
+# Upstream fixed it ⇔ its release passes the patch's tests unpatched. The probe counts only when the
+# patch's own test is present: upstream tests alone would pass the filter vacuously.
+upstream_has_fix() {
+  local marker=TestConvertClaudeRequestToCodex_DeclaresDiscoveredToolAtReference
+  git -C "$src" apply --3way --include='*_test.go' -- "$patch" 2> /dev/null || return 1
+  (cd -- "$src" && go test "${packages[0]}" -list "$marker" 2> /dev/null) | grep -Fxq -- "$marker" || return 1
+  run_tests > /dev/null 2>&1
+}
 
 keep_packaged() {
   local reason=$1 version=$2
@@ -148,8 +156,7 @@ apply_patch() {
 
   fetch_source
   reset_source "$version"
-  # Upstream fixed it (its release passes the patch's tests unpatched) → retire the override.
-  if git -C "$src" apply --3way --include='*_test.go' -- "$patch" 2> /dev/null && run_tests > /dev/null 2>&1; then
+  if upstream_has_fix; then
     remove_override
     set_status "retired $version"
     echo "Upstream $version passes the patch tests unpatched; override retired."

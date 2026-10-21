@@ -27,6 +27,8 @@ elif name == "git":
         sys.exit(settings["apply tests" if any(a.startswith("--include") for a in args) else "apply full"])
     elif "rev-parse" in args:
         print("abc1234")
+elif name == "go" and args[0] == "test" and "-list" in args:
+    print(settings["listed"])
 elif name == "go" and args[0] == "test":
     counter = root / "go-tests"
     index = int(counter.read_text()) if counter.exists() else 0
@@ -66,7 +68,8 @@ class Patch(unittest.TestCase):
         self.override = self.home / ".config/systemd/user/cli-proxy-api.service.d/cli-proxy-api-patch.conf"
         self.status = self.home / ".cache/cli-proxy-api-patch/status"
         self.settings = {"version": "8.0.35-1", "apply tests": 0, "apply full": 0, "go test": [1, 0],
-                         "go build": 0, "ExecStart": "{ path=/usr/bin/cli-proxy-api ; }"}
+                         "go build": 0, "ExecStart": "{ path=/usr/bin/cli-proxy-api ; }",
+                         "listed": "TestConvertClaudeRequestToCodex_DeclaresDiscoveredToolAtReference\nok"}
         self.environment = {k: v for k, v in os.environ.items() if not k.startswith("XDG_")} | {
             "HOME": str(self.home), "PATCH_FIXTURE": str(self.root),
             "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
@@ -113,6 +116,15 @@ class Patch(unittest.TestCase):
         code, output, _ = self.run_patch("check")
         self.assertEqual(code, 0, output)
         self.assertIn("includes the fix", output)
+
+    def test_probe_without_patch_tests_cannot_retire(self):
+        # Test-only apply that adds nothing: upstream's own tests pass the filter vacuously.
+        self.settings |= {"listed": "ok", "go test": [0]}
+        code, output, calls = self.run_patch("apply")
+        self.assertEqual(code, 0, output)
+        self.assertTrue(self.override.exists())
+        self.assertEqual(self.status.read_text(), "active 8.0.35\n")
+        self.assertTrue([call for call in calls if call[:2] == ["go", "build"]], calls)
 
     def test_conflict_keeps_packaged_binary(self):
         self.run_patch("apply")
