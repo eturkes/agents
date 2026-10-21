@@ -11,6 +11,7 @@
 - Personal backup `~/doc/` requires explicit user inclusion before access.
 - Before the first absolute-path call: expand `~` from active `$HOME` → resolve existing paths with `readlink -f` → derive home paths from that result.
 - Unspecified stack → installed system tools.
+- T70 host/jail/VM operations → `~/pro/agents/host/freebsd/MAINTENANCE.md`.
 - Post-task cleanup reaches task-touched paths outside the project too, `$HOME` above all.
 - Shell/tool calls = native + uncompressed + unrewritten. `rg` = `/usr/local/bin/rg`; `grep`/`find` = FreeBSD, with BRE for `grep`.
 - `pgrep -f`/`pkill -f` → one bracketed pattern (`index[.]js`) to exclude the shell wrapper; kill + relaunch in separate calls.
