@@ -1,0 +1,58 @@
+#!/bin/sh
+# deploy-instructions [--check] — nixbox Codexify (user eturkes): ~/AGENTS.md ← AGENTS.codexify.md, and
+# codexify.config.json gains the home catalogue entry + worktrees.mode never; a config change restarts
+# Codexify. --check = report drift (rc 1), change nothing. Host = $NIXBOX (default eturkes@192.168.40.240).
+# Codexify ≥ 2.3: every chat selects a workspace + loads AGENTS.md from that directory alone ⇒ entry `.`
+# (alias `trading`) lets chats select ~, whose AGENTS.md routes to Projects/trading. Mode `auto` gives every
+# later chat on a selected checkout a git worktree, which fails on ~ (no repo) ⇒ `never`.
+set -eu
+here=$(cd "$(dirname "$0")" && pwd)
+host=${NIXBOX:-eturkes@192.168.40.240}
+case ${1-} in
+  '') mode=apply ;;
+  --check) mode=check ;;
+  *)
+    echo "usage: deploy-instructions [--check]" >&2
+    exit 2
+    ;;
+esac
+src=$here/AGENTS.codexify.md
+want=$(sha256sum <"$src" | cut -d' ' -f1)
+[ "$mode" = check ] || ssh "$host" 'umask 022; cat >.AGENTS.md.new' <"$src"
+ssh "$host" sh -s -- "$mode" "$want" <<'EOF'
+set -eu
+mode=$1 want=$2 changed=0
+cd
+cfg=.codexify/codexify.config.json
+trap 'rm -f .AGENTS.md.new "$cfg.new"' EXIT
+digest() { sha256sum 2>/dev/null <"$1" | cut -d' ' -f1; }
+if [ "$(digest AGENTS.md)" != "$want" ]; then
+  changed=$((changed + 1))
+  if [ "$mode" = apply ]; then
+    [ "$(digest .AGENTS.md.new)" = "$want" ] || { echo "upload corrupted: ~/.AGENTS.md.new" >&2; exit 1; }
+    mv .AGENTS.md.new AGENTS.md
+    echo "updated=$HOME/AGENTS.md"
+  else
+    echo "outdated=$HOME/AGENTS.md"
+  fi
+fi
+umask 077
+jq '.worktrees.mode = "never"
+  | .projectCatalog.entries = [(.projectCatalog.entries // [])[] | select(.path != ".")] + [{
+      path: ".", name: "home", aliases: ["trading"],
+      description: "Home workspace. Its AGENTS.md sends trading work to Projects/trading. Select it for every chat."
+    }]' "$cfg" >"$cfg.new"
+if [ "$(jq -S . "$cfg")" != "$(jq -S . "$cfg.new")" ]; then
+  changed=$((changed + 1))
+  if [ "$mode" = apply ]; then
+    mv "$cfg.new" "$cfg"
+    systemctl --user restart codexify.service
+    echo "updated=$HOME/$cfg (codexify.service restarted)"
+  else
+    echo "outdated=$HOME/$cfg"
+  fi
+fi
+[ "$mode" = check ] || systemctl --user is-active --quiet codexify.service || { echo "codexify.service inactive" >&2; exit 1; }
+echo "files_changed=$changed applied=$([ "$mode" = apply ] && echo true || echo false)"
+[ "$mode" = apply ] || [ "$changed" -eq 0 ]
+EOF
