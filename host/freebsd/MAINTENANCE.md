@@ -55,13 +55,15 @@ helpers remain on the host through forced-command SSH.
   retain current resource limits. Original-disk selector rollback is retired.
 - Wedding recovery = targeted retained-host-service rollback against unchanged
   state; preserve the shared host-root dataset.
-- Veriformatics admin/backups/rollback/log handling → `veriformatics-applied.md`
-  under the evidence root. T25 newsletter/origin/tunnel = stopped + disabled;
-  source/data/credentials/backups = retained. Admin = loopback SSH forwarding
-  to guest `:9000`, existing credentials + pinned host key. Target writes exist:
-  freeze/back up + reconcile into the stopped source before recovery; keep one
-  tunnel connector active. listmonk diagnostics can expose the SMTP API key:
-  use status/provider checks + the receipt's in-memory redaction procedure.
+- Veriformatics production/admin/backups/log handling → `veriformatics-applied.md`
+  under the evidence root. Production = T70; T25 development =
+  `~/Projects/veriformatics` + linked worktrees, including Naoto research.
+  T25's old hosting units/newsletter pod/storage/credentials are retired;
+  development/forum resources + shared tools remain. Recovery → current T70
+  backup + verified release, preserving newer writes. Admin → loopback SSH
+  forwarding to guest `:9000`, existing credentials + pinned host key.
+  listmonk diagnostics can expose the SMTP API key: use status/provider checks
+  + the receipt's in-memory redaction procedure.
 
 ## Maintenance boundaries
 
