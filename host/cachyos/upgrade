@@ -204,6 +204,15 @@ check_codexify() {
     details "${summary:-$check_output}"
   fi
 }
+check_cli_proxy_api_patch() {
+  capture "$script_dir/cli-proxy-api-patch" check
+  case $check_status in
+    0) report PASS 'CLIProxyAPI patch' ;;
+    2) report REVIEW 'CLIProxyAPI patch needs action' ;;
+    *) report FAIL "CLIProxyAPI patch (exit $check_status)" ;;
+  esac
+  details "$check_output"
+}
 postflight() {
   printf '\n=== System health and snapshot storage ===\n'
   check_packages
@@ -220,6 +229,7 @@ postflight() {
   check_codexify
   check 'BrowserOS Neo connection' 'Run browseros-neo. Then run upgrade --check again.' hide \
     browseros-call tabs '{"action":"list"}'
+  check_cli_proxy_api_patch
   check_configs
   check 'Project snapshot storage' 'Run project-snapshots report. Resolve the reported error.' show \
     "$script_dir/project-snapshots" report
@@ -276,6 +286,11 @@ sudo -n "$repo_root/host/cachyos/kernel-recovery" check
 stage 'System packages (pacman/AUR)'
 # paru owns repo + AUR toolchain; run first so later steps use current binaries.
 paru -Syu
+
+stage 'CLIProxyAPI patch'
+# paru may have moved cli-proxy-api-bin → rebuild the patch on its release; exit 2 = packaged binary kept.
+"$script_dir/cli-proxy-api-patch" apply ||
+  report REVIEW "cli-proxy-api-patch apply exited $?; inspect its output above"
 
 stage 'Python tools (uv)'
 # uv = pacman-managed (`paru -Syu` above moves it); this step owns uv-installed tools.

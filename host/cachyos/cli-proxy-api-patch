@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# Patched CLIProxyAPI: Claude Code tool-search discoveries keep the Codex prompt cache.
+# Patch = cli-proxy-api-patch.patch; service override = cli-proxy-api-patch.conf; MAINTENANCE.md#cliproxyapi-patch.
+set -euo pipefail
+export LC_ALL=C
+
+usage() {
+  echo 'Usage: cli-proxy-api-patch apply | check | rollback'
+  echo 'apply: Build the installed cli-proxy-api-bin release + the patch, test it, install it and route cli-proxy-api.service to it.'
+  echo '       An upstream release that passes the patch tests unpatched retires the override.'
+  echo 'check: Report the override, build and running binary without changing anything.'
+  echo 'rollback: Remove the override; the next service restart runs the packaged binary.'
+  echo 'No command restarts the service; activate with systemctl --user restart cli-proxy-api.service.'
+  echo 'Exit codes: 0 = done or current; 1 = failure; 2 = review needed (packaged binary kept or restart pending); 64 = usage.'
+}
+
+(($# == 1)) || { usage >&2; exit 64; }
+case $1 in
+  apply|check|rollback) mode=$1 ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 64 ;;
+esac
+
+script_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+patch="$script_dir/cli-proxy-api-patch.patch"
+override_source="$script_dir/cli-proxy-api-patch.conf"
+state="${XDG_CACHE_HOME:-$HOME/.cache}/cli-proxy-api-patch"
+src="$state/src"
+status_file="$state/status"
+lib="$HOME/.local/lib/cli-proxy-api-patch"
+binary="$lib/cli-proxy-api"
+stamp="$lib/build"
+override="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/cli-proxy-api.service.d/cli-proxy-api-patch.conf"
+unit=cli-proxy-api.service
+upstream=https://github.com/router-for-me/CLIProxyAPI.git
+tmp=''
+packages=(./internal/translator/codex/claude/ ./internal/runtime/executor/ ./internal/runtime/executor/helps/)
+tests='Deferred|DiscoveredTool|ToolDiscovery|RepeatedReference|ToolUsedBeforeReference|AdditionalTools|CountCodexInputTokens'
+
+package_version() {
+  local name version
+  read -r name version < <(pacman -Q cli-proxy-api-bin) || return
+  [[ $name == cli-proxy-api-bin && -n $version ]] || return 1
+  printf '%s\n' "${version%-*}"
+}
+build_id() { printf '%s %s\n' "$1" "$(sha256sum < "$patch" | cut -d' ' -f1)"; }
+file_id() { stat -Lc '%d:%i' -- "$1" 2>/dev/null; }
+running_id() {
+  local pid
+  pid=$(systemctl --user show -p MainPID --value "$unit") || return
+  [[ -n $pid && $pid != 0 ]] || return 1
+  file_id "/proc/$pid/exe"
+}
+set_status() { mkdir -p -- "$state"; printf '%s\n' "$*" > "$status_file"; }
+remove_override() {
+  [[ -f $override ]] || return 0
+  rm -f -- "$override"
+  rmdir --ignore-fail-on-non-empty -- "${override%/*}"
+  systemctl --user daemon-reload
+}
+activation_note() {
+  if [[ $(running_id || true) != "$(file_id "$1")" ]]; then
+    echo "Restart pending: systemctl --user restart $unit"
+  fi
+}
+
+check_state() {
+  local version status=none build
+  version=$(package_version) || { echo 'cli-proxy-api-bin is not installed.'; return 1; }
+  [[ ! -f $status_file ]] || status=$(<"$status_file")
+  if [[ ! -f $override ]]; then
+    if [[ $status == "retired $version" ]]; then
+      echo "Upstream $version includes the fix; the packaged binary runs without an override."
+      return 0
+    fi
+    echo "No override: the packaged $version binary runs without the fix (last apply: $status)."
+    echo 'Next: Run cli-proxy-api-patch apply, then restart the service.'
+    return 2
+  fi
+  if ! cmp -s -- "$override_source" "$override"; then
+    echo "Override $override differs from $override_source."
+    echo 'Next: Run cli-proxy-api-patch apply.'
+    return 1
+  fi
+  if [[ ! -x $binary || ! -f $stamp ]]; then
+    echo "Override present but the patched build $binary is missing."
+    echo 'Next: Run cli-proxy-api-patch apply, or cli-proxy-api-patch rollback.'
+    return 1
+  fi
+  build=$(<"$stamp")
+  if [[ $build != "$(build_id "$version")" ]]; then
+    echo "Patched build ($build) does not match package $version + the current patch."
+    echo 'Next: Run cli-proxy-api-patch apply, then restart the service.'
+    return 2
+  fi
+  if ! systemctl --user show -p ExecStart --value "$unit" | grep -Fq -- "$binary"; then
+    echo "$unit does not start $binary yet."
+    echo 'Next: Run systemctl --user daemon-reload, then restart the service.'
+    return 2
+  fi
+  if ! running_id > /dev/null; then
+    echo "$unit is not running."
+    echo "Next: Run systemctl --user start $unit."
+    return 1
+  fi
+  if [[ $(running_id) != "$(file_id "$binary")" ]]; then
+    echo "Patched $version build installed; the service still runs the previous binary."
+    echo "Next: Run systemctl --user restart $unit."
+    return 2
+  fi
+  echo "Patched $version build running ($binary)."
+}
+
+fetch_source() {
+  if [[ ! -d $src/.git ]]; then
+    mkdir -p -- "$state"
+    git clone --quiet --no-checkout -- "$upstream" "$src"
+  fi
+  git -C "$src" fetch --quiet --force --tags origin
+}
+reset_source() {
+  git -C "$src" checkout --quiet --force --detach "v$1"
+  git -C "$src" clean --quiet -fd
+}
+run_tests() { (cd -- "$src" && go test "${packages[@]}" -run "$tests" -count=1); }
+
+keep_packaged() {
+  local reason=$1 version=$2
+  remove_override
+  set_status "stock $version: $reason"
+  echo "Packaged $version binary kept: $reason."
+  echo 'Next: Rebase cli-proxy-api-patch.patch onto the new release, then run cli-proxy-api-patch apply.'
+  exit 2
+}
+
+apply_patch() {
+  local version id
+  version=$(package_version) || { echo 'cli-proxy-api-bin is not installed.' >&2; exit 1; }
+  id=$(build_id "$version")
+  if [[ -x $binary && -f $stamp && $(<"$stamp") == "$id" ]]; then
+    install -Dm644 -- "$override_source" "$override"
+    systemctl --user daemon-reload
+    set_status "active $version"
+    echo "Patched $version build is current."
+    activation_note "$binary"
+    return
+  fi
+
+  fetch_source
+  reset_source "$version"
+  # Upstream fixed it (its release passes the patch's tests unpatched) → retire the override.
+  if git -C "$src" apply --3way --include='*_test.go' -- "$patch" 2> /dev/null && run_tests > /dev/null 2>&1; then
+    remove_override
+    set_status "retired $version"
+    echo "Upstream $version passes the patch tests unpatched; override retired."
+    activation_note /usr/bin/cli-proxy-api
+    return
+  fi
+  reset_source "$version"
+  git -C "$src" apply --3way -- "$patch" || keep_packaged "the patch does not apply to v$version" "$version"
+  run_tests || keep_packaged "the patch tests fail on v$version" "$version"
+
+  tmp=$(mktemp -d)
+  trap 'rm -rf -- "$tmp"' EXIT
+  (cd -- "$src" && go build -trimpath -o "$tmp/cli-proxy-api" \
+    -ldflags "-s -w -X main.Version=$version+deferred-tools -X main.Commit=$(git rev-parse --short HEAD)+patch -X main.BuildDate=$(date -u +%FT%TZ)" \
+    ./cmd/server) || keep_packaged "the patched build fails on v$version" "$version"
+  install -Dm755 -- "$tmp/cli-proxy-api" "$binary.new"
+  mv -f -- "$binary.new" "$binary"
+  printf '%s\n' "$id" > "$stamp"
+  install -Dm644 -- "$override_source" "$override"
+  systemctl --user daemon-reload
+  set_status "active $version"
+  echo "Patched $version build installed: $binary."
+  activation_note "$binary"
+}
+
+case $mode in
+  check) check_state ;;
+  rollback)
+    remove_override
+    set_status rollback
+    echo 'Override removed; the packaged binary runs from the next restart.'
+    activation_note /usr/bin/cli-proxy-api
+    ;;
+  apply) apply_patch ;;
+esac

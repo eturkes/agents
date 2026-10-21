@@ -22,7 +22,7 @@ Busy uv cache → skip pruning (`UV_LOCK_TIMEOUT=0`), preserve active processes;
 `upgrade` runs postflight after successful or failed update stages; later update stages stop on failure.
 `upgrade --check` runs the same read-only checks from any directory, without updates or cleanup.
 
-- Coverage = stock `pacman -Dk`, bcachefs + NVIDIA DKMS for every installed kernel, recovery checkpoint, system/user failed units, crash policy, NVIDIA access, Codex, Codexify, BrowserOS Neo, configuration files + project snapshot storage.
+- Coverage = stock `pacman -Dk`, bcachefs + NVIDIA DKMS for every installed kernel, recovery checkpoint, system/user failed units, crash policy, NVIDIA access, Codex, Codexify, BrowserOS Neo, CLIProxyAPI patch, configuration files + project snapshot storage.
 - Status = `PASS` check succeeded; `REVIEW` manual decision; `FAIL` action required. Exit = `0` clear, `1` failure, `2` review, `64` usage/PTY.
 - Failed units → compare with the pre-update baseline; standalone checks label current failures without attributing them to updates.
 - `CACHY_UPDATE_NOTICE` alone → review until its notice ID is acknowledged (`upgrade --acknowledge-notice` after reading the notice pacman printed → `~/.local/state/agent-upgrade/cachy-notice`), then pass until the ID changes; other package-record errors → failure. Preserve the marker and stock check.
@@ -71,6 +71,17 @@ done
 ```
 
 - Before app/profile maintenance → `systemctl --user stop <owning-unit>`; unit stays stopped. Resume → `systemctl --user start <owning-unit>` or login autostart.
+
+### CLIProxyAPI patch
+
+- Claude Code GPT teammates reach Codex through `cli-proxy-api-bin`. Stock CLIProxyAPI declares each tool ToolSearch discovers in the top-level Codex `tools`, rendered ahead of the input ⇒ the next request reads nothing from the prompt cache. `cli-proxy-api-patch.patch` declares it in an `additional_tools` item after the referencing tool result; upstream [#1894](https://github.com/router-for-me/CLIProxyAPI/issues/1894) closed without that fix.
+- `host/cachyos/cli-proxy-api-patch apply`: installed package version → tag `v<version>` in `~/.cache/cli-proxy-api-patch/src` (full clone, ~50 MB). The patch's tests pass on the unpatched tag ⇒ upstream has the fix, override retired. Else 3-way apply, patch tests, build → `~/.local/lib/cli-proxy-api-patch/cli-proxy-api` + `cli-proxy-api-patch.conf` → `~/.config/systemd/user/cli-proxy-api.service.d/`. Build stamp = version + patch SHA-256 ⇒ an unchanged rerun skips the build.
+- Patch no longer applies, or its tests or build fail → override removed, packaged binary kept, exit 2. Rebase in the clone (`git am -3`), re-export with `git format-patch -1 --full-index --stdout`, commit, rerun `apply`.
+- `upgrade` runs `apply` after `paru -Syu`; exit 2 → review, later stages continue. Postflight runs read-only `check`: override bytes, build stamp, unit `ExecStart`, running binary by inode.
+- No command restarts the service, matching paru: activation = `systemctl --user restart cli-proxy-api.service`; requests in flight fail once and Claude Code retries them. `rollback` = override removed; packaged binary from the next restart.
+- Toolchain = pacman `go`; module + build caches = Go defaults.
+
+Checks = `bash -n host/cachyos/cli-proxy-api-patch`, `shellcheck host/cachyos/cli-proxy-api-patch`, `ruff check host/cachyos/check-cli-proxy-api-patch`, `python -B host/cachyos/check-cli-proxy-api-patch -q`, `host/cachyos/cli-proxy-api-patch check`.
 
 ### Agent crash diagnostics
 

@@ -28,6 +28,8 @@ elif name == "systemctl":
     key += " after" if (root / "updated").exists() else " before"
 elif name == "chromiumfish" and args == ["path"]:
     key += " path"
+elif name == "cli-proxy-api-patch":
+    key += " " + args[0]
 elif name == "paru":
     (root / "updated").touch()
 value = settings.get(key, ["", 0])
@@ -56,7 +58,8 @@ class Upgrade(unittest.TestCase):
         ]
         for name in names:
             self.write(self.bin / name, dispatcher)
-        for name in ("kernel-recovery", "agent-crash-policy", "cache-retention", "project-snapshots"):
+        for name in ("kernel-recovery", "agent-crash-policy", "cache-retention", "project-snapshots",
+                     "cli-proxy-api-patch"):
             self.write(self.script.parent / name, dispatcher)
         self.write(self.repo / "claude/marketplace/upgrade-servers", dispatcher)
         self.write(self.root / "browser/chrome_crashpad_handler", "#!/bin/sh\nexit 0\n")
@@ -103,9 +106,11 @@ class Upgrade(unittest.TestCase):
         names = {call[0] for call in calls}
         self.assertTrue({"pacman", "dkms", "kernel-recovery", "systemctl", "agent-crash-policy",
                          "nvidia-smi", "codex", "codexify", "browseros-call", "pacdiff",
-                         "project-snapshots"} <= names, names)
+                         "project-snapshots", "cli-proxy-api-patch"} <= names, names)
         self.assertTrue(names.isdisjoint({"paru", "uv", "moon", "git", "pnpm", "cache-retention"}), names)
         self.assertIn(["project-snapshots", "report"], calls)
+        self.assertIn(["cli-proxy-api-patch", "check"], calls)
+        self.assertNotIn(["cli-proxy-api-patch", "apply"], calls)
         self.assertIn("Summary:", output)
         self.assertIn("manual", output.lower())
 
@@ -203,6 +208,24 @@ class Upgrade(unittest.TestCase):
         code, output, _ = self.run_upgrade("--check")
         self.assertEqual(code, 2, output)
         self.assertIn("Optional configuration needs review", output)
+
+    def test_cli_proxy_api_patch_check_status_maps_to_report(self):
+        for status, code_expected, label in ((2, 2, "REVIEW"), (1, 1, "FAIL")):
+            self.settings["cli-proxy-api-patch check"] = ["Restart pending\n", status]
+            code, output, _ = self.run_upgrade("--check")
+            self.assertEqual(code, code_expected, output)
+            self.assertIn(f"[{label}] CLIProxyAPI patch", output)
+            self.assertIn("Restart pending", output)
+
+    def test_cli_proxy_api_patch_review_does_not_stop_updates(self):
+        self.settings["cli-proxy-api-patch apply"] = ["Packaged 8.0.40 binary kept\n", 2]
+        code, output, calls = self.run_upgrade(tty=True)
+        self.assertEqual(code, 2, output)
+        self.assertIn("cli-proxy-api-patch apply exited 2", output)
+        apply = calls.index(["cli-proxy-api-patch", "apply"])
+        self.assertLess(calls.index(["paru", "-Syu"]), apply)
+        self.assertLess(apply, next(index for index, call in enumerate(calls) if call[0] == "uv"))
+        self.assertIn(["cache-retention"], calls)
 
     def test_preexisting_and_new_unit_failures_are_distinct(self):
         old = "old.service loaded failed failed Existing problem\n"

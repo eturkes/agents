@@ -1,7 +1,7 @@
 # CachyOS host
 
 - Workflow → `MAINTENANCE.md`; one package-manager owner; preserve existing upgrade gates.
-- Recipes = `agent-desktop`, `agent-crash-policy`, `lid-policy`, `ac-loss-policy`, `intel-graphics-policy`, `normalize-dns`, `cache-retention`, `prune-desktop`, `kernel-recovery`.
+- Recipes = `agent-desktop`, `agent-crash-policy`, `lid-policy`, `ac-loss-policy`, `intel-graphics-policy`, `normalize-dns`, `cache-retention`, `prune-desktop`, `kernel-recovery`, `cli-proxy-api-patch`.
 - Host use = agents only. Crash diagnostics = native core dumps + journal + GDB; DrKonqi GUI/reporting stays dormant via `./agent-crash-policy apply`.
 - Browsers = BrowserOS for the user, Neo for agents; preserve both profiles. Profile/PSD/cache + launchers + verification → `BROWSER.md`.
 - Neo + ChatGPT recovery policy/replay/checks → `MAINTENANCE.md#desktop-recovery`.
@@ -19,3 +19,4 @@
 - Projects snapshots → `PROJECT-SNAPSHOTS.md`; native Snapper pre/post hooks, whole-tree coverage incl. caches, manual retention.
 - Snapshot checks → `python -B ./check-project-snapshots -q`, `python -B ./check-project-snapshots-migrate -q`, `./project-snapshots check`, `python -B ./check-project-snapshots-live`.
 - Upgrade checks → `python -B ./check-upgrade -q`, `./upgrade --check`; status 2 = review items, 1 = failures.
+- CLIProxyAPI patch (GPT teammates' prompt cache across tool search) → `MAINTENANCE.md#cliproxyapi-patch`; checks → `./cli-proxy-api-patch check`, `python -B ./check-cli-proxy-api-patch -q`.
