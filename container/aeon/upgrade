@@ -123,3 +123,8 @@ codexify doctor
 # --- CLIProxyAPI ---
 curl -fsSL https://raw.githubusercontent.com/router-for-me/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer | bash -s -- upgrade
 
+# --- CLIProxyAPI patch ---
+# The installer copies the stock binary over the patched one → rebuild the patch on its release.
+# Last step ⇒ its exit = the run's: 2 = stock binary kept (review).
+"$script_dir/cli-proxy-api-patch" apply
+

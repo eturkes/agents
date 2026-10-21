@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+# Patched CLIProxyAPI (Aeon Debian): Claude Code tool-search discoveries keep the Codex prompt cache.
+# Host counterpart = host/cachyos/cli-proxy-api-patch; shared patch + rationale = host/cachyos/cli-proxy-api-patch.patch,
+# host/cachyos/MAINTENANCE.md#cliproxyapi-patch.
+# Install = cliproxyapi-installer: stock release in ~/cliproxyapi/<version>/; launched binary = ~/cliproxyapi/cli-proxy-api
+# (installer upgrade copies stock over it → container/aeon/upgrade reruns apply). Toolchain = apt golang-go + GOTOOLCHAIN=auto
+# (go.mod's go line pulls the release's toolchain).
+set -euo pipefail
+export LC_ALL=C GOTOOLCHAIN=auto
+
+usage() {
+  echo 'Usage: cli-proxy-api-patch apply | check | rollback'
+  echo 'apply: Build the installed CLIProxyAPI release with the patch. Test the build. Install it as ~/cliproxyapi/cli-proxy-api.'
+  echo '       When the release passes the patch tests without the patch, restore the stock binary.'
+  echo 'check: Report the installed binary, the build and the running process. Change nothing.'
+  echo 'rollback: Restore the stock binary. It starts at the next restart.'
+  echo 'No command restarts CLIProxyAPI. To activate a change, stop it. Then run cliproxyapi/cli-proxy-api --config cliproxyapi/config.yaml in ~.'
+  echo 'Exit codes: 0 = done or current; 1 = failure; 2 = review needed (stock binary kept, start or restart pending); 64 = usage error.'
+}
+
+(($# == 1)) || { usage >&2; exit 64; }
+case $1 in
+  apply|check|rollback) mode=$1 ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 64 ;;
+esac
+
+script_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+patch="$script_dir/../../host/cachyos/cli-proxy-api-patch.patch"
+install_dir=$(readlink -m -- "$HOME/cliproxyapi")
+live="$install_dir/cli-proxy-api"
+state="${XDG_CACHE_HOME:-$HOME/.cache}/cli-proxy-api-patch"
+src="$state/src"
+status_file="$state/status"
+lib="$HOME/.local/lib/cli-proxy-api-patch"
+binary="$lib/cli-proxy-api"
+stamp="$lib/build"
+upstream=https://github.com/router-for-me/CLIProxyAPI.git
+tmp=''
+packages=(./internal/translator/codex/claude/ ./internal/runtime/executor/ ./internal/runtime/executor/helps/)
+tests='Deferred|DiscoveredTool|ToolDiscovery|RepeatedReference|ToolUsedBeforeReference|AdditionalTools|CountCodexInputTokens'
+
+installed_version() {
+  local version
+  [[ -f $install_dir/version.txt ]] || return 1
+  version=$(<"$install_dir/version.txt")
+  [[ $version =~ ^[0-9][0-9A-Za-z.+-]*$ ]] || return 1
+  printf '%s\n' "$version"
+}
+require_version() {
+  installed_version || { echo "CLIProxyAPI is not installed: $install_dir/version.txt is missing or invalid." >&2; exit 1; }
+}
+stock_of() { printf '%s\n' "$install_dir/$1/cli-proxy-api"; }
+build_id() { printf '%s %s\n' "$1" "$(sha256sum < "$patch" | cut -d' ' -f1)"; }
+file_id() { stat -Lc '%d:%i' -- "$1" 2>/dev/null; }
+# Processes launched from $live; a replaced file reads as "$live (deleted)".
+running_ids() {
+  local pid exe
+  for pid in $(pgrep -x cli-proxy-api); do
+    exe=$(readlink -- "/proc/$pid/exe") || continue
+    [[ $exe == "$live" || $exe == "$live (deleted)" ]] || continue
+    file_id "/proc/$pid/exe" || true
+  done
+}
+# 0 = every process runs the current $live; 1 = one runs a replaced file; 2 = none runs.
+running_state() {
+  local ids current
+  ids=$(running_ids)
+  [[ -n $ids ]] || return 2
+  current=$(file_id "$live") || return 1
+  ! grep -vqFx -- "$current" <<< "$ids"
+}
+set_status() { mkdir -p -- "$state"; printf '%s\n' "$*" > "$status_file"; }
+# Atomic rename → a running process keeps its inode; identical bytes → no rewrite.
+install_live() {
+  cmp -s -- "$1" "$live" && return 0
+  install -m755 -- "$1" "$live.new"
+  mv -f -- "$live.new" "$live"
+}
+activation_note() {
+  running_state && return 0
+  echo 'Restart pending: Stop CLIProxyAPI. Then run cliproxyapi/cli-proxy-api --config cliproxyapi/config.yaml in ~.'
+}
+
+check_state() {
+  local version status=none build state_code=0
+  version=$(installed_version) || { echo "CLIProxyAPI is not installed: $install_dir/version.txt is missing or invalid."; return 1; }
+  [[ ! -f $status_file ]] || status=$(<"$status_file")
+  if cmp -s -- "$(stock_of "$version")" "$live"; then
+    if [[ $status == "retired $version" ]]; then
+      echo "Upstream $version includes the fix. The stock binary runs without the patch."
+      return 0
+    fi
+    echo "The stock $version binary is installed without the fix (last apply: $status)."
+    echo 'Next: Run cli-proxy-api-patch apply. Then restart CLIProxyAPI.'
+    return 2
+  fi
+  if [[ ! -x $binary || ! -f $stamp ]] || ! cmp -s -- "$binary" "$live"; then
+    echo "$live is neither the stock $version binary nor the patched build $binary."
+    echo 'Next: Run cli-proxy-api-patch apply. To restore the stock binary, run cli-proxy-api-patch rollback.'
+    return 1
+  fi
+  build=$(<"$stamp")
+  if [[ $build != "$(build_id "$version")" ]]; then
+    echo "The patched build ($build) does not match release $version and the current patch."
+    echo 'Next: Run cli-proxy-api-patch apply. Then restart CLIProxyAPI.'
+    return 2
+  fi
+  running_state || state_code=$?
+  case $state_code in
+    0) echo "The patched $version build is running ($live)." ;;
+    1)
+      echo "The patched $version build is installed. CLIProxyAPI still runs the previous binary."
+      echo 'Next: Restart CLIProxyAPI.'
+      return 2
+      ;;
+    *)
+      echo "The patched $version build is installed. CLIProxyAPI is not running."
+      echo 'Next: Run cliproxyapi/cli-proxy-api --config cliproxyapi/config.yaml in ~.'
+      return 2
+      ;;
+  esac
+}
+
+fetch_source() {
+  if [[ ! -d $src/.git ]]; then
+    mkdir -p -- "$state"
+    git clone --quiet --no-checkout -- "$upstream" "$src"
+  fi
+  git -C "$src" fetch --quiet --force --tags origin
+}
+reset_source() {
+  git -C "$src" checkout --quiet --force --detach "v$1"
+  git -C "$src" clean --quiet -fd
+}
+run_tests() { (cd -- "$src" && go test "${packages[@]}" -run "$tests" -count=1); }
+# Upstream fix ⇔ release passes the patch tests unpatched; counts only with the patch's own test
+# listed (upstream tests alone pass the filter vacuously).
+upstream_has_fix() {
+  local marker=TestConvertClaudeRequestToCodex_DeclaresDiscoveredToolAtReference
+  git -C "$src" apply --3way --include='*_test.go' -- "$patch" 2> /dev/null || return 1
+  (cd -- "$src" && go test "${packages[0]}" -list "$marker" 2> /dev/null) | grep -Fxq -- "$marker" || return 1
+  run_tests > /dev/null 2>&1
+}
+
+keep_stock() {
+  local reason=$1 version=$2
+  install_live "$(stock_of "$version")"
+  set_status "stock $version: $reason"
+  echo "The stock $version binary stays: $reason."
+  echo 'Next: Rebase host/cachyos/cli-proxy-api-patch.patch onto the new release. Then run cli-proxy-api-patch apply.'
+  exit 2
+}
+
+apply_patch() {
+  local version id stock
+  version=$(require_version)
+  stock=$(stock_of "$version")
+  [[ -x $stock ]] || { echo "The stock $version binary $stock is missing." >&2; exit 1; }
+  id=$(build_id "$version")
+  if [[ -x $binary && -f $stamp && $(<"$stamp") == "$id" ]]; then
+    install_live "$binary"
+    set_status "active $version"
+    echo "The patched $version build is current."
+    activation_note
+    return
+  fi
+
+  fetch_source
+  reset_source "$version"
+  if upstream_has_fix; then
+    install_live "$stock"
+    set_status "retired $version"
+    echo "Upstream $version passes the patch tests without the patch. The stock binary is restored."
+    activation_note
+    return
+  fi
+  reset_source "$version"
+  git -C "$src" apply --3way -- "$patch" || keep_stock "the patch does not apply to v$version" "$version"
+  run_tests || keep_stock "the patch tests fail on v$version" "$version"
+
+  tmp=$(mktemp -d)
+  trap 'rm -rf -- "$tmp"' EXIT
+  (cd -- "$src" && go build -trimpath -o "$tmp/cli-proxy-api" \
+    -ldflags "-s -w -X main.Version=$version+deferred-tools -X main.Commit=$(git rev-parse --short HEAD)+patch -X main.BuildDate=$(date -u +%FT%TZ)" \
+    ./cmd/server) || keep_stock "the patched build fails on v$version" "$version"
+  install -Dm755 -- "$tmp/cli-proxy-api" "$binary.new"
+  mv -f -- "$binary.new" "$binary"
+  printf '%s\n' "$id" > "$stamp"
+  install_live "$binary"
+  set_status "active $version"
+  echo "The patched $version build is installed: $live."
+  activation_note
+}
+
+case $mode in
+  check) check_state ;;
+  rollback)
+    version=$(require_version)
+    stock=$(stock_of "$version")
+    [[ -x $stock ]] || { echo "The stock $version binary $stock is missing." >&2; exit 1; }
+    install_live "$stock"
+    set_status rollback
+    echo 'The stock binary is restored. It starts at the next restart.'
+    activation_note
+    ;;
+  apply) apply_patch ;;
+esac

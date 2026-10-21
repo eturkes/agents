@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Exercise the Aeon cli-proxy-api-patch outcomes with an isolated home and command substitutes."""
+
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+DISPATCH = r'''import json, os, pathlib, shutil, sys
+name = pathlib.Path(sys.argv[0]).name
+args = sys.argv[1:]
+root = pathlib.Path(os.environ["PATCH_FIXTURE"])
+with (root / "calls").open("a") as stream:
+    stream.write(json.dumps([name, *args]) + "\n")
+settings = json.loads((root / "settings.json").read_text())
+if name == "git":
+    if "clone" in args:
+        (pathlib.Path(args[-1]) / ".git").mkdir(parents=True)
+    elif "apply" in args:
+        sys.exit(settings["apply tests" if any(a.startswith("--include") for a in args) else "apply full"])
+    elif "rev-parse" in args:
+        print("abc1234")
+elif name == "go" and args[0] == "test" and "-list" in args:
+    print(settings["listed"])
+elif name == "go" and args[0] == "test":
+    counter = root / "go-tests"
+    index = int(counter.read_text()) if counter.exists() else 0
+    counter.write_text(str(index + 1))
+    sys.exit(settings["go test"][index])
+elif name == "go" and args[0] == "build":
+    if settings["go build"]:
+        sys.exit(settings["go build"])
+    shutil.copy("/usr/bin/sleep", args[args.index("-o") + 1])
+'''
+
+
+class Patch(unittest.TestCase):
+    def setUp(self):
+        repo = Path(__file__).resolve().parents[2]
+        temporary = tempfile.TemporaryDirectory(prefix="cli-proxy-api-patch-check-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.home = self.root / "home with spaces"
+        self.dir = self.home / ".local/app/agents/container/aeon"
+        self.dir.mkdir(parents=True)
+        shutil.copy(repo / "container/aeon/cli-proxy-api-patch", self.dir)
+        self.patch = self.home / ".local/app/agents/host/cachyos/cli-proxy-api-patch.patch"
+        self.patch.parent.mkdir(parents=True)
+        shutil.copy(repo / "host/cachyos/cli-proxy-api-patch.patch", self.patch)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        for name in ("git", "go"):
+            stub = self.bin / name
+            stub.write_text(f"#!{sys.executable}\n" + DISPATCH)
+            stub.chmod(0o755)
+        self.install = self.home / "cliproxyapi"
+        self.live = self.install / "cli-proxy-api"
+        self.binary = self.home / ".local/lib/cli-proxy-api-patch/cli-proxy-api"
+        self.status = self.home / ".cache/cli-proxy-api-patch/status"
+        self.release("8.0.35")
+        shutil.copy(self.stock("8.0.35"), self.live)
+        self.settings = {"apply tests": 0, "apply full": 0, "go test": [1, 0], "go build": 0,
+                         "listed": "TestConvertClaudeRequestToCodex_DeclaresDiscoveredToolAtReference\nok"}
+        self.environment = {k: v for k, v in os.environ.items() if not k.startswith("XDG_")} | {
+            "HOME": str(self.home), "PATCH_FIXTURE": str(self.root),
+            "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
+        }
+
+    def stock(self, version):
+        return self.install / version / "cli-proxy-api"
+
+    def release(self, version):
+        # Installer layout; stock = sleep + a version tag (trailing bytes) ⇒ runnable, distinct from the build.
+        stock = self.stock(version)
+        stock.parent.mkdir(parents=True, exist_ok=True)
+        stock.write_bytes(Path("/usr/bin/sleep").read_bytes() + version.encode())
+        stock.chmod(0o755)
+        (self.install / "version.txt").write_text(version + "\n")
+
+    def run_patch(self, *args):
+        (self.root / "settings.json").write_text(json.dumps(self.settings))
+        (self.root / "calls").unlink(missing_ok=True)
+        (self.root / "go-tests").unlink(missing_ok=True)
+        result = subprocess.run(["bash", str(self.dir / "cli-proxy-api-patch"), *args], env=self.environment,
+                                cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                timeout=20, check=False)
+        calls = self.root / "calls"
+        history = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
+        return result.returncode, result.stdout, history
+
+    def start_live(self):
+        process = subprocess.Popen([str(self.live), "60"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+
+    def test_apply_installs_build_as_live_binary(self):
+        code, output, calls = self.run_patch("apply")
+        self.assertEqual(code, 0, output)
+        self.assertTrue(os.access(self.binary, os.X_OK))
+        self.assertEqual(self.live.read_bytes(), self.binary.read_bytes())
+        digest = hashlib.sha256(self.patch.read_bytes()).hexdigest()
+        self.assertEqual((self.binary.parent / "build").read_text(), f"8.0.35 {digest}\n")
+        self.assertEqual(self.status.read_text(), "active 8.0.35\n")
+        self.assertIn(["git", "-C", str(self.home / ".cache/cli-proxy-api-patch/src"), "checkout", "--quiet",
+                       "--force", "--detach", "v8.0.35"], calls)
+        self.assertIn("Restart pending", output)
+
+    def test_running_process_keeps_inode_until_restart(self):
+        self.start_live()
+        code, output, _ = self.run_patch("check")
+        self.assertEqual(code, 2, output)
+        self.assertIn("without the fix", output)
+        code, output, _ = self.run_patch("apply")
+        self.assertEqual(code, 0, output)
+        self.assertIn("Restart pending", output)
+        code, output, _ = self.run_patch("check")
+        self.assertEqual(code, 2, output)
+        self.assertIn("previous binary", output)
+
+    def test_upstream_fix_restores_stock(self):
+        self.run_patch("apply")
+        self.release("8.0.40")
+        self.settings["go test"] = [0]
+        code, output, calls = self.run_patch("apply")
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.live.read_bytes(), self.stock("8.0.40").read_bytes())
+        self.assertEqual(self.status.read_text(), "retired 8.0.40\n")
+        self.assertFalse([call for call in calls if call[:2] == ["go", "build"]], calls)
+        code, output, _ = self.run_patch("check")
+        self.assertEqual(code, 0, output)
+        self.assertIn("includes the fix", output)
+
+    def test_probe_without_patch_tests_cannot_retire(self):
+        # Test-only apply that adds nothing: upstream's own tests pass the filter vacuously.
+        self.settings |= {"listed": "ok", "go test": [0]}
+        code, output, calls = self.run_patch("apply")
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.live.read_bytes(), self.binary.read_bytes())
+        self.assertEqual(self.status.read_text(), "active 8.0.35\n")
+        self.assertTrue([call for call in calls if call[:2] == ["go", "build"]], calls)
+
+    def test_conflict_keeps_stock_binary(self):
+        self.run_patch("apply")
+        self.release("8.0.40")
+        self.settings["apply full"] = 1
+        code, output, calls = self.run_patch("apply")
+        self.assertEqual(code, 2, output)
+        self.assertEqual(self.live.read_bytes(), self.stock("8.0.40").read_bytes())
+        self.assertTrue(self.status.read_text().startswith("stock 8.0.40: the patch does not apply"))
+        self.assertFalse([call for call in calls if call[:2] == ["go", "build"]], calls)
+        code, output, _ = self.run_patch("check")
+        self.assertEqual(code, 2, output)
+        self.assertIn("without the fix", output)
+
+    def test_failing_patch_tests_or_build_keep_stock_binary(self):
+        for change, reason in (({"go test": [1, 1]}, "tests fail"), ({"go build": 3}, "build fails")):
+            self.settings |= {"go test": [1, 0], "go build": 0} | change
+            code, output, _ = self.run_patch("apply")
+            self.assertEqual(code, 2, output)
+            self.assertIn(reason, self.status.read_text())
+            self.assertEqual(self.live.read_bytes(), self.stock("8.0.35").read_bytes())
+
+    def test_current_build_skips_rebuild_and_rewrite(self):
+        self.run_patch("apply")
+        inode = self.live.stat().st_ino
+        code, output, calls = self.run_patch("apply")
+        self.assertEqual(code, 0, output)
+        self.assertIn("is current", output)
+        self.assertEqual(self.live.stat().st_ino, inode)
+        self.assertFalse({"git", "go"} & {call[0] for call in calls}, calls)
+
+    def test_installer_upgrade_restore_is_reapplied_without_rebuild(self):
+        self.run_patch("apply")
+        shutil.copy(self.stock("8.0.35"), self.live)
+        code, output, calls = self.run_patch("apply")
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.live.read_bytes(), self.binary.read_bytes())
+        self.assertFalse({"git", "go"} & {call[0] for call in calls}, calls)
+
+    def test_check_is_read_only_and_follows_running_binary(self):
+        self.run_patch("apply")
+        self.start_live()
+        code, output, calls = self.run_patch("check")
+        self.assertEqual(code, 0, output)
+        self.assertIn("build is running", output)
+        self.assertFalse(calls, calls)
+        replacement = self.live.with_name("replacement")
+        shutil.copy(self.binary, replacement)
+        replacement.replace(self.live)
+        code, output, _ = self.run_patch("check")
+        self.assertEqual(code, 2, output)
+        self.assertIn("previous binary", output)
+        self.release("8.0.36")
+        code, output, _ = self.run_patch("check")
+        self.assertEqual(code, 2, output)
+        self.assertIn("does not match", output)
+
+    def test_check_flags_stopped_foreign_and_missing_state(self):
+        self.run_patch("apply")
+        code, output, _ = self.run_patch("check")
+        self.assertEqual(code, 2, output)
+        self.assertIn("not running", output)
+        self.live.write_bytes(b"foreign")
+        code, output, _ = self.run_patch("check")
+        self.assertEqual(code, 1, output)
+        self.assertIn("neither", output)
+        (self.install / "version.txt").unlink()
+        for mode in ("check", "apply", "rollback"):
+            code, output, _ = self.run_patch(mode)
+            self.assertEqual(code, 1, output)
+            self.assertIn("not installed", output)
+
+    def test_rollback_restores_stock(self):
+        self.run_patch("apply")
+        code, output, calls = self.run_patch("rollback")
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.live.read_bytes(), self.stock("8.0.35").read_bytes())
+        self.assertEqual(self.status.read_text(), "rollback\n")
+        self.assertFalse(calls, calls)
+
+    def test_usage(self):
+        for args in ((), ("apply", "check"), ("--unknown",)):
+            code, output, calls = self.run_patch(*args)
+            self.assertEqual(code, 64, output)
+            self.assertFalse(calls, calls)
+
+
+if __name__ == "__main__":
+    unittest.main()
