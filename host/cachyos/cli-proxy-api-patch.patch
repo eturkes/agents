@@ -1,34 +1,28 @@
-From a378f9afa24f3c2e99c04998680cedeef6713ac5 Mon Sep 17 00:00:00 2001
+From 541b94efb204dfb3f0a4ad95379e255e7ab367a4 Mon Sep 17 00:00:00 2001
 From: Emir Turkes <eturkes@bu.edu>
 Date: Wed, 21 Oct 2026 11:57:57 +0900
-Subject: [PATCH] fix(codex): declare Claude Code tool-search discoveries at
- their reference
+Subject: [PATCH] codex/claude: ToolSearch discoveries declared top-level ahead
+ of the input → each discovery reset the prompt cache → declare at the
+ reference via additional_tools
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
-Claude Code adds a deferred tool to tools[] (defer_loading) once ToolSearch
-discovers it and names it in a tool_reference. Codex renders top-level tools
-ahead of the input, so every discovery rewrote the prompt prefix and the next
-request read nothing from the prompt cache. Declare each referenced deferred
-tool in an additional_tools developer item right after the tool_result that
-names it, the position Anthropic renders it at; the input stays append-only.
-
-A deferred tool with no reference, or one called before its first retained
-reference (its reference compacted away), stays top-level. Compatibility
-endpoints keep the previous top-level declaration.
-
-Codex request handling now treats tools declared in additional_tools items
-like top-level ones: schema normalization, the explicit image-function check
-before hosted image_generation injection, the parallel_tool_calls cleanup,
-and count_tokens.
+- Claude Code: discovered deferred tool → tools[] (defer_loading) + tool_reference in the search tool_result.
+- Referenced deferred tool → additional_tools developer item after the referencing function_call_output ⇒ input append-only.
+- Top-level stays: unreferenced deferred tools, tools called before their first retained reference (compaction), compat endpoints.
+- additional_tools declarations ≡ top-level: schema normalization, image-function check, parallel_tool_calls cleanup, count_tokens.
+- gpt-6.1-sol via the ChatGPT backend, request after ToolSearch: cached 0/6,908 → 6,656/7,006.
 ---
  .../codex_executor_additional_tools_test.go   |  29 +++
  .../executor/codex_executor_request.go        |  22 +-
- .../runtime/executor/codex_executor_tokens.go |  53 +++--
+ .../runtime/executor/codex_executor_tokens.go |  52 +++--
  .../executor/codex_executor_tokens_test.go    |  27 +++
  .../executor/helps/codex_tool_schema.go       |  26 ++-
  .../executor/helps/codex_tool_schema_test.go  |  16 ++
- .../codex_claude_deferred_tools_test.go       | 209 ++++++++++++++++++
- .../codex/claude/codex_claude_request.go      | 128 ++++++++---
- 8 files changed, 456 insertions(+), 54 deletions(-)
+ .../codex_claude_deferred_tools_test.go       | 208 ++++++++++++++++++
+ .../codex/claude/codex_claude_request.go      | 126 ++++++++---
+ 8 files changed, 452 insertions(+), 54 deletions(-)
  create mode 100644 internal/runtime/executor/codex_executor_additional_tools_test.go
  create mode 100644 internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 
@@ -115,7 +109,7 @@ index 0b5576af49ffc434c5fd7df8d7a7b492b38bf620..8f552851cc1b5fd7e9721ac71e54dffe
  	}
  
 diff --git a/internal/runtime/executor/codex_executor_tokens.go b/internal/runtime/executor/codex_executor_tokens.go
-index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..f8377527570a7989b016c5d29e5c454abba7d857 100644
+index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..c4f7ea7e60035f57c7901ab22a79ae5770b8b330 100644
 --- a/internal/runtime/executor/codex_executor_tokens.go
 +++ b/internal/runtime/executor/codex_executor_tokens.go
 @@ -123,6 +123,8 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
@@ -157,13 +151,12 @@ index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..f8377527570a7989b016c5d29e5c454a
  
  	textFormat := root.Get("text.format")
  	if textFormat.Exists() {
-@@ -181,3 +162,31 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+@@ -181,3 +162,30 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
  	}
  	return int64(count), nil
  }
 +
-+// appendCodexToolSegments adds each tool's name, description and parameters, for the
-+// top-level tools and the tools an additional_tools input item declares.
++// appendCodexToolSegments adds name, description + parameters per tool (top-level tools + additional_tools items).
 +func appendCodexToolSegments(segments []string, tools gjson.Result) []string {
 +	if !tools.IsArray() {
 +		return segments
@@ -232,7 +225,7 @@ index a73f8674bacf4a8ec2214cded4083b0398c8f861..7dd917dd8688303c68e9e37dfaacacfe
 +	}
 +}
 diff --git a/internal/runtime/executor/helps/codex_tool_schema.go b/internal/runtime/executor/helps/codex_tool_schema.go
-index d97e5e516097a822a57bf9012f527682afdf183e..4aa5b5a9535a86635c3bfbf85d8bd5172f64bbc6 100644
+index d97e5e516097a822a57bf9012f527682afdf183e..34fba85cba52e810009c49d7974cc605aa67812c 100644
 --- a/internal/runtime/executor/helps/codex_tool_schema.go
 +++ b/internal/runtime/executor/helps/codex_tool_schema.go
 @@ -54,12 +54,28 @@ func NormalizeCodexToolSchemas(body []byte) []byte {
@@ -250,7 +243,7 @@ index d97e5e516097a822a57bf9012f527682afdf183e..4aa5b5a9535a86635c3bfbf85d8bd517
  	}
 -	out, errSet := sjson.SetRawBytes(body, "tools", updatedTools)
 -	if errSet != nil {
-+	// additional_tools input items declare tools mid-input; they reach the same backend validation.
++	// additional_tools items declare tools mid-input → same backend validation.
 +	if bytes.Contains(body, []byte(`"additional_tools"`)) {
 +		gjson.GetBytes(body, "input").ForEach(func(index, item gjson.Result) bool {
 +			if item.Get("type").String() != "additional_tools" {
@@ -295,10 +288,10 @@ index cc6da6af257d1115dfb1e70b3577efba454e9caa..4a5a0264e01c30cfe3b741b776df809f
 +}
 diff --git a/internal/translator/codex/claude/codex_claude_deferred_tools_test.go b/internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..49aec66ad9ee6f4c1285feb78a641054e3977aa2
+index 0000000000000000000000000000000000000000..f81ce11491235123535ca17b5ddc29a10d612883
 --- /dev/null
 +++ b/internal/translator/codex/claude/codex_claude_deferred_tools_test.go
-@@ -0,0 +1,209 @@
+@@ -0,0 +1,208 @@
 +package claude
 +
 +import (
@@ -488,8 +481,7 @@ index 0000000000000000000000000000000000000000..49aec66ad9ee6f4c1285feb78a641054
 +}
 +
 +func TestConvertClaudeRequestToCodex_ToolUsedBeforeReferenceStaysTopLevel(t *testing.T) {
-+	// After a compaction Claude Code keeps a discovered tool in tools[] while its reference
-+	// is summarized away; a later search naming it again must not move it out of the prefix.
++	// Post-compaction: discovered tool stays in tools[], reference summarized away → a repeat search keeps it top-level.
 +	before, err := ConvertClaudeRequestToCodex("gpt-6.1-sol", deferredToolsRequest(deferredLSPTool, lspToolUse, lspResult), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
@@ -509,20 +501,18 @@ index 0000000000000000000000000000000000000000..49aec66ad9ee6f4c1285feb78a641054
 +	}
 +}
 diff --git a/internal/translator/codex/claude/codex_claude_request.go b/internal/translator/codex/claude/codex_claude_request.go
-index 2a44ad08f375548eb43ca2ca79e38705fc1c2314..163660fca0443d0eee63762ecbd16b5d0993a175 100644
+index 4e45a14fa2d49384199ba5214a095f9dfe897b3c..ab4968e7a27c385cba6722d7c1ee76730f520efe 100644
 --- a/internal/translator/codex/claude/codex_claude_request.go
 +++ b/internal/translator/codex/claude/codex_claude_request.go
-@@ -64,6 +64,48 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -63,6 +63,46 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  	template, _ = sjson.SetBytes(template, "model", modelName)
  	inputItems := translatorcommon.NewRawArrayItems(rootResult.Get("messages.#").Int())
  
-+	// Claude Code sends a deferred tool once tool search discovers it: tools[] gains it
-+	// with defer_loading, and the search's tool_result names it in a tool_reference.
-+	// Codex renders top-level tools ahead of the whole input, so declaring it there
-+	// discards the cached prompt prefix on every discovery. It is declared instead in
-+	// an additional_tools item after the tool_result that references it, the position
-+	// Anthropic renders it at. Compatibility endpoints keep the top-level declaration,
-+	// as they may not accept additional_tools.
++	// Claude Code tool search: discovered tool → tools[] (defer_loading) + tool_reference in the
++	// search tool_result. Codex renders top-level tools ahead of the input ⇒ a top-level declaration
++	// resets the cached prefix per discovery → declare it in an additional_tools item after the
++	// referencing tool_result (Anthropic's render position). Compat endpoints → top-level
++	// (additional_tools support unknown).
 +	deferredTools := map[string]gjson.Result{}
 +	placedTools := map[string]bool{}
 +	if !preserveEmptyThinkingBlocks {
@@ -534,8 +524,8 @@ index 2a44ad08f375548eb43ca2ca79e38705fc1c2314..163660fca0443d0eee63762ecbd16b5d
 +			}
 +			return true
 +		})
-+		// A tool called before its first retained reference was already declared top-level
-+		// (its reference was compacted away); moving it would rewrite that prefix.
++		// Called before its first retained reference (reference compacted away) ⇒ already
++		// top-level; moving it rewrites that prefix.
 +		referenced := map[string]bool{}
 +		rootResult.Get("messages.#.content").ForEach(func(_, content gjson.Result) bool {
 +			content.ForEach(func(_, part gjson.Result) bool {
@@ -561,7 +551,7 @@ index 2a44ad08f375548eb43ca2ca79e38705fc1c2314..163660fca0443d0eee63762ecbd16b5d
  	// Process system messages and convert them to input content format.
  	systemsResult := rootResult.Get("system")
  	if systemsResult.Exists() {
-@@ -298,6 +340,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -298,6 +338,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  						}
  
  						inputItems = append(inputItems, functionCallOutputMessage)
@@ -573,7 +563,7 @@ index 2a44ad08f375548eb43ca2ca79e38705fc1c2314..163660fca0443d0eee63762ecbd16b5d
  						turnSendable++
  					}
  				}
-@@ -341,33 +388,10 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -341,33 +386,10 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  				toolItems = append(toolItems, convertClaudeWebSearchToolToCodex(toolResult))
  				continue
  			}
@@ -610,7 +600,7 @@ index 2a44ad08f375548eb43ca2ca79e38705fc1c2314..163660fca0443d0eee63762ecbd16b5d
  		}
  	}
  
-@@ -459,6 +483,58 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -459,6 +481,58 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  	return template, drops.Err()
  }
  
@@ -645,8 +635,8 @@ index 2a44ad08f375548eb43ca2ca79e38705fc1c2314..163660fca0443d0eee63762ecbd16b5d
 +	return tool
 +}
 +
-+// referencedDeferredTools converts the deferred tools a tool_result's tool_reference blocks
-+// name, in reference order, skipping tools an earlier reference already placed.
++// referencedDeferredTools converts the deferred tools named by content's tool_reference blocks,
++// in reference order; tools an earlier reference placed are skipped.
 +func referencedDeferredTools(content gjson.Result, deferredTools map[string]gjson.Result, placedTools map[string]bool, toolNameMap map[string]string) [][]byte {
 +	if len(deferredTools) == 0 || !content.IsArray() {
 +		return nil

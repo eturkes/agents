@@ -159,7 +159,7 @@ class Patch(unittest.TestCase):
         self.start_service()
         code, output, calls = self.run_patch("check")
         self.assertEqual(code, 0, output)
-        self.assertIn("build running", output)
+        self.assertIn("build is running", output)
         self.assertFalse({"git", "go"} & {call[0] for call in calls}, calls)
         replacement = self.binary.with_name("replacement")
         shutil.copy("/usr/bin/sleep", replacement)

@@ -6,12 +6,12 @@ export LC_ALL=C
 
 usage() {
   echo 'Usage: cli-proxy-api-patch apply | check | rollback'
-  echo 'apply: Build the installed cli-proxy-api-bin release + the patch, test it, install it and route cli-proxy-api.service to it.'
-  echo '       An upstream release that passes the patch tests unpatched retires the override.'
-  echo 'check: Report the override, build and running binary without changing anything.'
-  echo 'rollback: Remove the override; the next service restart runs the packaged binary.'
-  echo 'No command restarts the service; activate with systemctl --user restart cli-proxy-api.service.'
-  echo 'Exit codes: 0 = done or current; 1 = failure; 2 = review needed (packaged binary kept or restart pending); 64 = usage.'
+  echo 'apply: Build the installed cli-proxy-api-bin release with the patch. Test and install the build.'
+  echo '       Route cli-proxy-api.service to the build. When the release passes the patch tests without the patch, remove the override.'
+  echo 'check: Report the override, the build and the running binary. Change nothing.'
+  echo 'rollback: Remove the override. The packaged binary starts at the next service restart.'
+  echo 'No command restarts the service. To activate a change, run systemctl --user restart cli-proxy-api.service.'
+  echo 'Exit codes: 0 = done or current; 1 = failure; 2 = review needed (packaged binary kept or restart pending); 64 = usage error.'
 }
 
 (($# == 1)) || { usage >&2; exit 64; }
@@ -70,11 +70,11 @@ check_state() {
   [[ ! -f $status_file ]] || status=$(<"$status_file")
   if [[ ! -f $override ]]; then
     if [[ $status == "retired $version" ]]; then
-      echo "Upstream $version includes the fix; the packaged binary runs without an override."
+      echo "Upstream $version includes the fix. The packaged binary runs without an override."
       return 0
     fi
-    echo "No override: the packaged $version binary runs without the fix (last apply: $status)."
-    echo 'Next: Run cli-proxy-api-patch apply, then restart the service.'
+    echo "No override. The packaged $version binary runs without the fix (last apply: $status)."
+    echo 'Next: Run cli-proxy-api-patch apply. Then restart the service.'
     return 2
   fi
   if ! cmp -s -- "$override_source" "$override"; then
@@ -83,19 +83,19 @@ check_state() {
     return 1
   fi
   if [[ ! -x $binary || ! -f $stamp ]]; then
-    echo "Override present but the patched build $binary is missing."
-    echo 'Next: Run cli-proxy-api-patch apply, or cli-proxy-api-patch rollback.'
+    echo "The override is present, but the patched build $binary is missing."
+    echo 'Next: Run cli-proxy-api-patch apply. To use the packaged binary, run cli-proxy-api-patch rollback.'
     return 1
   fi
   build=$(<"$stamp")
   if [[ $build != "$(build_id "$version")" ]]; then
-    echo "Patched build ($build) does not match package $version + the current patch."
-    echo 'Next: Run cli-proxy-api-patch apply, then restart the service.'
+    echo "The patched build ($build) does not match package $version and the current patch."
+    echo 'Next: Run cli-proxy-api-patch apply. Then restart the service.'
     return 2
   fi
   if ! systemctl --user show -p ExecStart --value "$unit" | grep -Fq -- "$binary"; then
     echo "$unit does not start $binary yet."
-    echo 'Next: Run systemctl --user daemon-reload, then restart the service.'
+    echo 'Next: Run systemctl --user daemon-reload. Then restart the service.'
     return 2
   fi
   if ! running_id > /dev/null; then
@@ -104,11 +104,11 @@ check_state() {
     return 1
   fi
   if [[ $(running_id) != "$(file_id "$binary")" ]]; then
-    echo "Patched $version build installed; the service still runs the previous binary."
+    echo "The patched $version build is installed. The service still runs the previous binary."
     echo "Next: Run systemctl --user restart $unit."
     return 2
   fi
-  echo "Patched $version build running ($binary)."
+  echo "The patched $version build is running ($binary)."
 }
 
 fetch_source() {
@@ -123,8 +123,8 @@ reset_source() {
   git -C "$src" clean --quiet -fd
 }
 run_tests() { (cd -- "$src" && go test "${packages[@]}" -run "$tests" -count=1); }
-# Upstream fixed it ⇔ its release passes the patch's tests unpatched. The probe counts only when the
-# patch's own test is present: upstream tests alone would pass the filter vacuously.
+# Upstream fix ⇔ release passes the patch tests unpatched; counts only with the patch's own test
+# listed (upstream tests alone pass the filter vacuously).
 upstream_has_fix() {
   local marker=TestConvertClaudeRequestToCodex_DeclaresDiscoveredToolAtReference
   git -C "$src" apply --3way --include='*_test.go' -- "$patch" 2> /dev/null || return 1
@@ -136,8 +136,8 @@ keep_packaged() {
   local reason=$1 version=$2
   remove_override
   set_status "stock $version: $reason"
-  echo "Packaged $version binary kept: $reason."
-  echo 'Next: Rebase cli-proxy-api-patch.patch onto the new release, then run cli-proxy-api-patch apply.'
+  echo "The packaged $version binary stays: $reason."
+  echo 'Next: Rebase cli-proxy-api-patch.patch onto the new release. Then run cli-proxy-api-patch apply.'
   exit 2
 }
 
@@ -149,7 +149,7 @@ apply_patch() {
     install -Dm644 -- "$override_source" "$override"
     systemctl --user daemon-reload
     set_status "active $version"
-    echo "Patched $version build is current."
+    echo "The patched $version build is current."
     activation_note "$binary"
     return
   fi
@@ -159,7 +159,7 @@ apply_patch() {
   if upstream_has_fix; then
     remove_override
     set_status "retired $version"
-    echo "Upstream $version passes the patch tests unpatched; override retired."
+    echo "Upstream $version passes the patch tests without the patch. The override is removed."
     activation_note /usr/bin/cli-proxy-api
     return
   fi
@@ -178,7 +178,7 @@ apply_patch() {
   install -Dm644 -- "$override_source" "$override"
   systemctl --user daemon-reload
   set_status "active $version"
-  echo "Patched $version build installed: $binary."
+  echo "The patched $version build is installed: $binary."
   activation_note "$binary"
 }
 
@@ -187,7 +187,7 @@ case $mode in
   rollback)
     remove_override
     set_status rollback
-    echo 'Override removed; the packaged binary runs from the next restart.'
+    echo 'The override is removed. The packaged binary starts at the next service restart.'
     activation_note /usr/bin/cli-proxy-api
     ;;
   apply) apply_patch ;;
