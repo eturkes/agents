@@ -7,6 +7,7 @@
 - Web page text → `webtext <url>` (`--help`); extraction warning/exit 3 → `--js`. Use it for source text; WebFetch returns a small model's answer.
 - GPU work → `gpu-run <cmd>` (NVIDIA); desktop/browser rendering + display/video → Intel iGPU. Preserve compute access + VRAM.
 - CPU-heavy work (full gates/suites, solver/benchmark sweeps, release builds) → `heavy <cmd>`; holders → `heavy --status`. Fast gates + single tests run direct.
+- `heavy --status` shows both slots held → `offload run -- <cmd>` from the project root runs it on the LAN pool instead (nixbox: 8 CPUs, 62 GB, no GPU; NixOS + nix-ld, base uv/python/gcc/just/curl ⇒ project-pinned toolchains self-install there on first run). Tree + `.git` go up (`.gitignore`d paths stay on each side), outputs come back, ignored ones via `--get <path>`; output + rc pass through; pool load → `offload status`. GPU, desktop/browser, files outside the project, a git-worktree checkout → stay on `heavy`.
 - Env/self changes (skills/plugins) + software installs authorized; persist through blockers.
 - Host maintenance → `~/.local/app/agents/host/cachyos/MAINTENANCE.md`; browser setup/recovery → `~/.local/app/agents/host/cachyos/BROWSER.md`.
 - Authenticated web → BrowserOS Neo (MCP + skill `browseros-neo` own usage); plain BrowserOS = my browser. Signed-in accounts include university journals + x.com; auth/paywall/human gate → request access promptly + continue independent work. Neo unreachable → `systemctl --user restart browseros-neo.service`.
