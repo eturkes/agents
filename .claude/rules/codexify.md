@@ -5,7 +5,8 @@ paths: ["codex/*/AGENTS.codexify.md", "codex/cachyos/deploy-instructions", "code
 # Codexify instructions
 
 - `codex/<host>/AGENTS.codexify.md` = that host's `~/AGENTS.md`: Codexify loads it once a chat's workspace = `~`. Shared text → edit every host copy; host-specific lines = `git diff --no-index` between copies.
-- Deploy: cachyos → `codex/cachyos/deploy-instructions --apply` (+ `~/.codex/AGENTS.md`, stale trust pruning); nixbox → `codex/nixbox/deploy-instructions` (SSH as `eturkes`).
+- Deploy: cachyos → `codex/cachyos/deploy-instructions --apply` (+ `~/.codex/AGENTS.md`, stale trust pruning, `worktrees.mode` = `never`); nixbox → `codex/nixbox/deploy-instructions` (SSH as `eturkes`).
+- cachyos runs Codexify 1.x single-project (`~` fixed; worktree mode unused) → `never` is pinned ahead of an upgrade. Upgrade to ≥ 2.2 (workspace selection mandatory) → `~/AGENTS.md` loads only in chats that select `.` ⇒ plan the routing with the upgrade (nixbox model: catalogue entry `.` + description).
 - nixbox runs Codexify ≥ 2.3: every chat selects a workspace, and only the selected directory's `AGENTS.md` loads ⇒ its deploy keeps catalogue entry `.` (alias `trading`) + `worktrees.mode` = `never` (`auto` → every later chat on `~` gets a git worktree → `git rev-parse` fails, `~` = no repo).
 - nixbox `~/.codex/` = trading's pinned Codex home ⇒ instruction + trust changes there = trading scope.
 

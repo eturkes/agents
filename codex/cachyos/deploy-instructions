@@ -3,9 +3,10 @@
 # requires-python = ">=3.11"
 # dependencies = ["tomlkit==0.15.1"]
 # ///
-"""Check instruction files and stale project trust. Use --apply to update them."""
+"""Check instruction files, stale project trust and the Codexify worktree mode. Use --apply to update them."""
 import argparse
 import copy
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -31,6 +32,17 @@ def prune(text):
     if tomllib.loads(result) != expected:
         raise ValueError("trust pruning changed unrelated configuration")
     return result, len(missing)
+
+
+# Codexify ≥ 2.2 makes every chat select a workspace; under the default `auto`, each later chat on an already
+# selected checkout gets a git worktree, which fails on ~ (no repo) and forks emachine from its live build.
+# 1.x single-project ignores the mode ⇒ pinned ahead of any upgrade.
+def worktree_policy(text):
+    config = json.loads(text)
+    if config.get("worktrees", {}).get("mode") == "never":
+        return text
+    config.setdefault("worktrees", {})["mode"] = "never"
+    return json.dumps(config, indent=2) + "\n"
 
 
 def write(path, content):
@@ -64,10 +76,12 @@ def main():
     home = Path.home().resolve()
     config = home / ".codex/config.toml"
     cleaned, missing = prune(config.read_text())
+    codexify = home / ".codexify/codexify.config.json"
     outputs = {
         home / ".codex/AGENTS.md": (here / "AGENTS.md").read_text(),
         home / "AGENTS.md": render_home(here),
         config: cleaned,
+        codexify: worktree_policy(codexify.read_text()),
     }
     changed = 0
     for path, content in outputs.items():

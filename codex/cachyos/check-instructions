@@ -38,6 +38,23 @@ with tempfile.TemporaryDirectory(prefix="instruction-check-") as directory:
         assert prune(result) == (result, 0), f"case {index}: not idempotent"
     print(f"trust_pruning_cases={len(fixtures)}: OK")
 
+worktree_policy = deployment["worktree_policy"]
+policies = [
+    '{"workDir": "/w", "multiProject": false}',
+    '{"worktrees": {"mode": "auto", "keepCount": 3}, "workDir": "/w"}',
+    '{"worktrees": {"root": "/r"}}',
+    '{"worktrees": {"mode": "never"}, "workDir": "/w"}',
+]
+for index, text in enumerate(policies):
+    expected = json.loads(text)
+    expected.setdefault("worktrees", {})["mode"] = "never"
+    result = worktree_policy(text)
+    assert json.loads(result) == expected, f"worktree case {index}: wrong policy or unrelated change"
+    assert list(json.loads(result)) == list(expected), f"worktree case {index}: key order changed"
+    assert worktree_policy(result) == result, f"worktree case {index}: not idempotent"
+assert worktree_policy(policies[-1]) == policies[-1], "compliant config rewritten"
+print(f"worktree_policy_cases={len(policies)}: OK")
+
 render_home = deployment["render_home"]
 required = {"Collaboration", "Execution", "Authoring", "Engineering", "Environment", "Reading"}
 machines = ("cachyos", "aeon", "nixbox")
