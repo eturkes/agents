@@ -4,6 +4,7 @@
 - Packages = AUR `browseros-bin` + `browseros-neo-bin`; retain `profile-sync-daemon`.
 - BrowserOS launch = existing private `~/.local/share/applications/browseros.desktop`; original profile + sign-in settings remain intact.
 - Launch = `browseros-neo` → `~/.local/bin/browseros-neo` → `host/cachyos/browseros-neo`; desktop = `browseros-neo.desktop`. User `browserclaw.desktop` masks the packaged launcher with `NoDisplay=true`.
+- Window matching = Neo uses `--class=BrowserOSNeo`; both user Neo desktop entries use `StartupWMClass=BrowserOSNeo`. BrowserOS retains `Chromium-browser` + its orange `browseros` icon. Relaunch Neo after changing its window class.
 - Neo launcher = desktop environment + PSD readiness + cache directory + `Profile 3` + `--password-store=basic`. `browseros-neo-signin` reuses Google OAuth settings from the private BrowserOS desktop entry; keep credentials outside tracked files and logs.
 - Managed profiles require configured OAuth clients at startup. Preserve account/management metadata; verify Chromium's `Signin.SigninAllowed` histogram and the native desktop UI.
 - Browser sync = enabled in both; each has its own Sync GUID + Sync FCM InstanceID/token. Preserve BrowserOS's identity; regenerate copied Neo metadata before enabling sync.
@@ -28,7 +29,7 @@ ln -sfn "$PWD/host/cachyos/browseros-neo" ~/.local/bin/browseros-neo
 Set `~/.config/psd/psd.conf`: `USE_OVERLAYFS="yes"`, `USE_SUSPSYNC="yes"`, `BROWSERS=(browseros-neo)`.
 Create the cache symlink and tmpfiles rule: `d /tmp/browser-claw-home-cache 0700 eturkes eturkes -`.
 Set `Local State.browseros.server.proxy_port=9200`; active sidecar/CDP ports → `~/.config/browser-claw/.browseros/config.json`.
-Set the user `browseros-neo.desktop` Exec to `/home/eturkes/.local/bin/browseros-neo %U`.
+Set both user Neo desktop entries (`browseros-neo.desktop`, `browserclaw.desktop`) to `Exec=/home/eturkes/.local/bin/browseros-neo %U` + `StartupWMClass=BrowserOSNeo`; keep `browserclaw.desktop` hidden.
 Then enable PSD: `systemctl --user enable --now psd.service`.
 
 ## Crash recovery
