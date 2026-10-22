@@ -91,7 +91,8 @@ test('a completed turn mails its prompt and response, threaded per session', asy
   expect(first!.body).toContain('Transcript: /t/s1.jsonl')
   expect(first!.headers).toContain('Message-ID: <cc.s1.1@eturkes.com>')
   expect(first!.headers).toContain('References: <cc.s1@eturkes.com>')
-  expect(first!.headers).toContain('To: emir.turkes@eturkes.com')
+  expect(first!.headers).toContain('To: emiru.tarukesu@gmail.com')
+  expect(first!.headers).toContain('From: emiru.tarukesu@gmail.com')
   expect(second!.subject).toBe('[cc] proj #2 — Again')
 })
 

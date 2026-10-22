@@ -59,7 +59,7 @@ async function prune($: EngineInterface): Promise<void> {
 
 async function send($: EngineInterface, session: string, turn: number, prompt: string, text: string, waiting?: Mail['waiting']): Promise<void> {
   const { context } = await $.session.usage()
-  const to = (await $.env.get('CLAUDE_TURN_EMAIL_TO')) || 'emir.turkes@eturkes.com'
+  const to = (await $.env.get('CLAUDE_TURN_EMAIL_TO')) || 'emiru.tarukesu@gmail.com'
   const mail = compose({
     to,
     from: (await $.env.get('CLAUDE_TURN_EMAIL_FROM')) || to,
