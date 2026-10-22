@@ -4,7 +4,7 @@
 - Packages = AUR `browseros-bin` + `browseros-neo-bin`; retain `profile-sync-daemon`.
 - BrowserOS launch = existing private `~/.local/share/applications/browseros.desktop`; original profile + sign-in settings remain intact.
 - Launch = `browseros-neo` → `~/.local/bin/browseros-neo` → `host/cachyos/browseros-neo`; desktop = `browseros-neo.desktop`. User `browserclaw.desktop` masks the packaged launcher with `NoDisplay=true`.
-- Window matching = Neo uses `--class=BrowserOSNeo`; both user Neo desktop entries use `StartupWMClass=BrowserOSNeo`. BrowserOS retains `Chromium-browser` + its orange `browseros` icon. Relaunch Neo after changing its window class.
+- Window matching = Neo uses `--class=BrowserOSNeo`; both user Neo desktop entries use `StartupWMClass=BrowserOSNeo`. BrowserOS uses `--class=BrowserOS` + `StartupWMClass=BrowserOS` in its private desktop entry and retains its orange `browseros` icon. Relaunch the affected browser after changing its window class.
 - Neo launcher = desktop environment + PSD readiness + cache directory + `Profile 3` + `--password-store=basic`. `browseros-neo-signin` reuses Google OAuth settings from the private BrowserOS desktop entry; keep credentials outside tracked files and logs.
 - Managed profiles require configured OAuth clients at startup. Preserve account/management metadata; verify Chromium's `Signin.SigninAllowed` histogram and the native desktop UI.
 - Browser sync = enabled in both; each has its own Sync GUID + Sync FCM InstanceID/token. Preserve BrowserOS's identity; regenerate copied Neo metadata before enabling sync.
