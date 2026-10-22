@@ -20,7 +20,8 @@
     "DISABLE_AUTOUPDATER": "1",
     "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS": "1",
     "CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL": "1",
-    "CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/context-alert:~/.claude/mods/agent-flow:~/.claude/mods/idle-compact:~/.claude/mods/turn-email"
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/context-alert:~/.claude/mods/agent-flow:~/.claude/mods/idle-compact:~/.claude/mods/turn-email",
+    "OFFLOAD_CTR": "1"
   },
   "attribution": {
     "commit": "",
