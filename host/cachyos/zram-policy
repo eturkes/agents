@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode=${1:-check}
+[[ $# -le 1 && ( "$mode" == check || "$mode" == apply ) ]] || {
+  echo 'Usage: zram-policy [check|apply]' >&2
+  exit 2
+}
+recipe_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+policy_source="$recipe_dir/zram-generator.conf"
+# Overrides cachyos-settings' /usr/lib/systemd/zram-generator.conf (zram-size = ram).
+policy_target=/etc/systemd/zram-generator.conf
+
+kib() { awk -v k="$1" '$1 == k":" { print $2 }' /proc/meminfo; }
+
+if [[ "$mode" == apply ]]; then
+  sudo -n install -D -o root -g root -m 0644 -- "$policy_source" "$policy_target"
+  sudo -n systemctl daemon-reload
+  # Re-creating zram0 swaps its pages back into RAM first: refuse unless they fit with 4 GiB spare.
+  used=$(( $(kib SwapTotal) - $(kib SwapFree) ))
+  if (( used + 4194304 > $(kib MemAvailable) )); then
+    printf 'FAIL apply: %s KiB in swap exceed MemAvailable - 4 GiB; config installed, active from the next boot\n' "$used" >&2
+    exit 1
+  fi
+  # Re-create outside the units: restarting systemd-zram-setup@zram0 races the swap-alias units
+  # udev starts after mkswap (by-uuid/by-label/by-diskseq), whose second setup run fails on the
+  # initialized device (EBUSY). swapoff → reset → one setup run → swapon at the config's priority.
+  prio=$(sed -n 's/^swap-priority = //p' "$policy_source")
+  sudo -n swapoff /dev/zram0
+  echo 1 | sudo -n tee /sys/block/zram0/reset >/dev/null
+  sudo -n /usr/lib/systemd/system-generators/zram-generator --setup-device zram0
+  sudo -n swapon -p "$prio" /dev/zram0
+  sudo -n systemctl reset-failed systemd-zram-setup@zram0.service dev-zram0.swap
+fi
+
+failed=0
+if cmp -s -- "$policy_source" "$policy_target"; then
+  printf 'OK persistent policy: %s\n' "$policy_target"
+else
+  printf 'FAIL persistent policy: missing or different: %s\n' "$policy_target" >&2
+  failed=1
+fi
+
+# zram-generator sizes from MemTotal in MiB ⇒ live disksize = 2 × MemTotal, rounded to a MiB.
+# shellcheck disable=SC2017 # truncation = zram-generator's MiB rounding
+want=$(( $(kib MemTotal) / 1024 * 2 * 1048576 ))
+size=$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0)
+algo=$(sed -n 's/.*\[\([a-z0-9-]*\)\].*/\1/p' /sys/block/zram0/comp_algorithm 2>/dev/null || true)
+prio=$(awk '$1 == "/dev/zram0" { print $5 }' /proc/swaps)
+if (( size >= want - 2097152 && size <= want + 2097152 )); then
+  printf 'OK live zram0 disksize=%s (2 x RAM)\n' "$size"
+else
+  printf 'FAIL live zram0 disksize: expected~%s actual=%s\n' "$want" "$size" >&2
+  failed=1
+fi
+for pair in "algorithm zstd $algo" "swap-priority 100 $prio"; do
+  read -r name expected actual <<<"$pair"
+  if [[ "$actual" == "$expected" ]]; then
+    printf 'OK live zram0 %s=%s\n' "$name" "$actual"
+  else
+    printf 'FAIL live zram0 %s: expected=%s actual=%s\n' "$name" "$expected" "${actual:-none}" >&2
+    failed=1
+  fi
+done
+exit "$failed"

@@ -104,6 +104,11 @@ Checks = `bash -n host/cachyos/cli-proxy-api-patch`, `shellcheck host/cachyos/cl
 - Closed-lid reboot validation is separate; the recipe preserves the active session.
 - Policy semantics → [systemd logind.conf](https://github.com/systemd/systemd/blob/v261/man/logind.conf.xml).
 
+### zram swap
+
+- `host/cachyos/zram-policy apply` installs `zram-generator.conf` as `/etc/systemd/zram-generator.conf` (overrides cachyos-settings' `zram-size = ram`): zstd, 2 × RAM (owner), priority 100. It re-creates zram0 live (swapoff → reset → `zram-generator --setup-device` → swapon) and refuses when the swapped pages exceed MemAvailable − 4 GiB. Restarting `systemd-zram-setup@zram0` instead fails (EBUSY): the swap-alias units udev starts after mkswap re-run setup on the initialized device.
+- `host/cachyos/zram-policy check` checks installed bytes + live disksize (2 × MemTotal), algorithm, priority; `bash -n` + `shellcheck` check the recipe.
+
 ### Intel graphics + NVIDIA compute
 
 `intel-graphics-policy` owns Intel-only Xorg + SDDM output setup; NVIDIA remains available for compute.
