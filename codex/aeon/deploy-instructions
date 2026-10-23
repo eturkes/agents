@@ -1,0 +1,34 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["tomlkit==0.15.1"]
+# ///
+"""Check Aeon's instruction files and the Codexify workspace policy. Use --apply to update them."""
+# Policy + writer = codex/cachyos/deploy-instructions. Trust pruning stays off: ~/.codex/config.toml holds host-layer
+# paths (/home/eturkes/...) the container cannot resolve. Codexify runs in a user terminal (no service) ⇒ restart it
+# there after a config change.
+import argparse
+import runpy
+from pathlib import Path
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true", help="Write the instruction files and the Codexify config.")
+    args = parser.parse_args()
+    here = Path(__file__).resolve().parent
+    shared = runpy.run_path(str(here.parent / "cachyos/deploy-instructions"))
+    home = Path.home().resolve()
+    codexify = home / ".codexify/codexify.config.json"
+    outputs = {
+        home / ".codex/AGENTS.md": (here / "AGENTS.md").read_text(),
+        home / "AGENTS.md": shared["render_home"](here),
+        codexify: shared["codexify_policy"](codexify.read_text()),
+    }
+    changed = shared["sync"](outputs, args.apply)
+    print(f"files_changed={changed} applied={args.apply}")
+    return 0 if args.apply or not changed else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
