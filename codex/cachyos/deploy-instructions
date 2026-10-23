@@ -37,7 +37,7 @@ def prune(text):
 # Codexify ≥ 2.2 makes every chat select a workspace + loads AGENTS.md from that directory alone ⇒ entry `.` lets
 # chats select ~, whose AGENTS.md routes the task. Under the default `auto`, each later chat on an already selected
 # checkout gets a git worktree, which fails on ~ (no repo) and forks emachine from its live build ⇒ `never`.
-# Plain chat, no MCP App cards ⇒ uiWidgets + agentChat off. Shared with codex/aeon/deploy-instructions.
+# Plain chat, no MCP App cards ⇒ uiWidgets + agentChat off.
 HOME_ENTRY = {
     "path": ".",
     "name": "home",
@@ -79,6 +79,7 @@ def render_home(here):
     return template
 
 
+# codex/aeon/deploy-instructions reuses codexify_policy, render_home + sync ⇒ keep names + signatures stable.
 def sync(outputs, apply):
     changed = 0
     for path, content in outputs.items():

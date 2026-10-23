@@ -4,9 +4,9 @@
 # dependencies = ["tomlkit==0.15.1"]
 # ///
 """Check Aeon's instruction files and the Codexify workspace policy. Use --apply to update them."""
-# Policy + writer = codex/cachyos/deploy-instructions. Trust pruning stays off: ~/.codex/config.toml holds host-layer
-# paths (/home/eturkes/...) the container cannot resolve. Codexify runs in a user terminal (no service) ⇒ restart it
-# there after a config change.
+# Policy + writer = codex/cachyos/deploy-instructions. No trust pruning: ~/.codex/config.toml holds host-layer paths
+# (/home/eturkes/...) ⇒ absent in-container ≠ stale. Codexify = user-terminal foreground (no service) ⇒ config change →
+# restart there.
 import argparse
 import runpy
 from pathlib import Path
