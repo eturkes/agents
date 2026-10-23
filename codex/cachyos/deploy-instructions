@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["tomlkit==0.15.1"]
 # ///
-"""Check instruction files, stale project trust and the Codexify worktree mode. Use --apply to update them."""
+"""Check instruction files, stale project trust and the Codexify workspace policy. Use --apply to update them."""
 import argparse
 import copy
 import json
@@ -34,15 +34,26 @@ def prune(text):
     return result, len(missing)
 
 
-# Codexify ≥ 2.2 makes every chat select a workspace; under the default `auto`, each later chat on an already
-# selected checkout gets a git worktree, which fails on ~ (no repo) and forks emachine from its live build.
-# 1.x single-project ignores the mode ⇒ pinned ahead of any upgrade.
-def worktree_policy(text):
+# Codexify ≥ 2.2 makes every chat select a workspace + loads AGENTS.md from that directory alone ⇒ entry `.` lets
+# chats select ~, whose AGENTS.md routes the task. Under the default `auto`, each later chat on an already selected
+# checkout gets a git worktree, which fails on ~ (no repo) and forks emachine from its live build ⇒ `never`.
+# Plain chat, no MCP App cards ⇒ uiWidgets + agentChat off.
+HOME_ENTRY = {
+    "path": ".",
+    "name": "home",
+    "description": "Home workspace. Its AGENTS.md routes every task. Select it for every chat.",
+}
+
+
+def codexify_policy(text):
     config = json.loads(text)
-    if config.get("worktrees", {}).get("mode") == "never":
-        return text
-    config.setdefault("worktrees", {})["mode"] = "never"
-    return json.dumps(config, indent=2) + "\n"
+    expected = copy.deepcopy(config)
+    expected.setdefault("worktrees", {})["mode"] = "never"
+    expected["uiWidgets"] = False
+    expected.setdefault("agentChat", {})["enabled"] = False
+    catalog = expected.setdefault("projectCatalog", {})
+    catalog["entries"] = [e for e in catalog.get("entries", []) if e.get("path") != "."] + [HOME_ENTRY]
+    return text if expected == config else json.dumps(expected, indent=2) + "\n"
 
 
 def write(path, content):
@@ -81,7 +92,7 @@ def main():
         home / ".codex/AGENTS.md": (here / "AGENTS.md").read_text(),
         home / "AGENTS.md": render_home(here),
         config: cleaned,
-        codexify: worktree_policy(codexify.read_text()),
+        codexify: codexify_policy(codexify.read_text()),
     }
     changed = 0
     for path, content in outputs.items():

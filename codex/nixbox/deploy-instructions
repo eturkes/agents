@@ -1,10 +1,12 @@
 #!/bin/sh
 # deploy-instructions [--check] — nixbox Codexify (user eturkes): ~/AGENTS.md ← AGENTS.codexify.md, and
-# codexify.config.json gains the home catalogue entry + worktrees.mode never; a config change restarts
-# Codexify. --check = report drift (rc 1), change nothing. Host = $NIXBOX (default eturkes@192.168.40.240).
-# Codexify ≥ 2.3: every chat selects a workspace + loads AGENTS.md from that directory alone ⇒ entry `.`
+# codexify.config.json gains the home catalogue entry, worktrees.mode never + uiWidgets/agentChat off; a config
+# change restarts Codexify. --check = report drift (rc 1), change nothing. Host = $NIXBOX (default
+# eturkes@192.168.40.240).
+# Codexify ≥ 2.2: every chat selects a workspace + loads AGENTS.md from that directory alone ⇒ entry `.`
 # (alias `trading`) lets chats select ~, whose AGENTS.md routes to Projects/trading. Mode `auto` gives every
-# later chat on a selected checkout a git worktree, which fails on ~ (no repo) ⇒ `never`.
+# later chat on a selected checkout a git worktree, which fails on ~ (no repo) ⇒ `never`. Plain chat, no MCP App cards
+# ⇒ uiWidgets + agentChat off.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 host=${NIXBOX:-eturkes@192.168.40.240}
@@ -38,6 +40,8 @@ if [ "$(digest AGENTS.md)" != "$want" ]; then
 fi
 umask 077
 jq '.worktrees.mode = "never"
+  | .uiWidgets = false
+  | .agentChat.enabled = false
   | .projectCatalog.entries = [(.projectCatalog.entries // [])[] | select(.path != ".")] + [{
       path: ".", name: "home", aliases: ["trading"],
       description: "Home workspace. Its AGENTS.md sends trading work to Projects/trading. Select it for every chat."

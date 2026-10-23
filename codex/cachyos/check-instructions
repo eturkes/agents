@@ -38,22 +38,35 @@ with tempfile.TemporaryDirectory(prefix="instruction-check-") as directory:
         assert prune(result) == (result, 0), f"case {index}: not idempotent"
     print(f"trust_pruning_cases={len(fixtures)}: OK")
 
-worktree_policy = deployment["worktree_policy"]
+codexify_policy = deployment["codexify_policy"]
+home_entry = deployment["HOME_ENTRY"]
+other = {"path": "Projects/x", "name": "x"}
 policies = [
     '{"workDir": "/w", "multiProject": false}',
-    '{"worktrees": {"mode": "auto", "keepCount": 3}, "workDir": "/w"}',
-    '{"worktrees": {"root": "/r"}}',
-    '{"worktrees": {"mode": "never"}, "workDir": "/w"}',
+    '{"worktrees": {"mode": "auto", "keepCount": 3}, "workDir": "/w", "agentChat": {"enabled": true, "port": 3120}}',
+    json.dumps({"projectCatalog": {"codexConfig": {"enabled": True}, "entries": [{"path": ".", "name": "old"}, other]}}),
+    json.dumps({"worktrees": {"mode": "never"}, "uiWidgets": False, "agentChat": {"enabled": False},
+                "projectCatalog": {"entries": [other, home_entry]}}, indent=2) + "\n",
 ]
+managed = {"worktrees": "mode", "agentChat": "enabled", "projectCatalog": "entries"}
 for index, text in enumerate(policies):
-    expected = json.loads(text)
-    expected.setdefault("worktrees", {})["mode"] = "never"
-    result = worktree_policy(text)
-    assert json.loads(result) == expected, f"worktree case {index}: wrong policy or unrelated change"
-    assert list(json.loads(result)) == list(expected), f"worktree case {index}: key order changed"
-    assert worktree_policy(result) == result, f"worktree case {index}: not idempotent"
-assert worktree_policy(policies[-1]) == policies[-1], "compliant config rewritten"
-print(f"worktree_policy_cases={len(policies)}: OK")
+    original, result = json.loads(text), json.loads(codexify_policy(text))
+    case = f"codexify case {index}"
+    assert result["worktrees"]["mode"] == "never", f"{case}: worktree mode"
+    assert result["uiWidgets"] is False and result["agentChat"]["enabled"] is False, f"{case}: widgets/agent chat on"
+    entries = result["projectCatalog"]["entries"]
+    kept = [e for e in original.get("projectCatalog", {}).get("entries", []) if e["path"] != "."]
+    assert entries == kept + [home_entry], f"{case}: catalogue entries"
+    for key, value in original.items():
+        if key in managed:
+            assert {k: v for k, v in result[key].items() if k != managed[key]} == \
+                {k: v for k, v in value.items() if k != managed[key]}, f"{case}: {key} siblings changed"
+        elif key != "uiWidgets":
+            assert result[key] == value, f"{case}: unrelated {key} changed"
+    assert list(result)[: len(original)] == list(original), f"{case}: key order changed"
+    assert codexify_policy(codexify_policy(text)) == codexify_policy(text), f"{case}: not idempotent"
+assert codexify_policy(policies[-1]) == policies[-1], "compliant config rewritten"
+print(f"codexify_policy_cases={len(policies)}: OK")
 
 render_home = deployment["render_home"]
 required = {"Collaboration", "Execution", "Authoring", "Engineering", "Environment", "Reading"}
