@@ -1,0 +1,72 @@
+#!/bin/sh
+# copy-template gate: fixture template repo + projects in a temp dir. COPY_TEMPLATE=<path> → gate another
+# build (copied into the fixture template repo, so its template-repo refusal sees the fixture).
+ct=${COPY_TEMPLATE:-$(dirname "$(readlink -f "$0")")/copy-template}
+t=$(mktemp -d) || exit 1
+trap 'rm -rf "$t"' EXIT
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t \
+  GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+tpl=$t/tpl/claude n=0 fail=0
+mkdir -p "$tpl/agents" && cp "$ct" "$tpl/copy-template" || exit 1
+echo v1 > "$tpl/CLAUDE.project.md"; printf '#!/bin/sh\n' > "$tpl/spec-lint"; chmod 755 "$tpl/spec-lint"
+echo a1 > "$tpl/agents/a.md"; echo b1 > "$tpl/agents/b.md"
+git init -q "$t/tpl"
+run() { out=$("$tpl/copy-template" "$@" 2>&1); rc=$?; }
+has() { printf '%s\n' "$out" | grep -qF -- "$1"; }
+# ck NAME RC [TEST...]: TEST = shell condition, eval'd
+ck() {
+  name=$1 want_rc=$2; shift 2; n=$((n + 1)); bad=
+  [ "$rc" = "$want_rc" ] || bad="rc=$rc"
+  for c in "$@"; do eval "$c" || bad="$bad !($c)"; done
+  [ -z "$bad" ] || { fail=$((fail + 1)); echo "FAIL $name:$bad"; printf '%s\n' "$out" | sed 's/^/  /'; }
+}
+commit() { git -C "$1" add -A && git -C "$1" commit -qm m; }
+# same P: every template file in P byte-equal to the fixture template
+same() {
+  cmp -s "$tpl/CLAUDE.project.md" "$1/CLAUDE.md" && cmp -s "$tpl/spec-lint" "$1/.agent/spec-lint" &&
+    cmp -s "$tpl/agents/a.md" "$1/.claude/agents/a.md" && cmp -s "$tpl/agents/b.md" "$1/.claude/agents/b.md"
+}
+p=$t/p && git init -q "$p" && mkdir "$p/sub" "$t/plain"
+run --bogus; ck bad-flag 2 'has "Usage: copy-template"'
+run --help; ck help 0 'has "Usage: copy-template"'
+run "$p/sub"; ck not-root 2 'has "is not the root directory"' '[ ! -e "$p/sub/CLAUDE.md" ] && [ ! -e "$p/CLAUDE.md" ]'
+run "$t/plain"; ck not-git 2 'has "is not the root directory"' '[ ! -e "$t/plain/CLAUDE.md" ]'
+run "$t/tpl"; ck template-repo 2 'has "is the template repository"' '[ ! -e "$t/tpl/CLAUDE.md" ]'
+run "$p"; ck no-claude-md 2 'has "has no CLAUDE.md"' '[ ! -e "$p/CLAUDE.md" ] && [ ! -e "$p/.agent" ]'
+run --check "$p"; ck check-no-claude-md 0 'has "so the script skipped it."' '[ ! -e "$p/CLAUDE.md" ]'
+run --new "$p"; ck new 0 'same "$p"' '[ -x "$p/.agent/spec-lint" ]' 'has "Copied CLAUDE.md."' 'has "Next:"'
+run "$p"; ck untracked-equal 0 'has "are current."' '! has Copied' '! has "Next:"'
+commit "$p"
+run --check "$p"; ck check-current 0 'has "are current."'
+echo v2 > "$tpl/CLAUDE.project.md"; echo b2 > "$tpl/agents/b.md"
+run --check "$p"; ck check-behind 1 'has "CLAUDE.md differs"' 'has ".claude/agents/b.md differs"' \
+  '! has "a.md differs"' '[ "$(cat "$p/CLAUDE.md")" = v1 ]'
+echo own > "$p/.claude/agents/own.md" && commit "$p"
+run "$p"; ck update 0 'same "$p"' '[ "$(cat "$p/.claude/agents/own.md")" = own ]' \
+  'has "Copied .claude/agents/b.md."' '! has "Copied .claude/agents/a.md."' '! has "Note:"'
+commit "$p"
+echo v3 > "$tpl/CLAUDE.project.md"; echo b3 > "$tpl/agents/b.md"; echo mine > "$p/CLAUDE.md"
+run "$p"; ck uncommitted 2 'has "has uncommitted changes"' '[ "$(cat "$p/CLAUDE.md")" = mine ]' \
+  '[ "$(cat "$p/.claude/agents/b.md")" = b2 ]'
+run --check "$p"; ck check-uncommitted 2 'has "has uncommitted changes"'
+git -C "$p" add CLAUDE.md
+run "$p"; ck staged 2 'has "has uncommitted changes"' '[ "$(cat "$p/CLAUDE.md")" = mine ]'
+git -C "$p" reset -q --hard && echo junk > "$p/other.txt"
+run "$p"; ck other-dirty 0 'same "$p"' 'has "Note: Other paths have uncommitted changes (1)."'
+p2=$t/p2 && git init -q "$p2" && echo x > "$p2/CLAUDE.md"
+run "$p2"; ck no-head 2 'has "has uncommitted changes"' '[ "$(cat "$p2/CLAUDE.md")" = x ]'
+p3=$t/p3 && git init -q "$p3" && echo x > "$p3/real" && ln -s real "$p3/CLAUDE.md" && commit "$p3"
+run "$p3"; ck symlink-file 2 'has "is a symbolic link"' '[ -L "$p3/CLAUDE.md" ] && [ "$(cat "$p3/real")" = x ]'
+p4=$t/p4 && git init -q "$p4" && echo v1 > "$p4/CLAUDE.md" && mkdir "$t/elsewhere" &&
+  ln -s "$t/elsewhere" "$p4/.claude" && commit "$p4"
+run "$p4"; ck symlink-dir 2 'has "is a symbolic link"' '[ -z "$(ls -A "$t/elsewhere")" ]' \
+  '[ "$(cat "$p4/CLAUDE.md")" = v1 ]'
+p6=$t/p6 && git init -q "$p6" && echo v1 > "$p6/CLAUDE.md" && mkdir -p "$p6/.claude/agents/a.md" && commit "$p6"
+run "$p6"; ck non-regular 2 'has "is not a regular file"' '[ -z "$(ls -A "$p6/.claude/agents/a.md")" ]' \
+  '[ "$(cat "$p6/CLAUDE.md")" = v1 ]'
+p5=$t/p5 && git init -q "$p5" && echo v1 > "$p5/CLAUDE.md" && commit "$p5"
+run "$p5" "$t/plain"; ck mixed 2 'same "$p5"' 'has "is not the root directory"'
+commit "$p5" && echo v4 > "$tpl/CLAUDE.project.md"
+out=$(cd "$p5" && "$tpl/copy-template" 2>&1); rc=$?
+ck cwd-default 0 'same "$p5"' 'has "Copied CLAUDE.md."'
+if [ "$fail" -eq 0 ]; then echo "copy-template: $n/$n cases pass"; else echo "copy-template: $fail/$n cases FAIL"; exit 1; fi

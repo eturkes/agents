@@ -53,7 +53,7 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 
 ## Template files
 
-Each project carries its own copy of the template files. No file in a project refers to this repository or to this machine. Thus, other developers can use the project as it is. Machine-specific facts, such as tools, accounts and model settings, stay in your user-level `CLAUDE.md`.
+Each project carries its own copy of the template files. No file in a project refers to this repository or to this machine. Thus, other developers can use the project as it is. Machine-specific facts, such as tools, accounts and model settings, stay in your user-level `CLAUDE.md`. A fact that applies to one project on one machine goes into `CLAUDE.local.md` at the project root. Git ignores that file.
 
 | File in the project | Source in this repository |
 | --- | --- |
@@ -61,17 +61,22 @@ Each project carries its own copy of the template files. No file in a project re
 | `.claude/agents/*.md` (teammate roles) | `claude/agents/*.md` |
 | `.agent/spec-lint` | `claude/spec-lint` |
 
-To copy the files in, run these commands at the project root:
+To copy the files in, run this command at the project root:
 
 ```sh
-T=~/.local/app/agents/claude
-cp "$T/CLAUDE.project.md" CLAUDE.md
-mkdir -p .agent .claude/agents
-cp "$T/spec-lint" .agent/spec-lint
-cp "$T"/agents/*.md .claude/agents/
+copy-template
 ```
 
-Run the same commands before you paste `refresh.md`. The refresh session compares the new copies with the previous copies in git. Then it moves the project to the new template.
+`copy-template` is a link from `~/.local/bin` to `claude/copy-template`. On a new machine, add the link: `ln -s ~/.local/app/agents/claude/copy-template ~/.local/bin/copy-template`.
+
+The script copies only the files that differ from the template. It keeps the role files that the template does not have. The script does not change a project in these cases:
+
+- A template file in the project has uncommitted changes. Commit or discard them first.
+- The project has no `CLAUDE.md`. For a new repository, run `git init` first, then add `--new`.
+
+To list the projects that are behind the template, run `copy-template --check ~/Projects/*`. This command copies nothing, and it skips repositories that have no `CLAUDE.md`. For all options, run `copy-template --help`.
+
+Run `copy-template` before you paste `refresh.md`. The refresh session compares the new copies with the previous copies in git. Then it moves the project to the new template.
 
 ## Advisor
 
