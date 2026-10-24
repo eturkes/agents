@@ -12,6 +12,7 @@
 - PSD definition = `psd-browseros-neo` → `/usr/share/psd/browsers/browseros-neo`; services = `psd.service` + `psd-resync.timer`.
 - Cache = `~/.cache/browser-claw` → `/tmp/browser-claw-home-cache`; `/etc/tmpfiles.d/browseros-neo.conf` creates the private directory.
 - MCP = `browseros-neo` → `http://127.0.0.1:9200/mcp`; Codex = `~/.codex/config.toml`. `browseros-call` reads that endpoint and supports JSON/SSE + session reuse; schemas = `browseros-call --list-tools`.
+- `browseros-claw-server` = Neo's sidecar (`browseros-neo-bin`, child of the Neo browser `browserclaw`) = the MCP backend on 9210 behind the 9200 proxy ⇒ exactly one runs, Neo's. Each minute it reconciles harness integrations: the `browseros-neo` MCP URL in `~/.claude.json` + `~/.codex/config.toml` (→ its own proxy port) + the `browseros-neo` skill (`~/.claude/skills/browseros-neo`, marker `.browserclaw-managed.json`) ⇒ a stray server (config outside `~/.config/browser-claw` + `~/.config/browser-os`) flips both URLs off 9200 → stop it by PID (`pgrep -af '[b]rowseros-claw-server'`), then confirm both files read 9200 within a minute; `check-browseros-neo` asserts no stray.
 - Captures → `screenshot` the target tab directly; background tabs render their live DOM. Neo keeps the visible tab fixed: `Page.bringToFront` = no-op. Signed-in headless capture → `webcap --user-data-dir ~/.config/browser-claw`.
 - After MCP configuration changes, restart `codexify.service`; refresh an attached connector to load its new catalogue. New Codex sessions load the new MCP.
 

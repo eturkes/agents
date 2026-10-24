@@ -28,6 +28,11 @@ def main():
     assert cache.is_symlink() and cache.resolve() == Path("/tmp/browser-claw-home-cache")
     print("profile_psd_cache=PASS", flush=True)
 
+    # Strays rewrite the harness MCP URLs each minute; match comm (15-char "browseros-claw-"): -f also hits shells naming it.
+    configs = {f"--config={home}/.config/{name}/.browseros/config.json" for name in ("browser-claw", "browser-os")}
+    servers = subprocess.run(["pgrep", "-a", "^browseros-claw-$"], capture_output=True, text=True, check=False).stdout
+    stray = [line for line in servers.splitlines() if not configs & set(line.split())]
+    assert not stray, stray
     helper = runpy.run_path(str(Path(__file__).resolve().parents[2] / "bin/browseros-call"))
     assert helper["endpoint"]() == "http://127.0.0.1:9200/mcp"
     initialized, _ = helper["call"](helper["endpoint"](), "initialize", {
@@ -35,6 +40,7 @@ def main():
         "clientInfo": {"name": "neo-machine-check", "version": "1"},
     })
     assert initialized["result"]["serverInfo"]["name"] == "browseros-neo"
+    print("harness_endpoint=PASS", flush=True)
 
     def call(name, arguments):
         result = helper["invoke"]("tools/call", {"name": name, "arguments": arguments})["result"]
