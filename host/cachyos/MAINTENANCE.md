@@ -56,6 +56,7 @@ The checkpoint shares the current root filesystem and user-space packages; revie
 ```bash
 set -euo pipefail
 install -Dm644 host/cachyos/browseros-neo.service "$HOME/.config/systemd/user/browseros-neo.service"
+ln -sfn "$PWD/host/cachyos/browseros-neo-reap-sidecar" "$HOME/.local/bin/browseros-neo-reap-sidecar"
 units=(browseros-neo.service app-chatgpt@autostart.service)
 for unit in "${units[@]}"; do
   install -Dm644 host/cachyos/desktop-recovery.conf "$HOME/.config/systemd/user/$unit.d/recovery.conf"
@@ -94,6 +95,13 @@ Checks = `bash -n host/cachyos/cli-proxy-api-patch`, `shellcheck host/cachyos/cl
 - Static checks = `bash -n host/cachyos/agent-crash-policy` + `shellcheck host/cachyos/agent-crash-policy`; repeat apply must preserve mask targets + configuration bytes.
 - Pickup timeout cause = journal end leaves its watcher active; no report → `RuntimeMaxSec=30 minutes` expires. [Processor](https://github.com/Sonic-DE/sonic-dr-robotnik/blob/6.7.5/src/coredump/processor/main.cpp), [watcher](https://github.com/Sonic-DE/sonic-dr-robotnik/blob/6.7.5/src/coredump/coredumpwatcher.cpp).
 - KCrash switches → [KF6](https://github.com/KDE/kcrash/blob/v6.30.0/src/kcrash.cpp), [KF5](https://github.com/KDE/kcrash/blob/v5.116.0/src/kcrash.cpp).
+
+### Journal retention
+
+- `host/cachyos/journal-policy apply` installs `journald-size.conf` as `/etc/systemd/journald.conf.d/80-journal-size.conf` (sorts after cachyos-settings' `00-journal-size.conf`, `SystemMaxUse=50M`) and restarts journald: `SystemMaxUse=1G` ⇒ days of history for every unit beside the desktop apps' output.
+- `host/cachyos/journal-policy check` checks installed bytes, the merged `SystemMaxUse` (`systemd-analyze cat-config`) + the limit journald last reported; `bash -n` + `shellcheck` check the recipe.
+- Neo's sidecar log filter (`CLAW_LOG`) + its stop-time reaper → [BROWSER.md](BROWSER.md). `LogFilterPatterns=` serves system services alone (systemd.exec), not these user units.
+- CLIProxyAPI's per-request INFO lines stay in the journal (owner): it has no level setting; `logging-to-file` would move its errors out of the journal too.
 
 ### Closed-lid operation
 

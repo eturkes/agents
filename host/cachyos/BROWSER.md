@@ -12,7 +12,9 @@
 - PSD definition = `psd-browseros-neo` → `/usr/share/psd/browsers/browseros-neo`; services = `psd.service` + `psd-resync.timer`.
 - Cache = `~/.cache/browser-claw` → `/tmp/browser-claw-home-cache`; `/etc/tmpfiles.d/browseros-neo.conf` creates the private directory.
 - MCP = `browseros-neo` → `http://127.0.0.1:9200/mcp`; Codex = `~/.codex/config.toml`. `browseros-call` reads that endpoint and supports JSON/SSE + session reuse; schemas = `browseros-call --list-tools`.
-- `browseros-claw-server` = Neo's sidecar (`browseros-neo-bin`, child of the Neo browser `browserclaw`) = the MCP backend on 9210 behind the 9200 proxy ⇒ exactly one runs, Neo's. Each minute it reconciles harness integrations: the `browseros-neo` MCP URL in `~/.claude.json` + `~/.codex/config.toml` (→ its own proxy port) + the `browseros-neo` skill (`~/.claude/skills/browseros-neo`, marker `.browserclaw-managed.json`) ⇒ a stray server (config outside `~/.config/browser-claw` + `~/.config/browser-os`) flips both URLs off 9200 → stop it by PID (`pgrep -af '[b]rowseros-claw-server'`), then confirm both files read 9200 within a minute; `check-browseros-neo` asserts no stray.
+- `browseros-claw-server` = Neo's sidecar (`browseros-neo-bin`, child of the Neo browser `browserclaw`) = the MCP backend behind the 9200 proxy (its own port = `config.json` `ports.server`, moves between starts) ⇒ exactly one runs, Neo's. Each minute it reconciles harness integrations: the `browseros-neo` MCP URL in `~/.claude.json` + `~/.codex/config.toml` (→ its own proxy port) + the `browseros-neo` skill (`~/.claude/skills/browseros-neo`, marker `.browserclaw-managed.json`) ⇒ a stray server (config outside `~/.config/browser-claw` + `~/.config/browser-os`) flips both URLs off 9200 → stop it by PID (`pgrep -af '[b]rowseros-claw-server'`), then confirm both files read 9200 within a minute; `check-browseros-neo` asserts no stray + exactly one Neo sidecar.
+- The Neo browser moves itself into its own `app-org.chromium.Chromium-<pid>.scope` ⇒ stopping `browseros-neo.service` never reaches the sidecar, which then retries CDP every second without end (a WARN each) → the unit's `ExecStopPost=browseros-neo-reap-sidecar` TERMs it (KILL after 10 s).
+- Sidecar log filter = the unit's `CLAW_LOG` (tracing `EnvFilter`; journal + `<profile>/logs/claw-server.log` alike): `claw_server::api::http` + `claw_server::services::extension_updates` at error — Neo polls previews of ended sessions (each 404 = an http WARN, ≈ 40/min) and checks extension updates every 30 s; other targets stay at info.
 - Captures → `screenshot` the target tab directly; background tabs render their live DOM. Neo keeps the visible tab fixed: `Page.bringToFront` = no-op. Signed-in headless capture → `webcap --user-data-dir ~/.config/browser-claw`.
 - After MCP configuration changes, restart `codexify.service`; refresh an attached connector to load its new catalogue. New Codex sessions load the new MCP.
 
@@ -24,6 +26,7 @@ Run from this repository root with both browsers closed. Preserve an existing Ne
 test -e ~/.config/browser-claw || cp -a --reflink=auto "$(readlink -f ~/.config/browser-os)" ~/.config/browser-claw
 sudo -n install -m644 host/cachyos/psd-browseros-neo /usr/share/psd/browsers/browseros-neo
 ln -sfn "$PWD/host/cachyos/browseros-neo" ~/.local/bin/browseros-neo
+ln -sfn "$PWD/host/cachyos/browseros-neo-reap-sidecar" ~/.local/bin/browseros-neo-reap-sidecar
 ```
 
 Set `~/.config/psd/psd.conf`: `USE_OVERLAYFS="yes"`, `USE_SUSPSYNC="yes"`, `BROWSERS=(browseros-neo)`.
@@ -59,13 +62,13 @@ python -B bin/check-webtext -q
 python -B host/cachyos/check-browseros-neo-launcher -q
 python -B host/cachyos/check-browseros-neo-sync-identity -q
 python -B host/cachyos/check-browseros-neo
-bash -n host/cachyos/browseros-neo
-shellcheck host/cachyos/browseros-neo
+bash -n host/cachyos/browseros-neo host/cachyos/browseros-neo-reap-sidecar
+shellcheck host/cachyos/browseros-neo host/cachyos/browseros-neo-reap-sidecar
 ruff check bin/browseros-call bin/check-browseros-call bin/check-webtext host/cachyos/browseros-neo-signin host/cachyos/browseros-neo-sync-identity host/cachyos/check-browseros-neo-launcher host/cachyos/check-browseros-neo-sync-identity host/cachyos/check-browseros-neo host/cachyos/prune-desktop
 codex/cachyos/check-instructions
 codex/cachyos/deploy-instructions
 ```
 
 Login reuse → inspect GitHub Settings + Google Account in Neo; both must stay signed in. Inspect a desktop capture for native account-policy dialogs.
-Restart → stop Neo and its sidecar before PSD unsync; prove ports quiescent, relaunch, rerun the live check.
+Restart → `systemctl --user stop browseros-neo.service` (its `ExecStopPost` stops the sidecar) before PSD unsync; prove ports quiescent, relaunch, rerun the live check.
 Isolated sign-in checks → offline profile copy + `--disable-browseros-server` + `--disable-browseros-server-updater` + `--disable-browseros-extensions` + `--disable-sync` + separate CDP port. Compare the startup eligibility with and without the private OAuth settings; keep live profiles and MCP configuration unchanged.

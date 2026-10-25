@@ -33,6 +33,9 @@ def main():
     servers = subprocess.run(["pgrep", "-a", "^browseros-claw-$"], capture_output=True, text=True, check=False).stdout
     stray = [line for line in servers.splitlines() if not configs & set(line.split())]
     assert not stray, stray
+    # A sidecar orphaned by a Neo stop (browseros-neo-reap-sidecar's case) shares Neo's config.
+    neo = [line for line in servers.splitlines() if f"--config={home}/.config/browser-claw/.browseros/config.json" in line.split()]
+    assert len(neo) == 1, neo
     helper = runpy.run_path(str(Path(__file__).resolve().parents[2] / "bin/browseros-call"))
     assert helper["endpoint"]() == "http://127.0.0.1:9200/mcp"
     initialized, _ = helper["call"](helper["endpoint"](), "initialize", {

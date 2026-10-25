@@ -7,6 +7,11 @@ After=graphical-session.target psd.service
 [Service]
 Type=exec
 ExecStart=%h/.local/bin/browseros-neo
+# The browser runs in its own Chromium scope ⇒ stopping the unit leaves its sidecar running.
+ExecStopPost=%h/.local/bin/browseros-neo-reap-sidecar
+# claw-server's tracing filter (journal + its own daily log): Neo polls previews of ended sessions,
+# each 404 = an http WARN (≈ 40/min), + an extension-update WARN every 30 s ⇒ those targets log errors only.
+Environment=CLAW_LOG=info,claw_server::api::http=error,claw_server::services::extension_updates=error
 TimeoutStopSec=10s
 
 [Install]

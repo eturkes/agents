@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode=${1:-check}
+[[ $# -le 1 && ( "$mode" == check || "$mode" == apply ) ]] || {
+  echo 'Usage: journal-policy [check|apply]' >&2
+  exit 2
+}
+recipe_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+policy_source="$recipe_dir/journald-size.conf"
+# 80- sorts after cachyos-settings' /usr/lib/systemd/journald.conf.d/00-journal-size.conf ⇒ it wins.
+policy_target=/etc/systemd/journald.conf.d/80-journal-size.conf
+want=$(sed -n 's/^SystemMaxUse=//p' "$policy_source")
+
+if [[ "$mode" == apply ]]; then
+  sudo -n install -D -o root -g root -m 0644 -- "$policy_source" "$policy_target"
+  # Restart keeps journald's sockets (logging continues) and logs the new limit.
+  sudo -n systemctl restart systemd-journald.service
+fi
+
+failed=0
+if cmp -s -- "$policy_source" "$policy_target"; then
+  printf 'OK persistent policy: %s\n' "$policy_target"
+else
+  printf 'FAIL persistent policy: missing or different: %s\n' "$policy_target" >&2
+  failed=1
+fi
+
+merged=$(systemd-analyze cat-config systemd/journald.conf | sed -n 's/^SystemMaxUse=//p' | tail -n 1)
+if [[ "$merged" == "$want" ]]; then
+  printf 'OK merged SystemMaxUse=%s\n' "$merged"
+else
+  printf 'FAIL merged SystemMaxUse: expected=%s actual=%s\n' "$want" "${merged:-unset}" >&2
+  failed=1
+fi
+
+# journald reports its limit at start: "System Journal (…) is 48.1M, max 1G, 975.8M free."
+live=$(journalctl -q --no-pager -o cat _COMM=systemd-journal | sed -n 's/^System Journal .*, max \([^,]*\),.*/\1/p' | tail -n 1)
+if [[ "$live" == "$want" ]]; then
+  printf 'OK live max=%s\n' "$live"
+else
+  printf 'FAIL live max: expected=%s actual=%s (restart journald: apply)\n' "$want" "${live:-none}" >&2
+  failed=1
+fi
+exit "$failed"

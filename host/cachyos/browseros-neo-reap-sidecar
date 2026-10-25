@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# browseros-neo-reap-sidecar — ExecStopPost of browseros-neo.service: TERM the claw-server sidecar of
+# Neo's profile once its browser has stopped, KILL after 10 s. The browser moves itself into its own
+# app-org.chromium.Chromium-<pid>.scope ⇒ the unit's stop never reaches the sidecar, which then retries
+# CDP every second without end (a WARN each) + keeps its port bound.
+set -euo pipefail
+config="--config=$HOME/.config/browser-claw/.browseros/config.json"
+sidecars() { # comm = 15-char "browseros-claw-"; the cmdline token pins Neo's profile
+  local pid
+  for pid in $(pgrep -x browseros-claw- || true); do
+    tr '\0' '\n' <"/proc/$pid/cmdline" 2>/dev/null | grep -qxF -- "$config" && echo "$pid"
+  done
+  return 0
+}
+mapfile -t pids < <(sidecars)
+((${#pids[@]})) || exit 0
+kill -TERM "${pids[@]}" 2>/dev/null || true
+deadline=$((SECONDS + 10))
+while ((SECONDS < deadline)); do
+  mapfile -t pids < <(sidecars)
+  ((${#pids[@]})) || exit 0
+  sleep 0.2
+done
+kill -KILL "${pids[@]}" 2>/dev/null || true
