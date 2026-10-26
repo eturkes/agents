@@ -4,20 +4,19 @@ paths: ["codex/*/AGENTS.codexify.md", "codex/*/deploy-instructions", "codex/cach
 
 # Codexify instructions
 
-- `codex/<host>/AGENTS.codexify.md` = that host's `~/AGENTS.md`: load at MCP startup + unbound `get_agent_brief`, then select workspace `~`. Shared text → edit every host copy; host-specific lines = `git diff --no-index` between copies.
-- Deploy: cachyos → `codex/cachyos/deploy-instructions --apply` (+ `~/.codex/AGENTS.md`, stale trust pruning, Codexify config policy); aeon → `codex/aeon/deploy-instructions --apply` (cachyos policy + writer; no trust pruning: host-layer paths absent in-container ≠ stale); nixbox → `codex/nixbox/deploy-instructions` (SSH as `eturkes`). Restart cachyos/nixbox with `systemctl --user restart codexify.service`; aeon = direct process, relaunch from `~` (detached logs = `~/.codexify/codexify.log`).
-- cachyos, aeon + nixbox run Codexify ≥ 2.2: tools advertise `destructiveHint`/`openWorldHint` = false ⇒ no per-chat permission prompt under connector `Allow all` (1.x marks shell/write tools destructive + open-world ⇒ ChatGPT asks).
-- Upstream ≥ 2.2 requires workspace selection; `multiProject=false` is ignored. `codex/codexify-startup` builds pinned upstream + `codex/codexify-startup.patch`; `projectDoc.includeAtStartup=true` includes access-root instructions before selection. Default/off, instruction discovery/budget + conversation authorization stay intact; conversation-specific state loads only after selection. The home instructions choose `.` for an unbound chat; no special opener is needed. Existing bindings stay intact.
-- Each deploy keeps `projectDoc.includeAtStartup=true`, catalogue entry `.` (nixbox alias `trading`), `worktrees.mode=never` (`~` is not a Git repo), `uiWidgets` + `agentChat.enabled=false` (plain chat, no MCP App cards).
-- Native patch lifecycle: `codex/codexify-startup build` → `install` → restart → `check`; portable prebuilt install = `install /path/to/codexify`. Previous binary = `~/.codexify/bin/codexify.before-startup-doc`. Upstream self-updates replace the patch → reapply + rerun the live check; advancing the pinned base requires replaying the patch + tests first.
-- Config change → refresh the ChatGPT connector (Plugins → `Codexify - <host>` → Refresh tools).
-- nixbox `~/.codex/` = trading's pinned Codex home ⇒ instruction + trust changes there = trading scope.
+- `codex/<host>/AGENTS.codexify.md` → host `~/AGENTS.md`. Shared edits → every host copy; compare host-specific text with `git diff --no-index`.
+- Startup = patched native Codexify + `projectDoc.includeAtStartup=true` → access-root instructions in MCP initialize + unbound `get_agent_brief`. Preserve auth gates, instruction discovery/budget + existing bindings; load workspace state after selection.
+- Policy = catalogue `.` (nixbox alias `trading`), `worktrees.mode=never`, `uiWidgets=false`, `agentChat.enabled=false`. Preserve `destructiveHint`/`openWorldHint=false` for connector `Allow all`.
+- Deploy: cachyos → `codex/cachyos/deploy-instructions --apply` (native instructions + stale trust pruning); aeon → `codex/aeon/deploy-instructions --apply` (preserve host-layer trust); nixbox → `codex/nixbox/deploy-instructions` over SSH as `eturkes`.
+- Restart: cachyos/nixbox → `systemctl --user restart codexify.service`; aeon → relaunch direct process from `~`, detached log = `~/.codexify/codexify.log`. Config/runtime changes → refresh ChatGPT connector: Plugins → `Codexify - <host>` → Refresh tools.
+- Patch = `codex/codexify-startup.patch`; lifecycle = `codex/codexify-startup build` → `install [BINARY]` → restart → `check`. After upstream updates → reapply; new base → replay patch + tests. Rollback binary = `~/.codexify/bin/codexify.before-startup-doc`.
+- nixbox `~/.codex/` = trading's pinned Codex home; keep its instruction + trust changes in trading scope.
 
 Checks:
 
 ```sh
 codex/cachyos/check-instructions
-codex/check-codexify-startup               # live MCP initialize + fresh unbound brief must contain full ~/AGENTS.md
+codex/check-codexify-startup               # full ~/AGENTS.md in startup + fresh brief
 codex/aeon/deploy-instructions             # live drift → rc 1
 codex/nixbox/deploy-instructions --check   # live drift → rc 1
 shellcheck -s sh codex/nixbox/deploy-instructions

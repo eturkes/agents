@@ -26,7 +26,7 @@ index 06bdb1c..bc028b0 100644
          version.push_str("+workspace-v1");
      }
 diff --git a/src/instructions.rs b/src/instructions.rs
-index a80ee14..bc73b9f 100644
+index a80ee14..c18f6ab 100644
 --- a/src/instructions.rs
 +++ b/src/instructions.rs
 @@ -139,7 +139,7 @@ pub fn build_initial_instructions(config: &AppConfig) -> String {
@@ -45,12 +45,12 @@ index a80ee14..bc73b9f 100644
 -    .join("\n")
 +    .join("\n");
 +
-+    // The access-root policy can establish a default workspace without exposing
-+    // conversation-specific memory or selecting a workspace during initialize.
++    // Initialization precedes conversation identity; the access root supplies startup policy.
++    // Workspace-specific state loads after selection.
 +    if config.project_doc.include_at_startup.unwrap_or(false)
 +        && let Some(doc) = load_project_doc(config)
 +    {
-+        initial.push_str("\n\n## Access-root startup instructions\n\nThese instructions are loaded from the configured access root, not a conversation-specific workspace. They override the generic workspace-selection guidance above. Apply their workspace defaults only while this conversation is unbound; keep an existing selected workspace. After selecting a workspace, call get_agent_brief to load its full context.\n\n");
++        initial.push_str("\n\n## Access-root startup instructions\n\nThese instructions override the generic workspace-selection guidance above. Unbound chat → apply their workspace defaults; bound chat → retain its workspace. After selection → call get_agent_brief for workspace context.\n\n");
 +        initial.push_str(PROJECT_DOC_SEPARATOR);
 +        initial.push_str("\n\n");
 +        initial.push_str(&doc.text);
@@ -148,14 +148,14 @@ index a80ee14..bc73b9f 100644
      fn conversation_auth_initialization_withholds_project_context() {
          let root = tempfile::tempdir().unwrap();
 diff --git a/src/types.rs b/src/types.rs
-index b4938c8..6174773 100644
+index b4938c8..1de9ce9 100644
 --- a/src/types.rs
 +++ b/src/types.rs
 @@ -227,6 +227,9 @@ pub struct ExecConfig {
  #[derive(Debug, Clone, Default, Serialize, Deserialize)]
  #[serde(rename_all = "camelCase")]
  pub struct ProjectDocConfig {
-+    /// Include access-root instructions before a conversation selects a workspace.
++    /// Load access-root instructions at MCP startup.
 +    #[serde(skip_serializing_if = "Option::is_none", default)]
 +    pub include_at_startup: Option<bool>,
      #[serde(skip_serializing_if = "Option::is_none", default)]

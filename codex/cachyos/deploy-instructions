@@ -34,10 +34,8 @@ def prune(text):
     return result, len(missing)
 
 
-# codex/codexify-startup supplies projectDoc.includeAtStartup: load the access-root instructions before selection.
-# Entry `.` lets chats select ~, whose AGENTS.md routes the task. Under the default `auto`, each later chat on an already selected
-# checkout gets a git worktree, which fails on ~ (no repo) and forks emachine from its live build ⇒ `never`.
-# Plain chat, no MCP App cards ⇒ uiWidgets + agentChat off.
+# Startup policy requires codex/codexify-startup.
+# Direct workspaces support home directories and keep emachine on its live checkout.
 HOME_ENTRY = {
     "path": ".",
     "name": "home",

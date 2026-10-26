@@ -1,12 +1,7 @@
 #!/bin/sh
-# deploy-instructions [--check] — nixbox Codexify (user eturkes): ~/AGENTS.md ← AGENTS.codexify.md, and
-# codexify.config.json gains startup instructions, the home catalogue entry, worktrees.mode never + uiWidgets/agentChat off; a config
-# change restarts Codexify. --check = report drift (rc 1), change nothing. Host = $NIXBOX (default
-# eturkes@192.168.40.240).
-# codex/codexify-startup supplies projectDoc.includeAtStartup: load ~/AGENTS.md before workspace selection. Entry `.`
-# (alias `trading`) lets chats select ~, whose AGENTS.md routes to Projects/trading. Mode `auto` gives every
-# later chat on a selected checkout a git worktree, which fails on ~ (no repo) ⇒ `never`. Plain chat, no MCP App cards
-# ⇒ uiWidgets + agentChat off.
+# Deploy ~/AGENTS.md + Codexify policy to $NIXBOX (default eturkes@192.168.40.240).
+# --check = report drift (rc 1); default = apply, restart service on config changes.
+# Startup policy requires codex/codexify-startup; home directories require direct workspaces.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 host=${NIXBOX:-eturkes@192.168.40.240}

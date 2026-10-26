@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuild the pinned native Codexify with opt-in access-root instructions at MCP startup.
+# Native Codexify startup policy: pinned source + replayable patch.
 set -euo pipefail
 here=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
 task_home=$(readlink -f -- "$HOME")
@@ -33,7 +33,7 @@ case ${1-} in
     rg -a -q 'Access-root startup instructions' "$source_binary"
     "$source_binary" --help >/dev/null
     if ! cmp -s "$source_binary" "$live"; then
-      # Keep the immediately preceding install for rollback; atomic rename leaves running processes intact.
+      # Atomic rename preserves the running process's inode.
       cp -p "$live" "$live.before-startup-doc"
       install -m755 "$source_binary" "$live.new"
       mv -f "$live.new" "$live"
@@ -45,7 +45,7 @@ case ${1-} in
     ;;
   *)
     echo 'Usage: codexify-startup build | install [BINARY] | check' >&2
-    echo 'build requires Rust, Cargo and a C toolchain. install preserves the previous binary; restart separately.' >&2
+    echo 'Build requires Rust, Cargo and a C toolchain. After installation, restart Codexify.' >&2
     exit 64
     ;;
 esac
