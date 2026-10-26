@@ -1,6 +1,7 @@
 # Codexify
 
 - Runtime = ChatGPT Web Developer mode + Codexify connector; active chat settings own model + reasoning.
+- Startup instructions include `~/AGENTS.md`; select the home workspace + load `get_agent_brief` before task work.
 - Workspace = `~` (catalogue selector `.`, alias `trading`) for every chat; filesystem tool paths resolve relative to it. Install/configure project-local. Task-serving user-level environment + agent-stack changes (skills/plugins/software) = in scope.
 - Direct user instructions > `AGENTS.md` + skill guidelines.
 
@@ -70,7 +71,7 @@
 - Defaults: Python → `uv`; Node.js → `pnpm`.
 - User services → `systemctl --user` (lingering; units in `~/.config/systemd/user`).
 - Discover/preserve repo stack from tracked manifests, lockfiles, scripts, CI + working commands. New language/package/tool surfaces require task need.
-- Codexify = user unit `codexify.service`; `~/.codexify/codexify.config.json` = bridge + tunnel policy + project catalogue (catalogue entry, `worktrees.mode` + `uiWidgets`/`agentChat` off ← controller deploy). Restart Codexify after changes; refresh the connector when exposed capabilities change.
+- Codexify = user unit `codexify.service`; `~/.codexify/codexify.config.json` = bridge + tunnel policy + project catalogue (`projectDoc.includeAtStartup`, catalogue entry, `worktrees.mode` + `uiWidgets`/`agentChat` off ← controller deploy). Startup-doc support ← agents repo `codex/codexify-startup`; reapply after Codexify updates. Restart after changes; refresh the connector when exposed capabilities change.
 - Shell/tool calls = native; preserve commands + output verbatim. `rg` = ripgrep; `grep` = GNU BRE; `find` = GNU find.
 - Search → `rg <pattern> <path>`; explicit dot-dirs or `--hidden`; include ignored paths → `-uu`. `-r` = replacement.
 - `pgrep -f`/`pkill -f` → one bracketed pattern (`index[.]js`) to exclude the shell wrapper; kill + relaunch in separate calls.

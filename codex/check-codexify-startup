@@ -1,0 +1,83 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+"""Probe a running native-tunnel Codexify without selecting a workspace."""
+import argparse
+import hashlib
+import json
+import pathlib
+import socket
+import urllib.request
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--details", action="store_true", help="Include all tool annotations.")
+args = parser.parse_args()
+config = json.loads((pathlib.Path.home() / ".codexify/codexify.config.json").read_text())
+document = (pathlib.Path(config["workDir"]) / "AGENTS.md").read_text()
+tunnels = config.get("openaiTunnels") or [config.get("openaiTunnel", {})]
+tunnel_ids = {entry.get("tunnelId") for entry in tunnels}
+for process in pathlib.Path("/proc").iterdir():
+    if not process.name.isdigit():
+        continue
+    try:
+        argv = (process / "cmdline").read_bytes().split(b"\0")
+        if not argv or not argv[0].endswith(b"/tunnel-client-runtime"):
+            continue
+        env = dict(item.split(b"=", 1) for item in (process / "environ").read_bytes().split(b"\0") if b"=" in item)
+        authorization = env[b"CODEXIFY_INTERNAL_MCP_AUTHORIZATION"].decode()
+        endpoint = argv[argv.index(b"--mcp.server-url") + 1].decode()
+        if endpoint.rsplit("/", 1)[-1] not in tunnel_ids:
+            continue
+        break
+    except (OSError, KeyError, ValueError):
+        continue
+else:
+    raise SystemExit("No readable native tunnel process found")
+
+headers = {"Authorization": authorization, "Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+
+
+def call(method, params=None, request_id=1):
+    request = {"jsonrpc": "2.0", "method": method}
+    if request_id is not None:
+        request["id"] = request_id
+    if params is not None:
+        request["params"] = params
+    with urllib.request.urlopen(urllib.request.Request(endpoint, data=json.dumps(request).encode(), headers=headers), timeout=45) as response:
+        session = response.headers.get("Mcp-Session-Id")
+        if session:
+            headers["Mcp-Session-Id"] = session
+        body = response.read().decode()
+        if not body:
+            return None
+        if response.headers.get("Content-Type", "").startswith("text/event-stream"):
+            for line in body.splitlines():
+                if line.startswith("data:") and line[5:].strip():
+                    item = json.loads(line[5:])
+                    if item.get("id") == request_id:
+                        return item
+            raise RuntimeError("MCP event stream contained no matching response")
+        return json.loads(body)
+
+
+try:
+    initialized = call("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "agents-startup-probe", "version": "1"}})["result"]
+    call("notifications/initialized", request_id=None)
+    instructions = initialized.get("instructions", "")
+    brief_result = call("tools/call", {"name": "get_agent_brief", "arguments": {}}, 2)
+    brief = "\n".join(item.get("text", "") for item in brief_result.get("result", {}).get("content", []))
+    tools = call("tools/list", {}, 3)["result"]["tools"]
+    annotations = sorted(({"name": tool["name"], "annotations": tool.get("annotations", {})} for tool in tools), key=lambda item: item["name"])
+    included = bool(document) and document in instructions
+    brief_included = bool(document) and document in brief
+    print(json.dumps({"host": socket.gethostname(), "serverInfo": initialized["serverInfo"], "document_sha256": hashlib.sha256(document.encode()).hexdigest(), "initialize_includes_document": included, "initialize_chars": len(instructions), "brief_includes_document": brief_included, "brief_error": brief_result.get("error"), "brief_is_error": brief_result.get("result", {}).get("isError", False), "tool_count": len(tools), "tool_annotations": annotations if args.details else "use --details"}, indent=2))
+finally:
+    if "Mcp-Session-Id" in headers:
+        try:
+            urllib.request.urlopen(urllib.request.Request(endpoint, headers=headers, method="DELETE"), timeout=10).close()
+        except Exception:
+            pass
+if not (included and brief_included) or brief_result.get("error") or brief_result.get("result", {}).get("isError"):
+    raise SystemExit(1)

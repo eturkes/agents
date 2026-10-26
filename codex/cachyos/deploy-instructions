@@ -34,8 +34,8 @@ def prune(text):
     return result, len(missing)
 
 
-# Codexify ≥ 2.2 makes every chat select a workspace + loads AGENTS.md from that directory alone ⇒ entry `.` lets
-# chats select ~, whose AGENTS.md routes the task. Under the default `auto`, each later chat on an already selected
+# codex/codexify-startup supplies projectDoc.includeAtStartup: load the access-root instructions before selection.
+# Entry `.` lets chats select ~, whose AGENTS.md routes the task. Under the default `auto`, each later chat on an already selected
 # checkout gets a git worktree, which fails on ~ (no repo) and forks emachine from its live build ⇒ `never`.
 # Plain chat, no MCP App cards ⇒ uiWidgets + agentChat off.
 HOME_ENTRY = {
@@ -51,6 +51,7 @@ def codexify_policy(text):
     expected.setdefault("worktrees", {})["mode"] = "never"
     expected["uiWidgets"] = False
     expected.setdefault("agentChat", {})["enabled"] = False
+    expected.setdefault("projectDoc", {})["includeAtStartup"] = True
     catalog = expected.setdefault("projectCatalog", {})
     catalog["entries"] = [e for e in catalog.get("entries", []) if e.get("path") != "."] + [HOME_ENTRY]
     return text if expected == config else json.dumps(expected, indent=2) + "\n"

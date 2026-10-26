@@ -1,9 +1,9 @@
 #!/bin/sh
 # deploy-instructions [--check] — nixbox Codexify (user eturkes): ~/AGENTS.md ← AGENTS.codexify.md, and
-# codexify.config.json gains the home catalogue entry, worktrees.mode never + uiWidgets/agentChat off; a config
+# codexify.config.json gains startup instructions, the home catalogue entry, worktrees.mode never + uiWidgets/agentChat off; a config
 # change restarts Codexify. --check = report drift (rc 1), change nothing. Host = $NIXBOX (default
 # eturkes@192.168.40.240).
-# Codexify ≥ 2.2: every chat selects a workspace + loads AGENTS.md from that directory alone ⇒ entry `.`
+# codex/codexify-startup supplies projectDoc.includeAtStartup: load ~/AGENTS.md before workspace selection. Entry `.`
 # (alias `trading`) lets chats select ~, whose AGENTS.md routes to Projects/trading. Mode `auto` gives every
 # later chat on a selected checkout a git worktree, which fails on ~ (no repo) ⇒ `never`. Plain chat, no MCP App cards
 # ⇒ uiWidgets + agentChat off.
@@ -42,6 +42,7 @@ umask 077
 jq '.worktrees.mode = "never"
   | .uiWidgets = false
   | .agentChat.enabled = false
+  | .projectDoc.includeAtStartup = true
   | .projectCatalog.entries = [(.projectCatalog.entries // [])[] | select(.path != ".")] + [{
       path: ".", name: "home", aliases: ["trading"],
       description: "Home workspace. Its AGENTS.md sends trading work to Projects/trading. Select it for every chat."

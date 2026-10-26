@@ -5,8 +5,8 @@
 # ///
 """Check Aeon's instruction files and the Codexify workspace policy. Use --apply to update them."""
 # Policy + writer = codex/cachyos/deploy-instructions. No trust pruning: ~/.codex/config.toml holds host-layer paths
-# (/home/eturkes/...) ⇒ absent in-container ≠ stale. Codexify = user-terminal foreground (no service) ⇒ config change →
-# restart there.
+# (/home/eturkes/...) ⇒ absent in-container ≠ stale. Codexify = direct process (no service) ⇒ config change →
+# stop + relaunch from ~; detached restarts log to ~/.codexify/codexify.log.
 import argparse
 import runpy
 from pathlib import Path

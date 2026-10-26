@@ -1,0 +1,163 @@
+diff --git a/src/config.rs b/src/config.rs
+index 32bb89b..5368e42 100644
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -439,7 +439,7 @@ pub(crate) fn settings_defaults(
+         "tree":defaults.tree,"command":defaults.command,
+         "exec":{"maxSessions":defaults.exec.max_sessions,"idleTimeoutMs":defaults.exec.idle_timeout_ms,
+             "defaultShell":crate::exec_sessions::resolve_shell(None)[0]},
+-        "projectDoc":{"maxBytes":crate::project_doc::PROJECT_DOC_MAX_BYTES,
++        "projectDoc":{"includeAtStartup":false,"maxBytes":crate::project_doc::PROJECT_DOC_MAX_BYTES,
+             "fallbackFilenames":[],"rootMarkers":crate::project_doc::DEFAULT_ROOT_MARKERS},
+         "output":{"maxToolOutputTokens":crate::output_budget::tool_output_token_budget(&defaults),
+             "maxFileLines":files.max_lines,"maxFileBytes":files.max_bytes,
+diff --git a/src/connector_schema.rs b/src/connector_schema.rs
+index 06bdb1c..bc028b0 100644
+--- a/src/connector_schema.rs
++++ b/src/connector_schema.rs
+@@ -20,6 +20,9 @@ pub(crate) fn schema_version(config: &AppConfig) -> String {
+     if config.experimental.agent_tickets {
+         version.push_str("+tickets-v1");
+     }
++    if config.project_doc.include_at_startup.unwrap_or(false) {
++        version.push_str("+startup-doc-v1");
++    }
+     {
+         version.push_str("+workspace-v1");
+     }
+diff --git a/src/instructions.rs b/src/instructions.rs
+index a80ee14..bc73b9f 100644
+--- a/src/instructions.rs
++++ b/src/instructions.rs
+@@ -139,7 +139,7 @@ pub fn build_initial_instructions(config: &AppConfig) -> String {
+     let mut environment = describe_environment(config);
+     environment.cwd = "<not selected>".to_string();
+ 
+-    [
++    let mut initial = [
+         configured_agent_brief(config),
+         String::new(),
+         "## Workspace selection".to_string(),
+@@ -157,7 +157,19 @@ pub fn build_initial_instructions(config: &AppConfig) -> String {
+         String::new(),
+         render_environment(&environment),
+     ]
+-    .join("\n")
++    .join("\n");
++
++    // The access-root policy can establish a default workspace without exposing
++    // conversation-specific memory or selecting a workspace during initialize.
++    if config.project_doc.include_at_startup.unwrap_or(false)
++        && let Some(doc) = load_project_doc(config)
++    {
++        initial.push_str("\n\n## Access-root startup instructions\n\nThese instructions are loaded from the configured access root, not a conversation-specific workspace. They override the generic workspace-selection guidance above. Apply their workspace defaults only while this conversation is unbound; keep an existing selected workspace. After selecting a workspace, call get_agent_brief to load its full context.\n\n");
++        initial.push_str(PROJECT_DOC_SEPARATOR);
++        initial.push_str("\n\n");
++        initial.push_str(&doc.text);
++    }
++    initial
+ }
+ 
+ /// The full project-aware brief returned by `get_agent_brief`, and used at
+@@ -290,6 +302,87 @@ mod tests {
+         assert!(crate::connector_schema::schema_version(&config).contains("tickets-v1"));
+     }
+ 
++    #[test]
++    fn startup_project_doc_is_opt_in_and_reread() {
++        let root = tempfile::tempdir().unwrap();
++        let instructions = "# Home policy\n\n- Workspace = `.` every chat.\n- Unicode = →.\n";
++        std::fs::write(root.path().join("AGENTS.md"), instructions).unwrap();
++        let mut config = crate::config::default_config(root.path().to_path_buf());
++        assert!(!build_initial_instructions(&config).contains(instructions));
++        assert!(!crate::connector_schema::schema_version(&config).contains("startup-doc-v1"));
++        config.project_doc = serde_json::from_value(serde_json::json!({
++            "includeAtStartup": false
++        }))
++        .unwrap();
++        assert!(!build_initial_instructions(&config).contains(instructions));
++        config.project_doc = serde_json::from_value(serde_json::json!({
++            "includeAtStartup": true
++        }))
++        .unwrap();
++        let initial = build_initial_instructions(&config);
++        assert!(
++            initial.ends_with(instructions),
++            "startup must include the entire current AGENTS.md"
++        );
++        assert_eq!(initial.matches(instructions).count(), 1);
++        assert!(initial.contains("Access-root startup instructions"));
++        assert!(initial.contains("override the generic workspace-selection guidance"));
++        assert!(crate::connector_schema::schema_version(&config).contains("startup-doc-v1"));
++        std::fs::write(root.path().join("AGENTS.md"), "replacement policy").unwrap();
++        let updated = build_initial_instructions(&config);
++        assert!(updated.ends_with("replacement policy"));
++        assert!(!updated.contains(instructions));
++    }
++
++    #[test]
++    fn startup_project_doc_keeps_discovery_and_budget_rules() {
++        let root = tempfile::tempdir().unwrap();
++        std::fs::write(root.path().join("AGENTS.md"), "ordinary policy").unwrap();
++        std::fs::write(root.path().join("AGENTS.override.md"), "override policy").unwrap();
++        std::fs::create_dir(root.path().join("project")).unwrap();
++        std::fs::write(
++            root.path().join("project/AGENTS.md"),
++            "child project policy",
++        )
++        .unwrap();
++        let mut config = crate::config::default_config(root.path().to_path_buf());
++        config.project_doc = serde_json::from_value(serde_json::json!({
++            "includeAtStartup": true,
++            "maxBytes": 8
++        }))
++        .unwrap();
++        let initial = build_initial_instructions(&config);
++        assert!(initial.ends_with("override"));
++        assert!(!initial.contains("ordinary policy"));
++        assert!(!initial.contains("child project policy"));
++        config.project_doc.max_bytes = Some(0);
++        assert!(!build_initial_instructions(&config).contains("Access-root startup instructions"));
++        config.project_doc.max_bytes = None;
++        std::fs::remove_file(root.path().join("AGENTS.md")).unwrap();
++        std::fs::remove_file(root.path().join("AGENTS.override.md")).unwrap();
++        assert!(!build_initial_instructions(&config).contains("Access-root startup instructions"));
++    }
++
++    #[test]
++    fn startup_project_doc_preserves_conversation_auth_gate() {
++        let root = tempfile::tempdir().unwrap();
++        std::fs::write(root.path().join("AGENTS.md"), "private startup policy").unwrap();
++        let mut config = crate::config::default_config(root.path().to_path_buf());
++        config.project_doc = serde_json::from_value(serde_json::json!({
++            "includeAtStartup": true
++        }))
++        .unwrap();
++        config.conversation_auth_token = Some("a".repeat(64).into());
++        assert_eq!(
++            build_initial_instructions(&config),
++            CONVERSATION_AUTH_INSTRUCTIONS
++        );
++        config.experimental.agent_tickets = true;
++        let initial = build_initial_instructions(&config);
++        assert!(initial.contains(crate::agent_tickets::INSTRUCTIONS));
++        assert!(!initial.contains("private startup policy"));
++    }
++
+     #[test]
+     fn conversation_auth_initialization_withholds_project_context() {
+         let root = tempfile::tempdir().unwrap();
+diff --git a/src/types.rs b/src/types.rs
+index b4938c8..6174773 100644
+--- a/src/types.rs
++++ b/src/types.rs
+@@ -227,6 +227,9 @@ pub struct ExecConfig {
+ #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+ pub struct ProjectDocConfig {
++    /// Include access-root instructions before a conversation selects a workspace.
++    #[serde(skip_serializing_if = "Option::is_none", default)]
++    pub include_at_startup: Option<bool>,
+     #[serde(skip_serializing_if = "Option::is_none", default)]
+     pub max_bytes: Option<usize>,
+     #[serde(skip_serializing_if = "Option::is_none", default)]
