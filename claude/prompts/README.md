@@ -7,7 +7,7 @@ Each prompt comes in two sets with the same file names:
 - `auto/` runs the prescribed session flow. It has no slot for your input.
 - `steered/` starts with a `<request>` slot. Replace the slot with your request or steering before you paste. Your request outranks the rest of the body, but `Intent` outranks your request. The session stops when your request is done. If your request only steers, the session does all the work of the body. The agent adds each finding outside your request to `.agent/deferred.md`.
 
-Use `steered/resume.md` to name the next work and its end point. Use `steered/maintain.md` for a specific request or for named `.agent/deferred.md` rows. `auto/maintain.md` works every row, including the rows that it adds.
+Use `steered/resume.md` to name the next work and its end point. Use `steered/maintain.md` for a specific request or for named `.agent/deferred.md` rows. `auto/maintain.md` works every row, including the rows that it adds. To report a bug or to review part of the code, use the `Code review` body in `steered/maintain.md`. The `Code review` body in `auto/maintain.md` reviews the complete implementation and fixes each finding.
 
 Start each fresh session with this command. Replace `<gpt-model>` with the GPT model for the teammates. Replace `<level>` with the effort level that you choose for the session.
 
@@ -26,7 +26,7 @@ Always set `CLAUDE_CODE_SUBAGENT_MODEL`, because no settings file sets the teamm
 | Start PROTOTYPE | `prototype.md` | Write your `Intent` in `.agent/spec.md` first. A new repository also needs the template files (`Template files`). In a shipped repository, also name the scope in `Phase`. After a route, `Phase` already names it. |
 | Start ITERATE | `iterate.md` | When PROTOTYPE closes or after a route, paste it. With `auto/`, the session runs until you say go. With `steered/`, it works your feedback into the prototype as one round. |
 | Start IMPLEMENT | `implement.md` | After you say go or after a route, turn on the advisor. Then paste it. It can also open a new scope directly at IMPLEMENT. |
-| MAINTAIN | `maintain.md` | Paste one body per request, queue run, security review or dependency upgrade. |
+| MAINTAIN | `maintain.md` | Paste one body per request, bug report, queue run, code review, security review or dependency upgrade. |
 | Move work to another phase | `route.md` | Make your request in any session, or paste this body after it. |
 | Continue open work in any phase | `resume.md` | Paste in a fresh session after a pause, a crash or a restart. |
 | Stop now and continue later | `pause-now.md` | Paste into the running session. In-flight work stops, and the repository stays consistent. |
