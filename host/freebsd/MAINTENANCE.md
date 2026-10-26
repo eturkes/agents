@@ -28,9 +28,9 @@ Guests = 2 shared vCPUs each. Sizes = GiB except EFI; OS includes swap.
 
 | Workload | Placement + operation |
 | --- | --- |
-| Static eturkes.com/wedding + private VM proxies | Caddy VNET jail `web-ingress`; [ingress/publication runbook](../../../eturkes.com/README.md) |
-| Naoto/Nanoha/Rehab | Private VM shells `:8080`; Rehab application origin `:8081`; [shared PromptVM release procedure](../../../promptvm/docs/deployed-vms.md) |
-| Wedding editor | Shared-stack `wedding-editor` jail, `172.31.100.1:8090`; unchanged state/public paths; [controller/runtime/rollback](../../../sushi-and-kebab.wedding/ops/jail/README.md) |
+| Static eturkes.com/wedding + private VM proxies | Caddy VNET jail `web-ingress`; ingress/publication runbook → `~/pro/eturkes.com/README.md` |
+| Naoto/Nanoha/Rehab | Private VM shells `:8080`; Rehab application origin `:8081`; shared PromptVM release procedure → `~/pro/promptvm/docs/deployed-vms.md` |
+| Wedding editor | Shared-stack `wedding-editor` jail, `172.31.100.1:8090`; unchanged state/public paths; controller/runtime/rollback → `~/pro/sushi-and-kebab.wedding/ops/jail/README.md` |
 | Veriformatics | Private Debian VM `172.31.104.2`; Caddy/listmonk loopback, outbound cloudflared, rootless PostgreSQL/data at `/srv/veriformatics` |
 
 Wedding boot order = `web-ingress wedding-editor`; retained host controller =
@@ -46,8 +46,8 @@ helpers remain on the host through forced-command SSH.
   + adjacent `release-receipt.json`. This artifact excludes pending
   configuration-pin edits retained in the checkout. Exact Bubblewrap pins support
   the signed package transition; native ownership/mode gates remain enforced.
-  Native Rehab memory cap →
-  [0.2.15 record](../../../promptvm/docs/rehab-job-memory-2026-10-20.md).
+  Native Rehab memory cap → 0.2.15 record
+  `~/pro/promptvm/docs/rehab-job-memory-2026-10-20.md`.
 - Evidence root = `~/.local/state/t70-deployment-20261020/`; index =
   `FINAL-RESULTS.md`; disk recovery = `rightsize/ROLLBACK.md`; migration receipts
   = `rightsize/PROGRESS.md`; retired copies = `cleanup-20261021/` manifests.
