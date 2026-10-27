@@ -139,19 +139,26 @@ class Keeper:
                 if session not in live and complete:
                     del self.entries[session]
                     log(f"drop {session[:8]}: session ended")
-                elif entry.busy or entry.state not in ("armed", "compacting"):
                     continue
-                elif now - entry.renewed_at >= self.cfg.ttl:
+                if entry.busy or entry.state not in ("armed", "compacting"):
+                    continue
+                if now - entry.renewed_at >= self.cfg.ttl:
                     self.finish(entry, "cache lapsed")
-                elif entry.state != "armed" or now - entry.renewed_at < self.cfg.interval:
                     continue
-                elif entry.quiet and now - entry.polled_at < POLL_FRESH and not entry.compact_at:
+                if entry.state == "compacting" and now - entry.polled_at >= POLL_FRESH:
+                    # The mod polls throughout its own compaction ⇒ a stale report = the mod is gone.
+                    # compact_at stays set ⇒ no second attempt.
+                    entry.state, entry.last = "armed", "compaction unreported"
+                    log(f"compaction unreported {session[:8]}: touches resume")
+                if entry.state != "armed" or now - entry.renewed_at < self.cfg.interval:
+                    continue
+                if entry.quiet and now - entry.polled_at < POLL_FRESH and not entry.compact_at:
                     continue  # the mod's next poll compacts it
-                elif entry.touches >= self.cfg.touches:
+                if entry.touches >= self.cfg.touches:
                     self.finish(entry, "touch limit")
-                else:
-                    entry.busy = True
-                    due.append(entry)
+                    continue
+                entry.busy = True
+                due.append(entry)
         for entry in due:
             threading.Thread(target=self.touch, args=(entry,), daemon=True).start()
 
@@ -187,7 +194,7 @@ class Keeper:
         started = time.time()
         try:
             status, detail = send_touch(self.cfg.upstream, entry, self.cfg.touch_timeout)
-        except Exception as exc:  # any failure must clear busy below
+        except Exception as exc:  # noqa: BLE001 — any failure must clear busy below
             status, detail = None, f"{type(exc).__name__}: {exc}"
         took = time.time() - started
         with self.lock:
@@ -398,7 +405,7 @@ def serve(cfg):
             time.sleep(cfg.tick)
             try:
                 keeper.tick(time.time())
-            except Exception as exc:  # the loop must outlive one bad tick
+            except Exception as exc:  # noqa: BLE001 — the loop must outlive one bad tick
                 log(f"tick failed: {exc!r}")
 
     threading.Thread(target=ticks, daemon=True).start()

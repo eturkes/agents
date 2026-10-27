@@ -119,7 +119,8 @@ class Upstream(http.server.BaseHTTPRequestHandler):
 upstream = ka.Server(("127.0.0.1", 0), Upstream)
 threading.Thread(target=upstream.serve_forever, daemon=True).start()
 UP_URL = f"http://127.0.0.1:{upstream.server_address[1]}"
-sessions = Path(tempfile.mkdtemp(prefix="cache-keepalive-check-"))
+sessions_dir = tempfile.TemporaryDirectory(prefix="cache-keepalive-check-")  # removed at exit, failures included
+sessions = Path(sessions_dir.name)
 
 
 def proxy(*extra, up=UP_URL):
@@ -462,6 +463,15 @@ def failed_compaction_or_silent_mod_falls_back_to_touch():
     backdate(server, "gone", 101)
     tick(server)
     assert entries(server)["gone"]["kept_alive"] == 1, "stale quiet report blocked the touch"
+    live("lost")
+    post(server, session="lost")
+    backdate(server, "lost", 101)
+    assert poll(server, "lost", True) is True
+    server.keeper.entries["lost"].polled_at -= ka.POLL_FRESH
+    tick(server)
+    assert entries(server)["lost"]["kept_alive"] == 1, "unreported compaction blocked the touch"
+    backdate(server, "lost", 101)
+    assert poll(server, "lost", True) is False, "compaction retried after an unreported one"
 
 
 @check
