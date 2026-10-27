@@ -53,6 +53,10 @@ git -C "$p" add CLAUDE.md
 run "$p"; ck staged 2 'has "has uncommitted changes"' '[ "$(cat "$p/CLAUDE.md")" = mine ]'
 git -C "$p" reset -q --hard && echo junk > "$p/other.txt"
 run "$p"; ck other-dirty 0 'same "$p"' 'has "Note: Other paths have uncommitted changes (1)."'
+commit "$p" && echo b4 > "$tpl/agents/b.md" && rm "$p/.claude/agents/a.md"
+run "$p"; ck deleted 2 'has "a.md has uncommitted changes"' '[ ! -e "$p/.claude/agents/a.md" ]' \
+  '[ "$(cat "$p/.claude/agents/b.md")" = b3 ]'
+git -C "$p" checkout -q -- .claude/agents/a.md
 p2=$t/p2 && git init -q "$p2" && echo x > "$p2/CLAUDE.md"
 run "$p2"; ck no-head 2 'has "has uncommitted changes"' '[ "$(cat "$p2/CLAUDE.md")" = x ]'
 p3=$t/p3 && git init -q "$p3" && echo x > "$p3/real" && ln -s real "$p3/CLAUDE.md" && commit "$p3"

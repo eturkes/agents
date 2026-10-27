@@ -44,6 +44,10 @@ rm "$b/history.jsonl"
 run fable; ck dangling 0 'fable: 1 changes, 0 conflicts' '[ ! -L "$p/history.jsonl" ]'
 rm "$p/agents" && ln -s /nowhere "$p/agents"
 run fable; ck relink 0 'fable: 1 changes, 0 conflicts' '[ "$(readlink "$p/agents")" = ../agents ]'
+mkdir "$t/bin" "$b/plugins" && printf '#!/bin/sh\nexit 1\n' > "$t/bin/ln" && chmod 755 "$t/bin/ln"
+out=$(PATH="$t/bin:$PATH" "$lp" fable 2>&1); rc=$?
+ck failed-change 1 'fable: 1 changes, 0 conflicts, 1 failed' '[ ! -e "$p/plugins" ] && [ ! -L "$p/plugins" ]'
+run fable; ck after-failure 0 'fable: 1 changes, 0 conflicts' '[ "$(readlink "$p/plugins")" = ../plugins ]'
 rm "$p/settings.json" && cp "$b/settings.json" "$p/settings.json"
 run fable; ck identical-copy 0 'fable: 1 changes, 0 conflicts' '[ "$(readlink "$p/settings.json")" = ../settings.json ]'
 rm "$p/settings.json" && echo '{}' > "$p/settings.json"

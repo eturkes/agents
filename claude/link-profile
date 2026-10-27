@@ -10,10 +10,10 @@ check=
 [ "$1" = --check ] && { check=1; shift; }
 name=$1
 case $name in ''|.*|*/*) echo 'usage: link-profile [--check] <name>' >&2; exit 2 ;; esac
-b=$HOME/.claude p=$HOME/.claude/$name n=0 c=0
+b=$HOME/.claude p=$HOME/.claude/$name n=0 c=0 f=0
 [ -f "$p/CLAUDE.md" ] && [ ! -L "$p/CLAUDE.md" ] ||
   { echo "link-profile: $p/CLAUDE.md missing: deploy it first" >&2; exit 2; }
-change() { n=$((n + 1)); echo "$1"; shift; [ -n "$check" ] || "$@"; }
+change() { n=$((n + 1)); echo "$1"; shift; [ -n "$check" ] || "$@" || { f=$((f + 1)); echo "link-profile: failed: $*" >&2; }; }
 relink() { rm "$1" && ln -s "$2" "$1"; }
 swap() { rmdir "$p/$1" && ln -s "../$1" "$p/$1"; }
 migrate() { mv "$p/$1" "$b/$1" && ln -s "../$1" "$p/$1"; }
@@ -52,5 +52,5 @@ elif [ -e "$t" ]; then
 else
   change "link .claude.json" ln -s ../../.claude.json "$t"
 fi
-echo "$name: $n changes${check:+ needed}, $c conflicts"
-[ "$c" -eq 0 ] && { [ -z "$check" ] || [ "$n" -eq 0 ]; }
+if [ "$f" -eq 0 ]; then echo "$name: $n changes${check:+ needed}, $c conflicts"; else echo "$name: $n changes, $c conflicts, $f failed"; fi
+[ "$c" -eq 0 ] && [ "$f" -eq 0 ] && { [ -z "$check" ] || [ "$n" -eq 0 ]; }

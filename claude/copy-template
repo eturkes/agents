@@ -55,6 +55,9 @@ err() { echo "copy-template: $*" >&2; rc=2; }
 committed() {
   git -C "$1" ls-files --error-unmatch -- "$2" >/dev/null 2>&1 && git -C "$1" diff --quiet HEAD -- "$2" 2>/dev/null
 }
+tracked() {
+  git -C "$1" ls-files --error-unmatch -- "$2" >/dev/null 2>&1 || git -C "$1" cat-file -e "HEAD:$2" 2>/dev/null
+}
 for arg do
   top=$(git -C "$arg" rev-parse --show-toplevel 2>/dev/null) && [ "$top" = "$(cd "$arg" && pwd -P)" ] ||
     { err "$arg is not the root directory of a git repository. Give the project root."; continue; }
@@ -80,7 +83,7 @@ for arg do
       bad=1; err "$t is not a regular file. Move it away."
     elif [ -f "$t" ] && cmp -s "$(from "$r")" "$t"; then
       continue
-    elif [ -f "$t" ] && ! committed "$top" "$r"; then
+    elif { [ -f "$t" ] && ! committed "$top" "$r"; } || { [ ! -e "$t" ] && tracked "$top" "$r"; }; then
       bad=1; err "$t has uncommitted changes. Commit or discard them. Then run copy-template again."
     else
       todo="$todo $r"
