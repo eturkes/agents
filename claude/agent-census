@@ -3,9 +3,9 @@
 
   agent-census [<projects-dir> ...]      default ~/.claude/projects
 
-Section -> the rule it measures:
-  compaction  -> `Teammate size`: teammates compact + keep working
-  deaths      -> `Death shape`: terminal `API Error` classes + peak usage at death
+Section -> what it measures:
+  compaction  -> teammate compactions: count, summarizer cost, tool calls after
+  deaths      -> terminal `API Error` classes + peak usage at death (global `Provider errors`)
   writes      -> the SubagentStop wrote-nothing notice (>=15 tool calls, no durable call)
   tail        -> `context-gauge -t`, corpus-wide: distance from the last durable call
   stops       -> the agent-flow TaskStop hold: lead stops on a mid-turn teammate, and those before its marker
@@ -190,7 +190,7 @@ def teammate(path):
 
 
 def secs(ts):
-    return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    return datetime.fromisoformat(ts).timestamp()
 
 
 def stops(roots):
@@ -206,6 +206,8 @@ def stops(roots):
             mates = [teammate(s) for s in subs]
             gaps += [t["gap"] for t in mates if t["gap"]]
             for at, cmd in lead_stops(lead):
+                if not at:  # entry without a timestamp → unplaceable against the teammate's timeline
+                    continue
                 n += 1
                 hit = [t for t in mates if cmd[:40] and cmd[:40] in t["brief"][:1500]]
                 if len(hit) != 1:

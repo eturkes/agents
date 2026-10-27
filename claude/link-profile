@@ -1,11 +1,21 @@
 #!/bin/sh
-# Profile ~/.claude/<name> = a CLAUDE_CONFIG_DIR owning CLAUDE.md alone; each other
-# ~/.claude entry → link ../<entry>, ~/.claude.json → ../../.claude.json (relative ⇒ valid under any
-# mount path) ⇒ settings, transcripts, history, MCP, agents, plugins + mods stay shared. CC creates state dirs
-# lazily ⇒ a profile-only entry moves into ~/.claude; empty dir or byte-identical file → link; other
-# real on both sides = conflict.
-# Usage: link-profile [--check] <name>  (--check: report only; exit 1 = change needed | conflict)
+# Usage: link-profile [--check] <name>
+#
+# Share the main Claude configuration with the profile ~/.claude/<name>.
+# First, copy the CLAUDE.md of the profile into ~/.claude/<name>/CLAUDE.md.
+# The command links each other entry of ~/.claude into the profile.
+# It moves an entry that exists only in the profile into ~/.claude.
+# An entry that has different contents in both places is a conflict.
+# Resolve each conflict. Then run the command again.
+#
+#   --check  List the changes and the conflicts. Change nothing.
+#
+# Exit status: 0 = done or current; 1 = a conflict, a failed change, or a change needed (--check);
+# 2 = an invalid name or a missing CLAUDE.md.
 case $1 in -h|--help) sed -n '2,/^[^#]/s/^# \{0,1\}//p' "$0"; exit 0 ;; esac
+# Profile = a CLAUDE_CONFIG_DIR that owns CLAUDE.md alone. Links are relative (../<entry>,
+# ../../.claude.json) ⇒ valid under any mount path. CC creates state dirs lazily ⇒ a profile-only
+# entry moves into ~/.claude; an empty dir or byte-identical file → link.
 check=
 [ "$1" = --check ] && { check=1; shift; }
 name=$1

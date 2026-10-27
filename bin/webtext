@@ -14,7 +14,9 @@ A PDF goes to a temporary file, and webtext prints the path of that file.
 If a script builds the page, use --js. This option renders the page through webcap first.
 Other options go to trafilatura. Write them as --opt or --opt=value, for example --links.
 The --with-metadata option adds a date that trafilatura guesses.
-Standard output contains only the page text. Standard error shows the final URL, the type and warnings.
+Standard output contains the page text, or the path of a saved PDF.
+Standard error shows the URL, the type and warnings. With --js, the URL is the requested URL.
+Otherwise, it is the final URL after redirects.
 
 Exit status: 0 = text printed, 1 = fetch failed, 2 = usage error, 3 = no text extracted,
 4 = unsupported type.
