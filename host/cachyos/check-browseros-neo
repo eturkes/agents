@@ -7,6 +7,7 @@ import json
 import re
 import runpy
 import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -59,9 +60,14 @@ def main():
                 ' try { return await p.read(); } finally { await p.close(); }'
     })["structuredContent"]["value"]
     eligibility = re.search(r"Signin\.SigninAllowed recorded (\d+) samples, mean = ([\d.]+)", page)
-    assert eligibility and int(eligibility[1]) > 0 and float(eligibility[2]) == 1.0, page[:400]
-    assert json.loads((profile / "Default/Preferences").read_text())["signin"]["allowed"]
-    print("browser_signin_eligibility=PASS", flush=True)
+    # Known Neo 0.51.2.3 failure, accepted (BROWSER.md) → recorded, not raised: the checks below still run.
+    failures = []
+    if (eligibility and int(eligibility[1]) > 0 and float(eligibility[2]) == 1.0
+            and json.loads((profile / "Default/Preferences").read_text())["signin"]["allowed"]):
+        print("browser_signin_eligibility=PASS", flush=True)
+    else:
+        failures.append("browser_signin_eligibility")
+        print(f"browser_signin_eligibility=FAIL {eligibility[0] if eligibility else page[:200]!r}", flush=True)
 
     identity = runpy.run_path(str(Path(__file__).with_name("browseros-neo-sync-identity")))
     neo_preferences = json.loads((profile / "Default/Preferences").read_text())
@@ -122,6 +128,8 @@ def main():
             call("tabs", {"action": "close", "page": page})
         server.shutdown()
         server.server_close()
+    if failures:
+        sys.exit(f"FAIL: {', '.join(failures)}")
 
 
 if __name__ == "__main__":
