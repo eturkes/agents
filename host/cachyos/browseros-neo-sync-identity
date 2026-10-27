@@ -156,21 +156,21 @@ def main():
     processes = subprocess.run(["pgrep", "-x", "browserclaw|browseros"], capture_output=True, text=True, check=False)
     if processes.returncode != 1:
         raise ValueError("Close both browsers before changing Sync metadata.")
-    path = neo / "Profile 3/Preferences"
+    path = neo / "Default/Preferences"
     old = json.loads(path.read_text())
     source = json.loads((original / "Profile 3/Preferences").read_text())
     new, copied = prepare(old, source)
     if copied:
-        preflight(neo / "Profile 3")
+        preflight(neo / "Default")
     here = Path(__file__).resolve().parent
     with tempfile.TemporaryDirectory(prefix="neo-sync-identity-") as directory:
         scratch = Path(directory)
         tool = scratch / "gcm-sync-records"
         subprocess.run(["g++", "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror", str(here / "gcm-sync-records.cc"), "-lleveldb", "-o", str(tool)], check=True)
         copies = []
-        for label, root in [("original", original), ("neo", neo)]:
+        for label, profile in [("original", original / "Profile 3"), ("neo", neo / "Default")]:
             target = scratch / label
-            shutil.copytree(root / "Profile 3/GCM Store", target)
+            shutil.copytree(profile / "GCM Store", target)
             output = scratch / (label + ".bin")
             subprocess.run([str(tool), str(target), str(output)], check=True)
             copies.append(snapshot(output))
@@ -179,7 +179,7 @@ def main():
         if not args.apply:
             return
         if shared:
-            subprocess.run([str(tool), str(neo / "Profile 3/GCM Store"), str(scratch / "before.bin"), "--apply"], check=True)
+            subprocess.run([str(tool), str(neo / "Default/GCM Store"), str(scratch / "before.bin"), "--apply"], check=True)
         if copied:
             descriptor, temporary = tempfile.mkstemp(prefix=".sync-identity-", dir=path.parent)
             try:

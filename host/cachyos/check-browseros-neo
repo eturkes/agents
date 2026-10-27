@@ -23,7 +23,7 @@ def main():
     assert profile.is_symlink() and "/psd/" in str(profile.resolve())
     filesystem = subprocess.check_output(["findmnt", "-n", "-T", str(profile), "-o", "FSTYPE"], text=True).strip()
     assert filesystem == "fuse.fuse-overlayfs", filesystem
-    assert json.loads((profile / "Local State").read_text())["profile"]["last_used"] == "Profile 3"
+    assert json.loads((profile / "Local State").read_text())["profile"]["last_used"] == "Default"
     cache = home / ".cache/browser-claw"
     assert cache.is_symlink() and cache.resolve() == Path("/tmp/browser-claw-home-cache")
     print("profile_psd_cache=PASS", flush=True)
@@ -53,15 +53,18 @@ def main():
     def text(result):
         return "\n".join(item["text"] for item in result["content"] if item["type"] == "text")
 
-    eligibility = call("run", {
-        "code": 'return await browser.cdp("Browser.getHistogram", {name:"Signin.SigninAllowed"});'
-    })["structuredContent"]["value"]["histogram"]
-    assert eligibility["count"] > 0 and eligibility["sum"] == eligibility["count"], eligibility
-    assert json.loads((profile / "Profile 3/Preferences").read_text())["signin"]["allowed"]
+    # Neo ≥ 0.51.2 rejects browser-scoped CDP (`Browser.getHistogram`) → the histogram page; boolean mean 1 = all allowed.
+    page = call("run", {
+        "code": 'const p = await browser.open("chrome://histograms/Signin.SigninAllowed");'
+                ' try { return await p.read(); } finally { await p.close(); }'
+    })["structuredContent"]["value"]
+    eligibility = re.search(r"Signin\.SigninAllowed recorded (\d+) samples, mean = ([\d.]+)", page)
+    assert eligibility and int(eligibility[1]) > 0 and float(eligibility[2]) == 1.0, page[:400]
+    assert json.loads((profile / "Default/Preferences").read_text())["signin"]["allowed"]
     print("browser_signin_eligibility=PASS", flush=True)
 
     identity = runpy.run_path(str(Path(__file__).with_name("browseros-neo-sync-identity")))
-    neo_preferences = json.loads((profile / "Profile 3/Preferences").read_text())
+    neo_preferences = json.loads((profile / "Default/Preferences").read_text())
     source_preferences = json.loads((home / ".config/browser-os/Profile 3/Preferences").read_text())
     neo_guids = identity["transport_guids"](neo_preferences)
     assert neo_guids and not neo_guids & identity["transport_guids"](source_preferences)

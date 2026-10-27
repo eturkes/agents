@@ -58,7 +58,7 @@ sudo -n systemctl restart sddm.service
 ```
 
 Browser restart → `browseros-neo --restore-last-session`.
-The machine launcher selects `Profile 3`, starts PSD and imports the four desktop environment keys.
+The machine launcher selects `Default`, starts PSD and imports the four desktop environment keys.
 Profile/cache setup + browser checks → [BROWSER.md](BROWSER.md).
 
 After autologin, verify rendering, CUDA, HDMI, VNC and a real browser WebGL renderer before cancelling the timer:
