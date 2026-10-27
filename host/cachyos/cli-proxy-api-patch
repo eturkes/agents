@@ -45,6 +45,7 @@ package_version() {
 }
 build_id() { printf '%s %s\n' "$1" "$(sha256sum < "$patch" | cut -d' ' -f1)"; }
 file_id() { stat -Lc '%d:%i' -- "$1" 2>/dev/null; }
+exec_path() { systemctl --user show -p ExecStart --value "$unit" | sed -n 's/^{ path=\([^ ;]*\).*/\1/p'; }
 running_id() {
   local pid
   pid=$(systemctl --user show -p MainPID --value "$unit") || return
@@ -65,11 +66,27 @@ activation_note() {
 }
 
 check_state() {
-  local version status=none build
+  local version status=none build route
   version=$(package_version) || { echo 'cli-proxy-api-bin is not installed.'; return 1; }
   [[ ! -f $status_file ]] || status=$(<"$status_file")
   if [[ ! -f $override ]]; then
     if [[ $status == "retired $version" ]]; then
+      route=$(exec_path)
+      if [[ $route == "$binary" ]]; then
+        echo "Upstream $version includes the fix, but $unit still starts $binary."
+        echo 'Next: Run systemctl --user daemon-reload. Then restart the service.'
+        return 2
+      fi
+      if ! running_id > /dev/null; then
+        echo "Upstream $version includes the fix. $unit is not running."
+        echo "Next: Run systemctl --user start $unit."
+        return 1
+      fi
+      if [[ $(running_id) != "$(file_id "$route")" ]]; then
+        echo "Upstream $version includes the fix. The service still runs the previous binary."
+        echo "Next: Run systemctl --user restart $unit."
+        return 2
+      fi
       echo "Upstream $version includes the fix. The packaged binary runs without an override."
       return 0
     fi

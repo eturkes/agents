@@ -114,8 +114,24 @@ class Patch(unittest.TestCase):
         self.assertEqual(self.status.read_text(), "retired 8.0.40\n")
         self.assertFalse([call for call in calls if call[:2] == ["go", "build"]], calls)
         code, output, _ = self.run_patch("check")
+        self.assertEqual(code, 1, output)
+        self.assertIn("not running", output)
+        packaged = self.root / "packaged"
+        shutil.copy("/usr/bin/sleep", packaged)
+        process = subprocess.Popen([str(packaged), "60"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        (self.root / "pid").write_text(str(process.pid))
+        self.settings["ExecStart"] = f"{{ path={packaged} ; argv[]={packaged} --config x ; }}"
+        code, output, _ = self.run_patch("check")
         self.assertEqual(code, 0, output)
         self.assertIn("includes the fix", output)
+        replacement = packaged.with_name("replacement")
+        shutil.copy("/usr/bin/sleep", replacement)
+        replacement.replace(packaged)
+        code, output, _ = self.run_patch("check")
+        self.assertEqual(code, 2, output)
+        self.assertIn("previous binary", output)
 
     def test_probe_without_patch_tests_cannot_retire(self):
         # Test-only apply that adds nothing: upstream's own tests pass the filter vacuously.

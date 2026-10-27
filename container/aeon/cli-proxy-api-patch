@@ -88,8 +88,23 @@ check_state() {
   [[ ! -f $status_file ]] || status=$(<"$status_file")
   if cmp -s -- "$(stock_of "$version")" "$live"; then
     if [[ $status == "retired $version" ]]; then
-      echo "Upstream $version includes the fix. The stock binary runs without the patch."
-      return 0
+      running_state || state_code=$?
+      case $state_code in
+        0)
+          echo "Upstream $version includes the fix. The stock binary runs without the patch."
+          return 0
+          ;;
+        1)
+          echo "Upstream $version includes the fix. CLIProxyAPI still runs the previous binary."
+          echo 'Next: Restart CLIProxyAPI.'
+          return 2
+          ;;
+        *)
+          echo "Upstream $version includes the fix. CLIProxyAPI is not running."
+          echo 'Next: Run cliproxyapi/cli-proxy-api --config cliproxyapi/config.yaml in ~.'
+          return 2
+          ;;
+      esac
     fi
     echo "The stock $version binary is installed without the fix (last apply: $status)."
     echo 'Next: Run cli-proxy-api-patch apply. Then restart CLIProxyAPI.'
