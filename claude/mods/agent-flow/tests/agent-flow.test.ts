@@ -31,7 +31,7 @@ function world(on: On): World {
     lists: 0,
     rows: [],
     used: 136_000,
-    model: 'gpt-6-astra',
+    model: 'gpt-6-luna',
     answer: () => ({ result: 'ok', text: 'ok' }),
   }
   mock.env(on, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
@@ -251,7 +251,7 @@ for (const surface of SURFACES) {
     const ui = await hint($, surface)
     expect(await shown(ui)).toBe('engine')
     expect(await ui.find({ type: 'Box', text: /^rev-1/ })).toMatchObject({ props: { flexWrap: 'wrap', columnGap: 1 } })
-    expect(await entries(ui)).toEqual(['rev-1 gpt-6-astra 50% 136K/272K ·', 'res-2 gpt-6-astra 50% 136K/272K ·', 'desc id-new ? ?/272K'])
+    expect(await entries(ui)).toEqual(['rev-1 gpt-6-luna 50% 136K/272K ·', 'res-2 gpt-6-luna 50% 136K/272K ·', 'desc id-new ? ?/272K'])
   })
 }
 
@@ -261,7 +261,7 @@ test('a mounted agent line follows usage and the answering model without a remou
   const ui = await hint($)
   expect(await entries(ui)).toEqual(['rev-1 ? ?/272K'])
   await step($, 'tm-1')
-  expect(await entries(ui)).toEqual(['rev-1 gpt-6-astra 50% 136K/272K'])
+  expect(await entries(ui)).toEqual(['rev-1 gpt-6-luna 50% 136K/272K'])
   w.used = 250_240
   w.model = ''
   await step($, 'tm-1')
@@ -286,7 +286,7 @@ test('agent line drops a finished agent on the next list poll with no record wri
   await step($, id)
   w.agents = [running(id, 'rev-1')]
   const ui = await hint($)
-  expect(await entries(ui)).toEqual(['rev-1 gpt-6-astra 50% 136K/272K'])
+  expect(await entries(ui)).toEqual(['rev-1 gpt-6-luna 50% 136K/272K'])
   w.agents = [{ ...running(id, 'rev-1'), status: 'completed' }]
   await w.clock.advance(5_000)
   expect(await entries(ui)).toEqual([])

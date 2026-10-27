@@ -44,7 +44,7 @@ index 0000000000000000000000000000000000000000..c81e767c89db262e52ff614a7b11f90d
 +
 +func TestEnsureImageGenerationToolSeesAdditionalToolsDeclaration(t *testing.T) {
 +	body := []byte(`{"tools":[{"type":"function","name":"Read","parameters":{"type":"object","properties":{}}}],"input":[{"type":"additional_tools","role":"developer","tools":[` + codexAdditionalImageFunction + `]}]}`)
-+	out := ensureImageGenerationTool(body, "gpt-6.1-sol", nil, nil)
++	out := ensureImageGenerationTool(body, "gpt-6-luna", nil, nil)
 +	if gjson.GetBytes(out, `tools.#(type=="image_generation")`).Exists() {
 +		t.Fatalf("image_generation injected despite an additional_tools image function: %s", out)
 +	}
@@ -345,7 +345,7 @@ index 0000000000000000000000000000000000000000..f81ce11491235123535ca17b5ddc29a1
 +}
 +
 +func TestConvertClaudeRequestToCodex_DeclaresDiscoveredToolAtReference(t *testing.T) {
-+	result, err := ConvertClaudeRequestToCodex("gpt-6.1-sol", deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult), true)
++	result, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
@@ -390,7 +390,7 @@ index 0000000000000000000000000000000000000000..f81ce11491235123535ca17b5ddc29a1
 +	}
 +	var previous gjson.Result
 +	for i, step := range steps {
-+		result, err := ConvertClaudeRequestToCodex("gpt-6.1-sol", step, true)
++		result, err := ConvertClaudeRequestToCodex("gpt-6-luna", step, true)
 +		if err != nil {
 +			t.Fatalf("step %d: translate: %v", i, err)
 +		}
@@ -414,7 +414,7 @@ index 0000000000000000000000000000000000000000..f81ce11491235123535ca17b5ddc29a1
 +}
 +
 +func TestConvertClaudeRequestToCodex_UnreferencedDeferredToolStaysTopLevel(t *testing.T) {
-+	result, err := ConvertClaudeRequestToCodex("gpt-6.1-sol", deferredToolsRequest(deferredLSPTool), true)
++	result, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
@@ -430,7 +430,7 @@ index 0000000000000000000000000000000000000000..f81ce11491235123535ca17b5ddc29a1
 +func TestConvertClaudeRequestToCodex_RepeatedReferenceDeclaresToolOnce(t *testing.T) {
 +	again := strings.NewReplacer("toolu_search", "toolu_search_again").Replace(searchToolUse)
 +	againResult := strings.NewReplacer("toolu_search", "toolu_search_again").Replace(searchResult)
-+	result, err := ConvertClaudeRequestToCodex("gpt-6.1-sol", deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult, again, againResult), true)
++	result, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult, again, againResult), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
@@ -450,7 +450,7 @@ index 0000000000000000000000000000000000000000..f81ce11491235123535ca17b5ddc29a1
 +}
 +
 +func TestConvertClaudeRequestToCodexWithCompat_KeepsDeferredToolTopLevel(t *testing.T) {
-+	result, err := ConvertClaudeRequestToCodexWithCompat("gpt-6.1-sol", deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult), true)
++	result, err := ConvertClaudeRequestToCodexWithCompat("gpt-6-luna", deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
@@ -468,7 +468,7 @@ index 0000000000000000000000000000000000000000..f81ce11491235123535ca17b5ddc29a1
 +	tool := strings.Replace(deferredLSPTool, `"LSP"`, `"`+long+`"`, 1)
 +	search := strings.Replace(searchResult, `"LSP"`, `"`+long+`"`, 1)
 +	call := strings.Replace(lspToolUse, `"LSP"`, `"`+long+`"`, 1)
-+	result, err := ConvertClaudeRequestToCodex("gpt-6.1-sol", deferredToolsRequest(tool, searchToolUse, search, call, lspResult), true)
++	result, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(tool, searchToolUse, search, call, lspResult), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
@@ -482,11 +482,11 @@ index 0000000000000000000000000000000000000000..f81ce11491235123535ca17b5ddc29a1
 +
 +func TestConvertClaudeRequestToCodex_ToolUsedBeforeReferenceStaysTopLevel(t *testing.T) {
 +	// Post-compaction: discovered tool stays in tools[], reference summarized away → a repeat search keeps it top-level.
-+	before, err := ConvertClaudeRequestToCodex("gpt-6.1-sol", deferredToolsRequest(deferredLSPTool, lspToolUse, lspResult), true)
++	before, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool, lspToolUse, lspResult), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
-+	after, err := ConvertClaudeRequestToCodex("gpt-6.1-sol", deferredToolsRequest(deferredLSPTool, lspToolUse, lspResult, searchToolUse, searchResult), true)
++	after, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool, lspToolUse, lspResult, searchToolUse, searchResult), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}

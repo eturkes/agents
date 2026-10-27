@@ -283,7 +283,7 @@ def arms_only_main_claude_1h_success():
     post(server, session="aux", cls="auxiliary")
     post(server, session="sub", cls="subagent")
     post(server, session=None)
-    post(server, session="gpt", data=body(model="gpt-6-astra"))
+    post(server, session="gpt", data=body(model="gpt-6-luna"))
     post(server, session="5m", data=body(ttl="5m"))
     post(server, session="count", path="/v1/messages/count_tokens")
     Up.status = 529
