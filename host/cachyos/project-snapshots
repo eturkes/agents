@@ -174,36 +174,47 @@ class ProjectSnapshots:
         finally:
             os.close(descriptor)
 
+    @contextlib.contextmanager
+    def error_lock(self, mode):
+        # errors.jsonl gets renamed ⇒ a separate, stable lock file: writers shared, clear-errors exclusive.
+        self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
+        descriptor = os.open(self.state / "errors.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(descriptor, mode)
+            yield
+        finally:
+            os.close(descriptor)
+
     def record_error(self, error):
         try:
-            self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
             line = json.dumps({"time": datetime.now(UTC).isoformat(timespec="seconds"), "error": clean(error)}) + "\n"
-            descriptor = os.open(self.state / "errors.jsonl", os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-            try:
-                os.write(descriptor, line.encode())
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+            with self.error_lock(fcntl.LOCK_SH):
+                descriptor = os.open(self.state / "errors.jsonl", os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+                try:
+                    os.write(descriptor, line.encode())
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
         except OSError as failure:
             print(f"project-snapshots: cannot save the error: {failure}", file=sys.stderr)
 
     def clear_errors(self):
-        # Rename first: a hook appending meanwhile lands in the archive or a fresh log, never lost.
         reviewed = self.state / f".errors-{uuid.uuid4().hex}.jsonl"
-        try:
-            os.rename(self.state / "errors.jsonl", reviewed)
-        except FileNotFoundError:
-            print("Recorded hook errors: none.")
-            return
-        data = reviewed.read_bytes()
         archive = self.state / "errors-cleared.jsonl"
-        descriptor = os.open(archive, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-        try:
-            os.write(descriptor, data)
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-        reviewed.unlink()
+        with self.error_lock(fcntl.LOCK_EX):
+            try:
+                os.rename(self.state / "errors.jsonl", reviewed)
+            except FileNotFoundError:
+                print("Recorded hook errors: none.")
+                return
+            data = reviewed.read_bytes()
+            descriptor = os.open(archive, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            try:
+                os.write(descriptor, data)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            reviewed.unlink()
         print(f"Cleared {len(data.splitlines())} recorded hook errors. Archive: {archive}")
 
     def state_path(self, session):
