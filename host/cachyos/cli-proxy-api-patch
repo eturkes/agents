@@ -11,7 +11,7 @@ usage() {
   echo 'check: Report the override, the build and the running binary. Change nothing.'
   echo 'rollback: Remove the override. The packaged binary starts at the next service restart.'
   echo 'No command restarts the service. To activate a change, run systemctl --user restart cli-proxy-api.service.'
-  echo 'Exit codes: 0 = done or current; 1 = failure; 2 = review needed (packaged binary kept or restart pending); 64 = usage error.'
+  echo 'Exit codes: 0 = done or current; 1 = failure; 2 = review needed (apply: packaged binary kept; check: restart pending); 64 = usage error.'
 }
 
 (($# == 1)) || { usage >&2; exit 64; }
