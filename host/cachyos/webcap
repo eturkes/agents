@@ -20,15 +20,13 @@ const USAGE = `usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [opt
   --selector CSS     wait for this element before capture
   --wait MS          settle delay after load, default 0
   --timeout MS       navigation timeout, default 45000
-  --user-data-dir D  capture as this profile's user; runs against a copy of D
-  --profile-directory P
-                     profile inside D, default = D's Local State last_used
+  --user-data-dir D  capture as this profile's user (D's Local State last_used); runs against a copy of D
 Writes every requested artifact + prints one path per line; \`--dom -\` prints the HTML instead.`;
 
 const FLAGS = new Set(["--full-page", "--dark"]);
 const VALUED = new Set([
   "--pdf", "--png", "--dom", "--width", "--height",
-  "--selector", "--wait", "--timeout", "--user-data-dir", "--profile-directory",
+  "--selector", "--wait", "--timeout", "--user-data-dir",
 ]);
 
 function die(msg) {
@@ -139,14 +137,12 @@ function cloneProfile(dir) {
 
 // Chrome opens `Local State`'s last-used profile, not `Default`, and creates an absent name empty → a
 // signed-out capture that reads like a login failure → resolve the name here + report what exists.
-function resolveProfileDir(copy, wanted, label) {
-  let name = wanted;
-  if (!name) {
-    try {
-      name = JSON.parse(readFileSync(join(copy, "Local State"), "utf8")).profile?.last_used;
-    } catch {
-      // no Local State yet
-    }
+function resolveProfileDir(copy, label) {
+  let name;
+  try {
+    name = JSON.parse(readFileSync(join(copy, "Local State"), "utf8")).profile?.last_used;
+  } catch {
+    // no Local State yet
   }
   name ||= "Default";
   if (existsSync(join(copy, name, "Preferences"))) return name;
@@ -158,7 +154,7 @@ function resolveProfileDir(copy, wanted, label) {
 
 if (opts["user-data-dir"]) {
   const scratch = cloneProfile(opts["user-data-dir"]);
-  const profileDir = resolveProfileDir(scratch, opts["profile-directory"], opts["user-data-dir"]);
+  const profileDir = resolveProfileDir(scratch, opts["user-data-dir"]);
   const pw = await import(`${resolveModule("playwright-core")}/index.mjs`);
   const chromium = pw.chromium ?? pw.default.chromium;
   // Chrome deletes every cookie it fails to decrypt; playwright-core pins --password-store=basic (beside
