@@ -100,8 +100,7 @@ git -C "$HOME/.local/app/bgcmd" pull --ff-only
 
 # --- SWI-Prolog packs ---
 # apt owns swipl + library(prolog_pack); this refreshes user-global packs.
-# lsp_server = upgrade-servers' default-branch pin (the newest tag breaks UTF-16
-# initialize) → excluded here. Pack list = computed at run time; the per-pack
+# lsp_server = upgrade-servers' default-branch pin → excluded here. Pack list = computed at run time; the per-pack
 # catch isolates failures.
 swipl -q -g 'use_module(library(prolog_pack)), Pinned = [lsp_server], findall(P, (pack_property(P, version(_)), \+ memberchk(P, Pinned)), Ps), forall(member(P, Ps), catch(pack_install(P, [upgrade(true), interactive(false)]), E, print_message(warning, E))), halt' -t 'halt(1)'
 

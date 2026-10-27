@@ -48,7 +48,6 @@ else
   if [[ -z "$latest" ]]; then
     skip "could not read <release>; keeping current jar"
   else
-    # Sidecar stamp = installed-version state.
     stamp="${lemminx_jar%.jar}.version"
     current=$(cat "$stamp" 2>/dev/null || echo "none")
     if [[ "$current" == "$latest" && -f "$lemminx_jar" ]]; then
@@ -82,13 +81,11 @@ else
 fi
 
 # --- prolog-lsp: jamesnvc/lsp_server ---
-# Source = default-branch HEAD. Tagged release fails UTF-16 `initialize`; branch
-# contains the fix. Candidate handshake guards branch tracking; regression ⇒
-# retain working pack.
+# Source = default-branch HEAD; the candidate handshake guards branch tracking;
+# regression ⇒ retain working pack.
 #
 # Local checkout + file:// pins resolver input to HEAD. SWI-Prolog's Git URL
-# resolver lacks commit/branch selection; bare pack name selects incompatible
-# tag.
+# resolver lacks commit/branch selection; a bare pack name selects the newest tag.
 #
 # Rollback copy lives outside pack root. SWI-Prolog treats each child directory
 # as a pack; sibling `lsp_server.prev/` shadows active `prolog/` and makes the
@@ -135,7 +132,6 @@ else
       else
         fail "${head_sha:0:8} failed to install (no previous version to restore)"
       fi
-      # Remove staging dir on every path; keep pack-root siblings transient.
       rm -rf "$src"
       rmdir "$pack_backup_dir" 2>/dev/null || true
     fi

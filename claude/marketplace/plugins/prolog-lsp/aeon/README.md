@@ -14,7 +14,7 @@
 
 ## Upgrade constraints
 
-- Use default-branch HEAD. Tagged code mishandles UTF-16 capabilities, while the branch contains the compatible implementation.
+- Use default-branch HEAD. Each candidate must pass the UTF-16 `initialize` handshake.
 - Install the pack from a local checkout through `file://`. This route preserves branch contents when SWI-Prolog resolves the pack.
 - Use the installed-commit state marker as the runtime identity. The branch manifest can retain a tagged version value.
 - Run `sudo apt-get update && sudo apt-get upgrade` to update the packaged interpreter.
