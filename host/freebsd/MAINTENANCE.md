@@ -40,8 +40,8 @@ helpers remain on the host through forced-command SSH.
 ## Project ownership and recovery
 
 - Live VM runtime = PromptVM shared wheel; eturkes.com controller trees = frozen
-  provisioning/receipt/recovery assets. Deployed 0.2.16 reapply →
-  `~/pro/promptvm/dist/t70-verified-20261021/promptvm-0.2.16-py3-none-any.whl`
+  provisioning/receipt/recovery assets. Deployed 0.2.19 reapply →
+  `~/pro/promptvm/dist/model-policy-20261027/promptvm-0.2.19-py3-none-any.whl`
   + adjacent `release-receipt.json`. This artifact excludes pending
   configuration-pin edits retained in the checkout. Exact Bubblewrap pins support
   the signed package transition; native ownership/mode gates remain enforced.
@@ -66,11 +66,24 @@ helpers remain on the host through forced-command SSH.
 
 ## Maintenance boundaries
 
-- Latest package/boot handoff → `~/.local/state/t70-upgrade-20261021/RESULTS.md`.
-  Post-reboot service/integrity verification → adjacent `post-reboot/RESULTS.md`;
-  current service state → live checks.
-- PromptVM 0.2.16 reapply uses its verified artifact without `--test-rollback`;
-  recorded 0.2.15 preimages require the old Bubblewrap package first.
+- Package/boot handoff → `~/.local/state/t70-upgrade-20261027/RESULTS.md`.
+  Handoff state = installed/running p6; VMs/jails current + cleanly stopped for
+  user reboot; autostart enabled. Current service state → live checks.
+  Previous p5 post-reboot checks →
+  `~/.local/state/t70-upgrade-20261021/post-reboot/RESULTS.md`.
+- PromptVM 0.2.19 reapply → verified artifact, omit `--test-rollback`;
+  preimages restore 0.2.18. Historical 0.2.16 → 0.2.15 rollback requires the old
+  Bubblewrap package first.
+- Naoto fixed-input quarantine →
+  `~/pro/promptvm/docs/input-quarantine-2026-10-23.md`.
+  Automatic recovery = five approved private inputs only; verified snapshot
+  restore, root-only data-volume evidence, resumable journal, 32 GiB cap +
+  8 GiB reserve, 64-event cap, one new event/hour. Unknown/system files → review.
+  Preserve `.tau-input-quarantine` receipts/bad bytes + evidence snapshots;
+  pending-event recovery → journal resume + native integrity checks.
+- Prompt policy → `~/pro/promptvm/docs/model-policy-2026-10-27.md`.
+  VM + wedding users = `gpt-6.1-terra`/medium/priority;
+  `eturkes` = `gpt-6.1-sol`/xhigh/default.
 - Preserve accounts/keys/browser credentials; host SSH = TCP 9993 + public keys;
   retain existing public ingress + private VM boundaries.
 - Package work → `zpool status -v` + relevant `/var/log/{daily,weekly,monthly}.log`,
