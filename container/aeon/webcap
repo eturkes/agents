@@ -119,7 +119,7 @@ let page;
 
 // Capture runs against a copy: a build opening the original garbage-collects component extensions it lacks
 // → the owning browser loses extensions its Preferences still name. The copy sheds ProcessSingleton → leave
-// that browser running. `cp --reflink` shares extents within one filesystem (no disk cost) → copy beside it.
+// that browser running. Copy beside it → `cp --reflink=auto` shares extents where the filesystem supports reflinks.
 // Singleton* name the live instance's socket → a copy keeping them forwards the capture into that browser.
 function cloneProfile(dir) {
   if (!existsSync(dir)) die(`no profile at ${dir}`);

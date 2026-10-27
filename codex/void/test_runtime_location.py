@@ -1,16 +1,21 @@
 """Runtime selection preserves frozen paths and rejects unpinned live releases."""
-import importlib.util
 import contextlib
 import hashlib
+import importlib.util
 import io
+import sys
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
-import unittest
 from unittest import mock
 
 spec = importlib.util.spec_from_file_location('workspace_runtime', Path(__file__).with_name('update-workspace.py'))
 operator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(operator)
+
+def isolated_flags():
+    # Every real flag (argparse colour support reads sys.flags.ignore_environment) + isolated mode.
+    return SimpleNamespace(**{name: getattr(sys.flags, name) for name in sys.flags.__match_args__} | {'isolated': True})
 
 class RuntimeLocationTests(unittest.TestCase):
     def test_legacy_and_immutable_package_locations(self):
@@ -47,7 +52,7 @@ class RuntimeLocationTests(unittest.TestCase):
                 '--sha256', 'b' * 64, '--controller-sha256', hashlib.sha256(payload).hexdigest(),
                 '--summary', 'Update tool policy', '--release', release]
         with (mock.patch.object(operator.sys, 'argv', argv),
-              mock.patch.object(operator.sys, 'flags', SimpleNamespace(isolated=True)),
+              mock.patch.object(operator.sys, 'flags', isolated_flags()),
               mock.patch.object(operator.sys, 'path', list(operator.sys.path)),
               mock.patch.object(operator, 'read_file', return_value=payload),
               mock.patch.object(operator.importlib, 'import_module', side_effect=import_module),

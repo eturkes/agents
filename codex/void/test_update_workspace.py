@@ -169,10 +169,6 @@ class Controller:
         self._versions.append(item)
         self._control["current_version_id"] = item["id"]
 
-    def _build_manifest(self, identity, summary):
-        return dict(self._versions[-1], id=identity,
-                    instructions_sha256=sha(self.current() / "AGENTS.md"))
-
     def _health_gate(self):
         self.events.append("health-final")
 
