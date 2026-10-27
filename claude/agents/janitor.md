@@ -1,6 +1,6 @@
 ---
 name: janitor
-description: "Repo hygiene sweep of one commit from a fresh clone against a fixed checklist: ignore coverage, clean-clone runs, layout, repo files → verdict table + a patch of mechanical fixes. Fit = breadth + thoroughness over depth: repo standup + each early-phase commit, IMPLEMENT's foundation commit."
+description: "Repo hygiene sweep of one commit from a fresh clone against a fixed checklist: ignore coverage, clean-clone runs, layout, repo files → verdict table + a patch of mechanical fixes. Fit = breadth + thoroughness over depth: repo standup + continuous early-phase sweeps of the newest commit, IMPLEMENT's foundation commit."
 color: orange
 ---
 
