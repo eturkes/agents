@@ -8,7 +8,6 @@ paths: ["claude/cachyos/CLAUDE.md", "claude/aeon/CLAUDE.md", "claude/cachyos/set
 - Host files load into every session ⇒ task-facing machine guidance alone (capabilities, tool semantics, gates, model routing); machine configuration, troubleshooting + derivations → on-demand docs (`host/<host>/*.md`, tool READMEs, script comments + `--help`); general practice → `claude/CLAUDE.project.md`, which projects copy.
 - Deploy = plain copies per host: `cp claude/<host>/CLAUDE.md claude/<host>/settings.json ~/.claude/`. CC writes the live `settings.json` (e.g. `/effort`) → diff live vs repo first + carry each live change worth keeping into the repo file.
 - `claude/<host>/fable/CLAUDE.md` = generated: `claude/check-fable` applies its `EDITS` (Fable text, incl. the Fable prompting-guide prompts replacing the Opus ones) + drops the advisor bullets → edit the host file or `EDITS`, then `claude/check-fable --write`.
-- Fable copy omits the Fable guide's "Finish the whole task" autonomy paragraph: I answer questions mid-task.
 - Fable profile deploy = `claude/prompts/README.md` `Fable as MAIN`; in sync ⇔ `claude/link-profile --check fable` → `fable: 0 changes needed, 0 conflicts`.
 
 Checks:

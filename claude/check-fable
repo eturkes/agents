@@ -8,7 +8,8 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent
 # Host Delivery carries Opus 5.5 guide prompts (turn-end clause, explore-broadly bullet); the Fable copy
-# swaps in Fable 5.1 guide prompts.
+# swaps in Fable 5.1 guide prompts, minus the guide's "Finish the whole task" autonomy paragraph: the
+# user answers questions mid-task.
 FABLE_DELIVERY = (
     "- Per response: private list of what's needed next → one batch of every item whose inputs are in"
     " hand; items awaiting another's result → the next response.\n"

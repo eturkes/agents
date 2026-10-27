@@ -17,7 +17,7 @@ Checks:
 ```sh
 codex/cachyos/check-instructions
 codex/check-codexify-startup               # full ~/AGENTS.md in startup + fresh brief
-codex/aeon/deploy-instructions             # live drift → rc 1
+codex/aeon/deploy-instructions             # on aeon: live drift → rc 1
 codex/nixbox/deploy-instructions --check   # live drift → rc 1
 shellcheck -s sh codex/nixbox/deploy-instructions
 ```

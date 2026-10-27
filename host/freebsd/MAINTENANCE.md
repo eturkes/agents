@@ -20,7 +20,6 @@ Guests = 2 shared vCPUs each. Sizes = GiB except EFI; OS includes swap.
 - Active Void zvols = `root-rightsized-20261020` + `projects-rightsized-20261020`;
   Veriformatics = `root` + `data`. All active disks = fully reserved.
   Active data volumes own their historical snapshots after promotion.
-  Retired data volumes, Nanoha's old root + inspection clones = removed.
   Naoto/Rehab old roots = read-only forensic containers; preserve their evidence
   snapshots, holds + configuration preimages.
 - Placement checks → `doas vm list`, `doas jls -n`, `sysctl vfs.zfs.arc.max`;
@@ -87,6 +86,6 @@ helpers remain on the host through forced-command SSH.
   Host panic evidence =
   `/var/backups/t70-deployment-20261020/host-panic-20261021T000843JST/`;
   guest shutdown evidence + held crash/clean-stop snapshots → rightsize records.
-  Original guest journals replayed during host autostart after the crash snapshots.
+  Pre-crash guest state → the held crash snapshots; live guest journals include the post-snapshot autostart replay.
   Caddy executable corruption + same-version recovery evidence →
   `/var/backups/t70-deployment-20261020/caddy-recovery-20261021/`.
