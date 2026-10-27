@@ -129,9 +129,7 @@ Legacy `nvidia-prime-*` sources remain exclusively as the configuration rollback
 
 ### X11 responsiveness
 
-`xdg-desktop-portal-sonicde` 6.7.5 performs full RandR hardware detection every second.
-On the T480 HDMI path, Intel connector probing blocks Xorg for roughly 650 ms per scan.
-Fixed release = 6.7.5.1; cached RandR queries + output-change events replace periodic output scans.
+`xdg-desktop-portal-sonicde` ≥ 6.7.5.1 = cached RandR queries + output-change events; keep that floor: a per-second full RandR scan (6.7.5) blocks Xorg ≈ 650 ms per scan on the T480 HDMI path (Intel connector probing).
 [Upstream fix](https://github.com/Sonic-DE/xdg-desktop-portal-sonicde/commit/631816b754eefdfe13c2f283865fd5c364c396f6).
 
 Upgrade the signed portal package through the configured SonicDE repository.

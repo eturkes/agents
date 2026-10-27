@@ -221,7 +221,7 @@ postflight() {
     sudo -n "$script_dir/kernel-recovery" check
   check_services system
   check_services user
-  check 'Crash diagnostics policy' 'Run agent-crash-policy check. Correct the reported settings.' hide \
+  check 'Crash diagnostics policy' "Run $script_dir/agent-crash-policy check. Correct the reported settings." hide \
     "$script_dir/agent-crash-policy" check
   check 'NVIDIA compute access' 'Inspect the driver error and DKMS status before starting GPU work.' show \
     nvidia-smi --query-gpu=name,driver_version,memory.used,display_active --format=csv

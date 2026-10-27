@@ -28,20 +28,10 @@ project-snapshots clear-errors
 
 ## Deploy
 
-`snapper` via the system package manager; then, from the agents repo with terminals outside Projects:
+`snapper` via the system package manager; then, from the agents repo with terminals outside Projects — one `--pause-unit UNIT` per active user unit writing under Projects + its activating timer (the migration restarts only units it stopped):
 
 ```bash
-host/cachyos/project-snapshots-migrate \
-  --pause-unit bsc-research-protocols.timer \
-  --pause-unit bsc-research-protocols.service \
-  --pause-unit bsc-research-explore.timer \
-  --pause-unit bsc-research-explore.service \
-  --pause-unit bsc-micro-scalping.service \
-  --pause-unit bsc-scanner-watch.service \
-  --pause-unit bsc-opportunity-alerts.service \
-  --pause-unit bsc-research-breadth.service \
-  --pause-unit paper-learning.service \
-  --pause-unit paper-eth-bnb-continuation.service
+host/cachyos/project-snapshots-migrate --pause-unit <unit> …
 host/cachyos/project-snapshots-setup
 ```
 

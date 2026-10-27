@@ -111,7 +111,7 @@ Keep boot selections, root layout, degraded-mount policy and watchdog resets unc
 bcachefs root spans two devices with single-copy data. Either device can lose unique data; snapshots are not disk-failure protection.
 Native snapshots recover files/subvolumes; the separate FAT `/boot` and nested subvolumes need separate coverage.
 Snapper's bcachefs backend does not implement default-root switching; Limine-Snapper-Sync targets Btrfs.
-Defer snapshot boot integration until a recoverable boot/restore drill is possible. Configuration backups are sufficient for this graphics change.
+Snapshot boot integration → after a recoverable boot/restore drill; configuration-only graphics changes → configuration backups suffice.
 
 Sources: [bcachefs snapshots](https://bcachefs.org/Snapshots/),
 [Snapper bcachefs backend](https://github.com/openSUSE/snapper/blob/master/snapper/Bcachefs.h),
