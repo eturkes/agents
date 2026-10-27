@@ -1,4 +1,4 @@
-From 541b94efb204dfb3f0a4ad95379e255e7ab367a4 Mon Sep 17 00:00:00 2001
+From 6f6fe73c3bccdc7da54427b3805f8d3a507aadc9 Mon Sep 17 00:00:00 2001
 From: Emir Turkes <eturkes@bu.edu>
 Date: Wed, 21 Oct 2026 11:57:57 +0900
 Subject: [PATCH] codex/claude: ToolSearch discoveries declared top-level ahead
@@ -15,20 +15,20 @@ Content-Transfer-Encoding: 8bit
 - gpt-6.1-sol via the ChatGPT backend, request after ToolSearch: cached 0/6,908 → 6,656/7,006.
 ---
  .../codex_executor_additional_tools_test.go   |  29 +++
- .../executor/codex_executor_request.go        |  22 +-
- .../runtime/executor/codex_executor_tokens.go |  52 +++--
+ .../executor/codex_executor_request.go        |  21 +-
+ .../runtime/executor/codex_executor_tokens.go |  51 +++--
  .../executor/codex_executor_tokens_test.go    |  27 +++
  .../executor/helps/codex_tool_schema.go       |  26 ++-
  .../executor/helps/codex_tool_schema_test.go  |  16 ++
  .../codex_claude_deferred_tools_test.go       | 208 ++++++++++++++++++
- .../codex/claude/codex_claude_request.go      | 126 ++++++++---
- 8 files changed, 452 insertions(+), 54 deletions(-)
+ .../codex/claude/codex_claude_request.go      | 123 ++++++++---
+ 8 files changed, 447 insertions(+), 54 deletions(-)
  create mode 100644 internal/runtime/executor/codex_executor_additional_tools_test.go
  create mode 100644 internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 
 diff --git a/internal/runtime/executor/codex_executor_additional_tools_test.go b/internal/runtime/executor/codex_executor_additional_tools_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..c81e767c89db262e52ff614a7b11f90dba02a3dc
+index 0000000000000000000000000000000000000000..86a31ecfbf4766ecb97522f315a8a494a146d270
 --- /dev/null
 +++ b/internal/runtime/executor/codex_executor_additional_tools_test.go
 @@ -0,0 +1,29 @@
@@ -62,10 +62,10 @@ index 0000000000000000000000000000000000000000..c81e767c89db262e52ff614a7b11f90d
 +	}
 +}
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index 0b5576af49ffc434c5fd7df8d7a7b492b38bf620..8f552851cc1b5fd7e9721ac71e54dffe2dcb54ff 100644
+index b03948d7ec215493a3a9194cef1d24335af8522c..c9fa7ebcedf0abc84a4ae76b19fb5a160203e13a 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
-@@ -522,6 +522,11 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
+@@ -688,6 +688,11 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
  		return body
  	}
  
@@ -77,11 +77,10 @@ index 0b5576af49ffc434c5fd7df8d7a7b492b38bf620..8f552851cc1b5fd7e9721ac71e54dffe
  	tools := gjson.GetBytes(body, "tools")
  	if !tools.Exists() || !tools.IsArray() {
  		body, _ = sjson.SetRawBytes(body, "tools", imageGenToolArrayJSON)
-@@ -536,6 +541,21 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
+@@ -702,6 +707,20 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
  	return body
  }
  
-+// codexAdditionalToolDeclarations returns the tools declared by additional_tools input items.
 +func codexAdditionalToolDeclarations(body []byte) []gjson.Result {
 +	if !bytes.Contains(body, []byte(`"additional_tools"`)) {
 +		return nil
@@ -99,7 +98,7 @@ index 0b5576af49ffc434c5fd7df8d7a7b492b38bf620..8f552851cc1b5fd7e9721ac71e54dffe
  func normalizeCodexParallelToolCalls(body []byte, headers http.Header) []byte {
  	if util.IsCodexResponsesLiteRequest(body, headers) {
  		body = helps.SetBoolIfDifferent(body, "parallel_tool_calls", false)
-@@ -551,7 +571,7 @@ func normalizeCodexParallelToolCallsForTools(body []byte) []byte {
+@@ -717,7 +736,7 @@ func normalizeCodexParallelToolCallsForTools(body []byte) []byte {
  
  	tools := gjson.GetBytes(body, "tools")
  	hasTools := tools.Exists() && tools.IsArray() && len(tools.Array()) > 0
@@ -109,7 +108,7 @@ index 0b5576af49ffc434c5fd7df8d7a7b492b38bf620..8f552851cc1b5fd7e9721ac71e54dffe
  	}
  
 diff --git a/internal/runtime/executor/codex_executor_tokens.go b/internal/runtime/executor/codex_executor_tokens.go
-index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..c4f7ea7e60035f57c7901ab22a79ae5770b8b330 100644
+index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..1730e7fcf2d9a7d4e304b7414c6dd3349e47da9e 100644
 --- a/internal/runtime/executor/codex_executor_tokens.go
 +++ b/internal/runtime/executor/codex_executor_tokens.go
 @@ -123,6 +123,8 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
@@ -151,12 +150,11 @@ index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..c4f7ea7e60035f57c7901ab22a79ae57
  
  	textFormat := root.Get("text.format")
  	if textFormat.Exists() {
-@@ -181,3 +162,30 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+@@ -181,3 +162,29 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
  	}
  	return int64(count), nil
  }
 +
-+// appendCodexToolSegments adds name, description + parameters per tool (top-level tools + additional_tools items).
 +func appendCodexToolSegments(segments []string, tools gjson.Result) []string {
 +	if !tools.IsArray() {
 +		return segments
@@ -288,7 +286,7 @@ index cc6da6af257d1115dfb1e70b3577efba454e9caa..4a5a0264e01c30cfe3b741b776df809f
 +}
 diff --git a/internal/translator/codex/claude/codex_claude_deferred_tools_test.go b/internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..f81ce11491235123535ca17b5ddc29a10d612883
+index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd2cb297e5
 --- /dev/null
 +++ b/internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 @@ -0,0 +1,208 @@
@@ -501,10 +499,10 @@ index 0000000000000000000000000000000000000000..f81ce11491235123535ca17b5ddc29a1
 +	}
 +}
 diff --git a/internal/translator/codex/claude/codex_claude_request.go b/internal/translator/codex/claude/codex_claude_request.go
-index 4e45a14fa2d49384199ba5214a095f9dfe897b3c..ab4968e7a27c385cba6722d7c1ee76730f520efe 100644
+index 504a5b11617a4cce9c280f5d96250e5209ee5145..cc65551d61627c5f7dc97be258da49bccae9f436 100644
 --- a/internal/translator/codex/claude/codex_claude_request.go
 +++ b/internal/translator/codex/claude/codex_claude_request.go
-@@ -63,6 +63,46 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -64,6 +64,46 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  	template, _ = sjson.SetBytes(template, "model", modelName)
  	inputItems := translatorcommon.NewRawArrayItems(rootResult.Get("messages.#").Int())
  
@@ -551,7 +549,7 @@ index 4e45a14fa2d49384199ba5214a095f9dfe897b3c..ab4968e7a27c385cba6722d7c1ee7673
  	// Process system messages and convert them to input content format.
  	systemsResult := rootResult.Get("system")
  	if systemsResult.Exists() {
-@@ -298,6 +338,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -322,6 +362,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  						}
  
  						inputItems = append(inputItems, functionCallOutputMessage)
@@ -563,7 +561,7 @@ index 4e45a14fa2d49384199ba5214a095f9dfe897b3c..ab4968e7a27c385cba6722d7c1ee7673
  						turnSendable++
  					}
  				}
-@@ -341,33 +386,10 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -365,33 +410,10 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  				toolItems = append(toolItems, convertClaudeWebSearchToolToCodex(toolResult))
  				continue
  			}
@@ -600,11 +598,10 @@ index 4e45a14fa2d49384199ba5214a095f9dfe897b3c..ab4968e7a27c385cba6722d7c1ee7673
  		}
  	}
  
-@@ -459,6 +481,58 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -485,6 +507,55 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  	return template, drops.Err()
  }
  
-+// convertClaudeFunctionToolToCodex converts a Claude tool declaration to a Codex function tool.
 +func convertClaudeFunctionToolToCodex(toolResult gjson.Result, toolNameMap map[string]string) []byte {
 +	tool := []byte(toolResult.Raw)
 +	if toolResult.Get("type").Type != gjson.String || toolResult.Get("type").String() != "function" {
@@ -635,8 +632,6 @@ index 4e45a14fa2d49384199ba5214a095f9dfe897b3c..ab4968e7a27c385cba6722d7c1ee7673
 +	return tool
 +}
 +
-+// referencedDeferredTools converts the deferred tools named by content's tool_reference blocks,
-+// in reference order; tools an earlier reference placed are skipped.
 +func referencedDeferredTools(content gjson.Result, deferredTools map[string]gjson.Result, placedTools map[string]bool, toolNameMap map[string]string) [][]byte {
 +	if len(deferredTools) == 0 || !content.IsArray() {
 +		return nil
