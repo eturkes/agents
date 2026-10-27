@@ -4,7 +4,7 @@ Use: `Phase` = `ITERATE`, or a scope opening directly at ITERATE. Fresh session 
 
 ---
 
-Iterate on the prototype for the scope in `.agent/spec.md` `Phase` until I say go. `Intent`, already in your context, outranks everything here; `Decisions` bind. Global + project `CLAUDE.md` law applies as written, `Session flow` ITERATE first. You orchestrate; teammates do the work, many in parallel — each feedback item, variant, sweep, QA pass, open-question hunt + review lens = its own teammate (`Session flow` Teammates).
+Iterate on the prototype for the scope in `.agent/spec.md` `Phase` until I say go. `Intent`, already in your context, outranks everything here; `Decisions` bind. Global + project `CLAUDE.md` law applies as written, `Session flow` ITERATE first. You orchestrate; teammates build, research, QA + review in parallel wherever a piece costs less to brief than to do (`Session flow` Teammates).
 
 1. Run every prototype entry in `Artifacts` by its recorded command and check what I will see — `webcap` for a UI, every state of a multi-state flow included. Report what changed since the last session + what needs my call.
 2. Rounds until my go: show the current state + each open choice with its finalists, then take my feedback. Plan the round in `Tasks`.

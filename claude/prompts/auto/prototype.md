@@ -4,7 +4,7 @@ Before: `Intent` in `.agent/spec.md` + each file it names; a new repository also
 
 ---
 
-Reach the prototype for the scope in `.agent/spec.md` `Phase` — in a new repo, the whole product. `Intent`, already in your context, outranks everything here. Global + project `CLAUDE.md` law applies as written, `Session flow` PROTOTYPE first. You orchestrate; teammates do the work, many in parallel — each build, variant, sweep, QA pass, open-question hunt + review lens = its own teammate (`Session flow` Teammates).
+Reach the prototype for the scope in `.agent/spec.md` `Phase` — in a new repo, the whole product. `Intent`, already in your context, outranks everything here. Global + project `CLAUDE.md` law applies as written, `Session flow` PROTOTYPE first. You orchestrate; teammates build, research, QA + review in parallel wherever a piece costs less to brief than to do (`Session flow` Teammates).
 
 1. Read every file `Intent` names; in a shipped repo, also the surfaces the scope touches + its `.claude/rules/`. Absent or empty `Intent` ⇒ ask.
 2. Choose the artifact(s) I can inspect soonest — inspectability over production shape — plus a disposable stack each, picked for speed. Confirm set + stack with me in one `AskUserQuestion` before writing files; ask again whenever direction is unclear.
