@@ -4,9 +4,7 @@
 # dependencies = ["tomlkit==0.15.1"]
 # ///
 """Check Aeon's instruction files and the Codexify workspace policy. Use --apply to update them."""
-# Policy + writer = codex/cachyos/deploy-instructions. No trust pruning: ~/.codex/config.toml holds host-layer paths
-# (/home/eturkes/...) ⇒ absent in-container ≠ stale. Codexify = user-terminal foreground (no service) ⇒ config change →
-# restart there.
+# Reuse CachyOS policy + writer; preserve trust for host paths absent in this container.
 import argparse
 import runpy
 from pathlib import Path

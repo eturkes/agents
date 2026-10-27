@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Native Codexify startup policy: pinned source + replayable patch.
+set -euo pipefail
+here=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+task_home=$(readlink -f -- "$HOME")
+upstream=4c1805f58777d918d101b49ddae3189e5c3a2145
+state="$task_home/.local/lib/codexify-startup"
+live="$task_home/.codexify/bin/codexify"
+
+case ${1-} in
+  build)
+    task_build=$(mktemp -d)
+    trap 'rm -rf -- "$task_build"' EXIT
+    git init -q "$task_build/source"
+    git -C "$task_build/source" fetch -q --depth 1 https://github.com/devnoname120/codexify.git "$upstream"
+    git -C "$task_build/source" checkout -q --detach FETCH_HEAD
+    git -C "$task_build/source" apply --check "$here/codexify-startup.patch"
+    git -C "$task_build/source" apply "$here/codexify-startup.patch"
+    (
+      cd "$task_build/source"
+      cargo test --locked --lib instructions::tests --jobs 4
+      cargo build --release --locked --jobs 4
+    )
+    mkdir -p "$state"
+    install -m755 "$task_build/source/target/release/codexify" "$state/codexify"
+    printf 'upstream=%s\n' "$upstream" > "$state/build"
+    sha256sum "$here/codexify-startup.patch" "$state/codexify" >> "$state/build"
+    printf 'built=%s\n' "$state/codexify"
+    ;;
+  install)
+    source_binary=$(readlink -f -- "${2:-$state/codexify}")
+    test -x "$source_binary"
+    rg -a -q 'Access-root startup instructions' "$source_binary"
+    "$source_binary" --help >/dev/null
+    if ! cmp -s "$source_binary" "$live"; then
+      # Atomic rename preserves the running process's inode.
+      cp -p "$live" "$live.before-startup-doc"
+      install -m755 "$source_binary" "$live.new"
+      mv -f "$live.new" "$live"
+    fi
+    printf 'installed=%s; restart Codexify, then run codex/check-codexify-startup\n' "$live"
+    ;;
+  check)
+    exec "$here/check-codexify-startup"
+    ;;
+  *)
+    echo 'Usage: codexify-startup build | install [BINARY] | check' >&2
+    echo 'Build requires Rust, Cargo and a C toolchain. After installation, restart Codexify.' >&2
+    exit 64
+    ;;
+esac

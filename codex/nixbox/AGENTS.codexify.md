@@ -70,7 +70,7 @@
 - Defaults: Python → `uv`; Node.js → `pnpm`.
 - User services → `systemctl --user` (lingering; units in `~/.config/systemd/user`).
 - Discover/preserve repo stack from tracked manifests, lockfiles, scripts, CI + working commands. New language/package/tool surfaces require task need.
-- Codexify = user unit `codexify.service`; `~/.codexify/codexify.config.json` = bridge + tunnel policy + project catalogue (catalogue entry, `worktrees.mode` + `uiWidgets`/`agentChat` off ← controller deploy). Restart Codexify after changes; refresh the connector when exposed capabilities change.
+- Codexify = `codexify.service`; config = `~/.codexify/codexify.config.json`; policy + upkeep → controller agents repo `.claude/rules/codexify.md`.
 - Shell/tool calls = native; preserve commands + output verbatim. `rg` = ripgrep; `grep` = GNU BRE; `find` = GNU find.
 - Search → `rg <pattern> <path>`; explicit dot-dirs or `--hidden`; include ignored paths → `-uu`. `-r` = replacement.
 - `pgrep -f`/`pkill -f` → one bracketed pattern (`index[.]js`) to exclude the shell wrapper; kill + relaunch in separate calls.

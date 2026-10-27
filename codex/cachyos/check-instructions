@@ -45,15 +45,18 @@ policies = [
     '{"workDir": "/w", "multiProject": false}',
     '{"worktrees": {"mode": "auto", "keepCount": 3}, "workDir": "/w", "agentChat": {"enabled": true, "port": 3120}}',
     json.dumps({"projectCatalog": {"codexConfig": {"enabled": True}, "entries": [{"path": ".", "name": "old"}, other]}}),
+    json.dumps({"projectDoc": {"includeAtStartup": False, "maxBytes": 65536, "fallbackFilenames": ["RULES.md"]}}),
     json.dumps({"worktrees": {"mode": "never"}, "uiWidgets": False, "agentChat": {"enabled": False},
+                "projectDoc": {"includeAtStartup": True},
                 "projectCatalog": {"entries": [other, home_entry]}}, indent=2) + "\n",
 ]
-managed = {"worktrees": "mode", "agentChat": "enabled", "projectCatalog": "entries"}
+managed = {"worktrees": "mode", "agentChat": "enabled", "projectCatalog": "entries", "projectDoc": "includeAtStartup"}
 for index, text in enumerate(policies):
     original, result = json.loads(text), json.loads(codexify_policy(text))
     case = f"codexify case {index}"
     assert result["worktrees"]["mode"] == "never", f"{case}: worktree mode"
     assert result["uiWidgets"] is False and result["agentChat"]["enabled"] is False, f"{case}: widgets/agent chat on"
+    assert result.get("projectDoc", {}).get("includeAtStartup") is True, f"{case}: startup instructions disabled"
     entries = result["projectCatalog"]["entries"]
     kept = [e for e in original.get("projectCatalog", {}).get("entries", []) if e["path"] != "."]
     assert entries == kept + [home_entry], f"{case}: catalogue entries"
