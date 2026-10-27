@@ -82,13 +82,17 @@ if (!opts.pdf && !opts.png && !opts.dom) die("choose at least one of --pdf, --pn
 const { ChromiumFish, BASE_ARGS, binaryPath } = await import(`${resolveGlobal("chromiumfish")}/dist/index.js`);
 const context = { viewport: { width: Number(opts.width), height: Number(opts.height) } };
 
-// CDP media emulation (newPage colorScheme, emulateMedia) still reports dark=false here → promote
-// every dark media block to `all`; the cascade stands, so a later light rule still wins.
+// CDP media emulation (newPage colorScheme, emulateMedia) still reports dark=false here → each dark
+// condition → always true; the cascade stands, so a later light rule still wins.
 // Cross-origin sheets deny cssRules → stay light; matchMedia stays light → matchMedia-driven themes need their own switch.
 function promoteDarkRules() {
+  const DARK = /\(\s*prefers-color-scheme\s*:\s*dark\s*\)/gi; // the term alone → width, print + not guards stay
   const walk = (rules) => {
     for (const rule of rules) {
-      if (rule.media && /prefers-color-scheme\s*:\s*dark/i.test(rule.media.mediaText)) rule.media.mediaText = "all";
+      if (rule.media) {
+        const promoted = rule.media.mediaText.replace(DARK, "(min-width: 0px)");
+        if (promoted !== rule.media.mediaText) rule.media.mediaText = promoted;
+      }
       if (rule.cssRules) walk(rule.cssRules);
     }
   };
