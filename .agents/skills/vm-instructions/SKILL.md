@@ -5,7 +5,7 @@ description: "VM policies → PromptVM controller releases + native instruction-
 
 # VM instructions
 
-Scope/invariants → [VM instruction maintenance](../../../codex/void/AGENTS.md). Host commands = Bash from `agents/`, `python3.12 -B`; guest operator = `/usr/bin/python3 -I -B`. Transient stages/baselines → outside tracked paths.
+Scope/invariants → [VM instruction maintenance](../../../codex/void/AGENTS.md). Host = T70 (FreeBSD), `ssh -p 9993 eturkes@192.168.40.50`; checkout `~/pro/agents` beside `~/pro/promptvm` + `~/pro/eturkes.com` (the `../` paths below); another machine → run there over SSH. Host commands = Bash (login shell = tcsh) from `~/pro/agents`, `python3.12 -B`; guest operator = `/usr/bin/python3 -I -B`. Transient stages/baselines → outside tracked paths.
 
 ## Ownership + invariants
 
