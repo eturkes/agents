@@ -1,6 +1,6 @@
 # Prototype
 
-Before: `Intent` in `.agent/spec.md` + each file it names; a new repository also needs the template files (README `Template files`) + `LICENSE`; a shipped repository names the scope in `Phase` or in your request (a route already did). Fresh session at the project root; `<request>` → your steering → paste everything below the rule.
+Before: `Intent` in `.agent/spec.md` + each file it names; a new repository also needs the template files (README `Template files`) + `LICENSE`; a shipped repository names the scope in `Phase` or in your request (a route already did). Fresh session at the project root + advisor off (README `Advisor`); `<request>` → your steering → paste everything below the rule.
 
 ---
 

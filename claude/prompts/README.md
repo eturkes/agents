@@ -82,7 +82,7 @@ Run `copy-template` before you paste `refresh.md`. The refresh session compares 
 
 The advisor lets the agent consult Fable 5.1 while it works. Each consultation uses part of your Fable usage limit. The advisor is off until you turn it on.
 
-For deep work in IMPLEMENT and MAINTAIN, the agent consults the advisor often, for example on the contract of each unit and before each commit. In IMPLEMENT, the agent also consults the advisor on decisions that are costly to reverse, after the teammates report. For other work in these phases, a consultation occurs only when a decision needs Fable. For PROTOTYPE and ITERATE, the agent uses the advisor where Fable is strong, for example on design and wording.
+For deep work in IMPLEMENT and MAINTAIN, the agent consults the advisor often, for example on the contract of each unit and before each commit. In IMPLEMENT, the agent also consults the advisor on decisions that are costly to reverse, after the teammates report. For other work in these phases, a consultation occurs only when a decision needs Fable. Keep the advisor off in PROTOTYPE and ITERATE. If it is on from an earlier session, send `/advisor off` before you paste the body.
 
 - To use the advisor for one session, add `--advisor claude-fable-5-1` to the start command. Put `CLAUDE_CODE_FOOTER_INDICATOR=adv` in front of the command. The footer then shows `◆ adv`.
 - To turn on the advisor from inside a session, send `/advisor claude-fable-5-1` as a message of its own. Then paste the body in a new message. This setting also applies to new sessions until you send `/advisor off`.
