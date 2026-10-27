@@ -1,6 +1,6 @@
 # Maintain
 
-Use: `Phase` = `MAINTAIN`. Fresh session at the project root → paste one body = the text between its two rules. A request, named rows, a bug report or a review scope → `steered/maintain.md`.
+Use: `Phase` = `MAINTAIN`. Fresh session at the project root → paste one body = the text between its two rules. A request, named rows, a bug report or a review scope → `steered/maintain.md`. After an IMPLEMENT close: `Dependency upgrade` → `Code review` → `Security review` → `Queue`.
 
 ## Queue
 
