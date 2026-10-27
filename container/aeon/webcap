@@ -5,7 +5,7 @@
 // hang in the ChromiumFish build after load (rc=124, no artifact), while CDP drives the same binary.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -19,7 +19,7 @@ const USAGE = `usage: webcap <url> [--pdf FILE] [--png FILE] [--dom FILE|-] [opt
   --selector CSS     wait for this element before capture
   --wait MS          settle delay after load, default 0
   --timeout MS       navigation timeout, default 45000
-  --user-data-dir D  capture as this profile's user; runs against a copy of D
+  --user-data-dir D  capture as this profile's user (D's Local State last_used); runs against a copy of D
 Writes every requested artifact + prints one path per line; \`--dom -\` prints the HTML instead.`;
 
 const FLAGS = new Set(["--full-page", "--dark"]);
@@ -144,13 +144,31 @@ function cloneProfile(dir) {
 // variable moves it.
 const PERSISTENT_ARGS = [...BASE_ARGS, "--password-store=gnome-libsecret"];
 
+// Chrome opens `Local State`'s last-used profile, not `Default`, and creates an absent name empty → a
+// signed-out capture that reads like a login failure → resolve the name here + report what exists.
+function resolveProfileDir(copy, label) {
+  let name;
+  try {
+    name = JSON.parse(readFileSync(join(copy, "Local State"), "utf8")).profile?.last_used;
+  } catch {
+    // no Local State yet
+  }
+  name ||= "Default";
+  if (existsSync(join(copy, name, "Preferences"))) return name;
+  const found = readdirSync(copy, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && existsSync(join(copy, e.name, "Preferences")))
+    .map((e) => e.name);
+  die(`${label} has no profile ${JSON.stringify(name)}; found ${found.join(", ") || "none"}`);
+}
+
 if (opts["user-data-dir"]) {
   const scratch = cloneProfile(opts["user-data-dir"]);
+  const profileDir = resolveProfileDir(scratch, opts["user-data-dir"]);
   const pw = await import(`${resolveGlobal("playwright-core")}/index.mjs`);
   const chromium = pw.chromium ?? pw.default.chromium;
   closable = await chromium.launchPersistentContext(scratch, {
     executablePath: await binaryPath(),
-    args: PERSISTENT_ARGS,
+    args: [...PERSISTENT_ARGS, `--profile-directory=${profileDir}`],
     headless: true,
     ...context,
   });
