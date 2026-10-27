@@ -60,7 +60,7 @@ def main():
                 ' try { return await p.read(); } finally { await p.close(); }'
     })["structuredContent"]["value"]
     eligibility = re.search(r"Signin\.SigninAllowed recorded (\d+) samples, mean = ([\d.]+)", page)
-    # Known Neo 0.51.2.3 failure, accepted (BROWSER.md) → recorded, not raised: the checks below still run.
+    # Recorded, not raised: a sign-in failure leaves the sections below still worth running.
     failures = []
     if (eligibility and int(eligibility[1]) > 0 and float(eligibility[2]) == 1.0
             and json.loads((profile / "Default/Preferences").read_text())["signin"]["allowed"]):
