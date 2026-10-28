@@ -1,6 +1,6 @@
 # Iterate
 
-Use: `Phase` = `ITERATE`, or a scope opening directly at ITERATE. Fresh session at the project root + advisor off (README `Advisor`) → paste everything below the rule; it runs until your go.
+Use: `Phase` = `ITERATE`, or a scope opening directly at ITERATE. Fresh session at the project root → paste everything below the rule; it runs until your go.
 
 ---
 

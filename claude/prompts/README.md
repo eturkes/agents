@@ -92,8 +92,6 @@ When you resume a session, put `--advisor claude-fable-5-1` on that command too.
 
 In IMPLEMENT and MAINTAIN, the agent consults the advisor whenever Fable can improve the result: your intent, design and taste, naming and wording, its plan before it starts, a problem after a failed attempt, and its work before it finishes. For deep work, it also consults the advisor on the contract of each unit and before each commit. In IMPLEMENT, it also consults the advisor on decisions that are costly to reverse, after the teammates report.
 
-Start PROTOTYPE and ITERATE sessions without the advisor. For a decision that needs Fable, resume the session with the flag.
-
 ## Fable as MAIN
 
 To run Fable 5.1 as the main agent, start the session with the Fable profile and the `--model` flag. Replace `<level>` as for an Opus session.

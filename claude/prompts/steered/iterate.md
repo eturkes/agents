@@ -1,6 +1,6 @@
 # Iterate
 
-Use: `Phase` = `ITERATE`, or a scope opening directly at ITERATE. Fresh session at the project root + advisor off (README `Advisor`); `<request>` → your feedback or steering → paste everything below the rule. One round per message: the feedback lands in the prototype, then the session stops; next round = a new message; your go closes ITERATE.
+Use: `Phase` = `ITERATE`, or a scope opening directly at ITERATE. Fresh session at the project root; `<request>` → your feedback or steering → paste everything below the rule. One round per message: the feedback lands in the prototype, then the session stops; next round = a new message; your go closes ITERATE.
 
 ---
 
