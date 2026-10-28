@@ -37,7 +37,7 @@ export const register: Register = on => {
     const id = r.agentId
     if (id !== undefined && model === NUDGED_MODEL) await update($, pending, m => ({ ...m, [id]: true as const }))
     return r
-  }).catch((_$, e, next) => (next.called ? next(e) : { deny: 'agent-lanes failed before routing ⇒ refused rather than run on an unrouted (Claude) model.' }))
+  }).catch((_$, e, next) => (next.called ? next(e) : { deny: 'agent-lanes failed before routing ⇒ spawn refused (it would run unrouted); retry the call.' }))
   // tool.call + SubagentStop fail open: agent.spawn still routes, and a missed nudge costs one stop check.
 
   on('classic.SubagentStop', async ($, e, next) => {
