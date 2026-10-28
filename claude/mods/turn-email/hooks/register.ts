@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import { RESPONSE_MAX, SEND, WAITING, WAKES, compose, mailable, questionsText, typedPrompt } from './mail'
+import { BUSY_AGENTS, BUSY_TASKS, RESPONSE_MAX, SEND, WAITING, WAKES, compose, mailable, questionsText, typedPrompt } from './mail'
 import type { Mail, Question } from './mail'
 
 const KEEP_MS = 7 * 24 * 3_600_000
@@ -13,7 +13,7 @@ let cwd = ''
 let transcript = '?'
 let mainOutput = 0
 let asking: readonly Question[] | undefined
-// The running main turn: its prompts' origins + whether its Stop saw work in flight (teammates, background shells, wakeups).
+// The running main turn: its prompts' origins + whether its Stop saw work in flight (working agents, background shells, wakeups).
 let origins = new Set<string>()
 let idle = true
 
@@ -112,10 +112,11 @@ export const register: Register = on => {
     return r
   })
 
-  on('classic.Stop', (_$, e, next) => {
+  on('classic.Stop', async ($, e, next) => {
     if (e.agent_id === undefined) {
       note(e)
-      idle = !e.background_tasks?.length && !e.session_crons?.length
+      idle = !e.session_crons?.length && !e.background_tasks?.some(t => BUSY_TASKS.has(t.type)) &&
+        !(await $.agent.list()).some(a => BUSY_AGENTS.has(a.status))
     }
     return next(e)
   })

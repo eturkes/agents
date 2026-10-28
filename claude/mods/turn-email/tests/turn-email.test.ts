@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import type { On, SessionMessage } from 'claude-code'
+import type { AgentInfo, On, SessionMessage } from 'claude-code'
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 function unbase64(s: string): string {
@@ -22,10 +22,10 @@ function parse(mail: string, argv: readonly string[]): Sent {
   return { subject, body: unbase64(rest), headers, argv }
 }
 
-type World = { sent: Sent[]; gate?: Promise<void>; store: Map<string, unknown>; history: SessionMessage[] }
+type World = { sent: Sent[]; gate?: Promise<void>; store: Map<string, unknown>; history: SessionMessage[]; agents: AgentInfo[] }
 
 function world(on: On, store: Record<string, unknown> = {}): World {
-  const w: World = { sent: [], store: new Map(Object.entries(store)), history: [] }
+  const w: World = { sent: [], store: new Map(Object.entries(store)), history: [], agents: [] }
   mock.clock(on, { now: Date.UTC(2026, 9, 5, 9, 30) })
   on('store.get', (_$, e) => ({ value: w.store.get(e.key) }))
   on('store.set', (_$, e) => (w.store.set(e.key, e.value), { value: undefined }))
@@ -35,6 +35,7 @@ function world(on: On, store: Record<string, unknown> = {}): World {
   on('session.id', () => ({ value: 's1' }))
   on('session.cwd', () => ({ value: '/tmp/proj' }))
   on('session.messages', () => ({ value: w.history }))
+  on('agent.list', () => ({ value: w.agents }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { tokens: 41_500, window: 1_000_000 }, rateLimits: [] } }))
   on('process.run', (_$, e) => {
     w.sent.push(parse(e.init?.stdin ?? '', e.argv))
@@ -57,20 +58,23 @@ function world(on: On, store: Record<string, unknown> = {}): World {
   return w
 }
 
-type TurnOpts = { reason?: string; agentId?: string; kind?: string; inFlight?: boolean }
+type TurnOpts = { reason?: string; agentId?: string; kind?: string; tasks?: readonly string[]; crons?: number }
 
-/** One main turn: `kind` = its prompt's origin; `inFlight` = a teammate still running at Stop. */
-async function turn($: Engine, prompt: string, answer: string, { reason = 'answer', agentId, kind = 'composer', inFlight }: TurnOpts = {}): Promise<void> {
+/** One main turn: `kind` = its prompt's origin; `tasks` = Stop's background task labels; `crons` = scheduled wakes. */
+async function turn($: Engine, prompt: string, answer: string, { reason = 'answer', agentId, kind = 'composer', tasks = [], crons = 0 }: TurnOpts = {}): Promise<void> {
   await $.prompt.submit({ text: prompt, wait: false, origin: { kind } } as never)
   await human($, 'prompt', prompt, undefined, kind === 'composer' ? 'human' : kind)
   await $.turn.start({ text: prompt, turnId: 't' })
   for await (const c of $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', effort: 'xhigh', messageCount: 1 } as never)) void c
-  const background_tasks = inFlight ? [{ id: 'a1', type: 'in_process_teammate', status: 'running', description: 'reviewer-1' }] : []
+  const background_tasks = tasks.map((type, i) => ({ id: `x${i}`, type, status: 'running', description: type }))
+  const session_crons = Array.from({ length: crons }, (_, i) => ({ id: `c${i}`, schedule: '*/5 * * * *', recurring: false, prompt: 'check' }))
   await $.classic.Stop({ stop_hook_active: false, last_assistant_message: answer, permission_mode: 'bypassPermissions',
-    cwd: '/tmp/proj', transcript_path: '/t/s1.jsonl', background_tasks, session_crons: [] } as never)
+    cwd: '/tmp/proj', transcript_path: '/t/s1.jsonl', background_tasks, session_crons } as never)
   await $.turn.complete({ answer, durationMs: 1, isAborted: reason === 'aborted', turnId: 't', reason, agentId,
     usage: { input_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 1, model: 'claude-opus-5-5' } } as never)
 }
+/** A teammate in `$.agent.list()`: `idle` once its turn ended, until a message wakes it. */
+const teammate = (status: AgentInfo['status']): AgentInfo => ({ id: 'a1', description: 'reviewer-1', type: 'teammate', status })
 const question = { header: 'Scope', question: 'Ship it?', multiSelect: false,
   options: [{ label: 'Yes', description: 'go' }, { label: 'No', description: 'stop' }] }
 const notify = ($: Engine, message: string) =>
@@ -191,20 +195,42 @@ test('a session resumed before the mod knew it falls back to the last human row'
   expect(w.sent[0]!.subject).toBe('[cc] proj #1 — Original task')
 })
 
-test('wake-started turns mail only once nothing is in flight, under the last typed prompt', async ($, on) => {
+test('a turn ending on work in flight sends nothing, whatever started it', async ($, on) => {
   const w = world(on)
-  await turn($, 'Dispatch the reviewers', 'Dispatched.', { inFlight: true })
-  await turn($, '<task-notification>\n<task-id>b1</task-id>', 'Shell done.', { kind: 'task-notification', inFlight: true })
-  await turn($, 'Another Claude session sent a message: <teammate-message teammate_id="r1">', 'r1 idle.', { kind: 'unclassified', inFlight: true })
-  expect(w.sent.map(m => m.subject)).toEqual(['[cc] proj #1 — Dispatch the reviewers'])
-  await turn($, '<agent-message from="reviewer-1">verdicts ready</agent-message>', 'Run complete.', { kind: 'peer' })
-  expect(w.sent[1]!.subject).toBe('[cc] proj #2 — Dispatch the reviewers')
-  expect(w.sent[1]!.body).toContain('Run complete.')
+  for (const type of ['shell', 'subagent', 'workflow', 'cloud session']) await turn($, `Wait on a ${type}`, 'Waiting.', { tasks: [type] })
+  for (const status of ['pending', 'running', 'waiting'] as const) {
+    w.agents = [teammate(status)]
+    await turn($, `Wait on a ${status} teammate`, 'Waiting.', { tasks: ['teammate'] })
+  }
+  w.agents = []
+  await turn($, 'Check back in five', 'Scheduled.', { crons: 1 })
+  expect(w.sent).toEqual([])
+})
+
+test('idle and ended agents + MCP monitors leave the session idle: its turn mails', async ($, on) => {
+  const w = world(on)
+  w.agents = [teammate('idle'), { ...teammate('completed'), id: 'a2' }]
+  await turn($, 'Report', 'Reviewers done.', { tasks: ['teammate', 'monitor'] })
+  expect(w.sent.map(m => m.subject)).toEqual(['[cc] proj #1 — Report'])
+})
+
+test('a run mails once its last work ends, under the last typed prompt', async ($, on) => {
+  const w = world(on)
+  w.agents = [teammate('running')]
+  await turn($, 'Dispatch the reviewers', 'Dispatched.', { tasks: ['teammate', 'shell'] })
+  await turn($, '<task-notification>\n<task-id>b1</task-id>', 'Shell done.', { kind: 'task-notification', tasks: ['teammate'] })
+  await turn($, 'Status?', 'r1 still running.', { tasks: ['teammate'] })
+  await turn($, 'Another Claude session sent a message: <teammate-message teammate_id="r1">', 'r1 replied.', { kind: 'unclassified', tasks: ['teammate'] })
+  expect(w.sent).toEqual([])
+  w.agents = [teammate('idle')]
+  await turn($, '<agent-message from="reviewer-1">verdicts ready</agent-message>', 'Run complete.', { kind: 'peer', tasks: ['teammate'] })
+  expect(w.sent.map(m => m.subject)).toEqual(['[cc] proj #1 — Status?'])
+  expect(w.sent[0]!.body).toContain('Run complete.')
 })
 
 test('a prompt typed into a wake-started turn mails it', async ($, on) => {
   const w = world(on)
-  await turn($, '<task-notification>', 'Noted.', { kind: 'task-notification', inFlight: true })
+  await turn($, '<task-notification>', 'Noted.', { kind: 'task-notification', tasks: ['shell'] })
   expect(w.sent).toEqual([])
   await $.prompt.submit({ text: 'Status?', wait: false, origin: { kind: 'task-notification' } } as never)
   await $.prompt.submit({ text: 'Status?', wait: false, turnId: 't', origin: { kind: 'composer' } } as never)

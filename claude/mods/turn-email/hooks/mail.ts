@@ -8,10 +8,15 @@ export const WAKES = new Set([
   'coordinator', 'observer', 'observer-activity', 'unclassified', 'plugin',
 ])
 
-/** Typed prompt → mail; `claude -p`/SDK → never; wakes alone or no prompt → only once nothing is in flight. */
+// In flight = CC's own busy/shell session status (emachine's Working) + a scheduled wake: Stop `background_tasks`
+// labels for a shell (Monitor included), subagent, workflow or cloud session; agent loops by `$.agent.list()`
+// status, where a teammate waiting on a message reads `idle` (Stop lists it as running).
+export const BUSY_TASKS = new Set(['shell', 'subagent', 'workflow', 'cloud session'])
+export const BUSY_AGENTS = new Set(['pending', 'running', 'waiting'])
+
+/** Mail only once nothing is in flight; `claude -p`/SDK → never, unless a typed prompt joined the turn. */
 export function mailable(origins: ReadonlySet<string>, idle: boolean): boolean {
-  if ([...origins].some(k => k !== 'sdk' && !WAKES.has(k))) return true
-  return !origins.has('sdk') && idle
+  return idle && (!origins.has('sdk') || [...origins].some(k => k !== 'sdk' && !WAKES.has(k)))
 }
 
 // Transcript rows that read as user text yet carry no typed prompt: compaction summaries + wake deliveries.
