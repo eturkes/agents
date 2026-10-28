@@ -1,16 +1,27 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import type { Lane } from './lanes'
-import { DEFAULT_MODEL, LANES, NUDGE, NUDGED_MODEL, REFUSED, ROLE_LANES, describeLanes, refusal } from './lanes'
+import { DEFAULT_MODEL, EARLY_PHASE, LANES, NUDGE, NUDGED_MODEL, REFUSED, ROLE_LANES, describeLanes, phaseLine, refusal } from './lanes'
 
 // Agent ids routed to terra whose first stop has not been sent back; kept across mod reloads + resumes.
 const pending = atom({ plugin: 'agent-lanes', key: 'nudge' } as const, {})
 
-/** The lane a call's alias names, else its role's; undefined = the default lane. */
-function laneOf(alias: string | undefined, role: string | undefined): Lane | undefined {
+/** The session's project in PROTOTYPE or ITERATE; no readable spec → false (routing stays GPT either way). */
+async function earlyPhase($: EngineInterface): Promise<boolean> {
+  try {
+    const spec = `${await $.session.cwd()}/.agent/spec.md`
+    return (await $.fs.exists(spec)) && EARLY_PHASE.test(phaseLine(String(await $.fs.read(spec))) ?? '')
+  } catch {
+    return false
+  }
+}
+
+/** The lane a call's alias names, else its role's; undefined = the default lane, which a lateOnly lane takes early. */
+async function routedLane($: EngineInterface, alias: string | undefined, role: string | undefined): Promise<Lane | undefined> {
   const name = alias ?? (role === undefined ? undefined : ROLE_LANES[role])
-  return name === undefined ? undefined : LANES[name]
+  const lane = name === undefined ? undefined : LANES[name]
+  return lane?.lateOnly && (await earlyPhase($)) ? undefined : lane
 }
 
 /** A GPT id passes as given (a workflow's or plugin's pick); any other model the lanes don't name is refused. */
@@ -20,11 +31,11 @@ export const register: Register = on => {
   on('tool.describe', { tool: 'Agent' }, (_$, e, next) => next({ ...e, description: `${e.description}\n\n${describeLanes()}` }))
 
   // The Agent schema built with SUBAGENT_MODEL_FORCE off carries `model`; the generated types may predate it.
-  on('tool.call', { tool: 'Agent' }, (_$, e, next) => {
+  on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     if (e.tool !== 'Agent' || e.subagent_type === 'fork') return next(e)
     const alias = (e as { model?: string }).model
     if (alias === REFUSED) return { deny: refusal(alias) }
-    const lane = laneOf(alias, e.subagent_type)
+    const lane = await routedLane($, alias, e.subagent_type)
     return lane?.effort !== undefined && e.effort === undefined ? next({ ...e, effort: lane.effort }) : next(e)
   })
 
@@ -32,7 +43,7 @@ export const register: Register = on => {
     if (e.fork || e.resume !== undefined) return next(e)
     if (e.model !== undefined && LANES[e.model] === undefined && !isGpt(e.model)) return { deny: refusal(e.model) }
     const pin = (await $.env.get('CLAUDE_CODE_SUBAGENT_MODEL'))?.trim()
-    const model = e.model !== undefined && isGpt(e.model) ? e.model : laneOf(e.model, e.subagentType)?.model ?? (pin || DEFAULT_MODEL)
+    const model = e.model !== undefined && isGpt(e.model) ? e.model : (await routedLane($, e.model, e.subagentType))?.model ?? (pin || DEFAULT_MODEL)
     const r = await next({ ...e, model })
     const id = r.agentId
     if (id !== undefined && model === NUDGED_MODEL) await update($, pending, m => ({ ...m, [id]: true as const }))

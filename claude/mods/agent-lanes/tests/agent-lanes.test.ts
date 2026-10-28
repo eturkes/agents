@@ -2,13 +2,16 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { DEFAULT_MODEL, NUDGE, describeLanes, refusal } from '../hooks/lanes'
+import { DEFAULT_MODEL, EARLY_PHASE, NUDGE, describeLanes, phaseLine, refusal } from '../hooks/lanes'
 
 type World = { spawned: { model?: string; subagentType: string; name?: string }[]; calls: Record<string, unknown>[] }
 
-function world(on: On, env: Record<string, string> = {}): World {
+function world(on: On, env: Record<string, string> = {}, spec?: string): World {
   const w: World = { spawned: [], calls: [] }
   mock.env(on, env)
+  on('session.cwd', () => ({ value: '/w' }))
+  on('fs.exists', (_$, e) => ({ value: spec !== undefined && e.path === '/w/.agent/spec.md' }))
+  on('fs.read', () => ({ value: spec ?? '' }))
   on('agent.spawn', (_$, e) => {
     w.spawned.push({ model: e.model, subagentType: e.subagentType, name: e.name })
     return { model: e.model ?? 'parent', agentId: `id-${e.name ?? w.spawned.length}` }
@@ -97,4 +100,33 @@ test('a stop already re-prompted by a hook is not sent back', async ($, on) => {
   await spawn($, 'researcher', 'haiku', 'researcher-1')
   expect(await stop($, 'id-researcher-1', true)).toEqual({})
   expect(await stop($, 'id-researcher-1')).toEqual({ block: NUDGE })
+})
+
+const spec = (phase: string) => `## Intent\n\nx\n\n## Phase\n\n${phase}\n> request\n`
+
+test('phaseLine reads the first non-blank Phase line past a BOM + fenced blocks', () => {
+  expect(phaseLine(`\uFEFF${spec('PROTOTYPE — ui')}`)).toBe('PROTOTYPE — ui')
+  expect(phaseLine('## Phase\n```\n## Phase\nITERATE — x\n```\nIMPLEMENT — core\r\n')).toBe('IMPLEMENT — core')
+  expect(phaseLine('## Intent\nPROTOTYPE — ui\n')).toBeUndefined()
+  expect(['PROTOTYPE — ui', 'Phase: ITERATE — x', 'IMPLEMENT — core', 'ITERATE —'].map(l => EARLY_PHASE.test(l))).toEqual([true, true, false, false])
+})
+
+test('PROTOTYPE + ITERATE route opus + scientist to the default lane at session effort', async ($, on) => {
+  const w = world(on, {}, spec('Phase: ITERATE — ui'))
+  await spawn($, 'general-purpose', 'opus')
+  await spawn($, 'scientist')
+  await spawn($, 'operator')
+  await agentCall($, { model: 'opus' })
+  await agentCall($, { subagent_type: 'scientist' })
+  await agentCall($, { model: 'haiku' })
+  expect(w.spawned.map(s => s.model)).toEqual([DEFAULT_MODEL, DEFAULT_MODEL, 'gpt-6.1-terra'])
+  expect(w.calls.map(c => c.effort)).toEqual([undefined, undefined, 'medium'])
+})
+
+test('IMPLEMENT keeps astra at max', async ($, on) => {
+  const w = world(on, {}, spec('IMPLEMENT — core'))
+  await spawn($, 'scientist')
+  await agentCall($, { model: 'opus' })
+  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6-astra'])
+  expect(w.calls.map(c => c.effort)).toEqual(['max'])
 })
