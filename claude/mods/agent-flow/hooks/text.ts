@@ -63,6 +63,6 @@ export function agentEntries(list: readonly AgentInfo[], agents: Readonly<Record
       const a = agents[x.id]
       const used = a?.used
       const gauge = used === undefined ? `? ?/${human(at)}` : `${Math.round((used * 100) / at)}% ${human(used)}/${human(at)}`
-      return [x.name ?? a?.name ?? x.description, a?.model, gauge].filter(Boolean).join(' ')
+      return [x.name ?? a?.name ?? x.description, a?.model, a?.effort, gauge].filter(Boolean).join(' ')
     })
 }

@@ -115,7 +115,7 @@ export const register: Register = on => {
   on('turn.step', async function* ($, e, next) {
     if (e.agentId === undefined) return yield* next(e)
     const id = e.agentId
-    await patch($, id, a => ({ ...a, inTurn: true, model: a.model ?? e.model }))
+    await patch($, id, a => ({ ...a, inTurn: true, model: a.model ?? e.model, effort: e.effort === undefined ? a.effort : String(e.effort) }))
     const r = yield* next(e)
     if (r.usage) {
       const used = total(r.usage)

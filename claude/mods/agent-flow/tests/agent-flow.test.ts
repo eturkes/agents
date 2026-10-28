@@ -94,8 +94,8 @@ async function tell($: Engine, agentId: string, text: string): Promise<void> {
     if (!String(err).includes('no implementation for session.append')) throw err
   })
 }
-async function step($: Engine, agentId: string): Promise<void> {
-  for await (const chunk of $.turn.step({ turnId: 't', index: 0, model: 'm', messageCount: 1, agentId } as never)) void chunk
+async function step($: Engine, agentId: string, effort: string | null = 'xhigh'): Promise<void> {
+  for await (const chunk of $.turn.step({ turnId: 't', index: 0, model: 'm', effort: effort ?? undefined, messageCount: 1, agentId } as never)) void chunk
 }
 const call = ($: Engine, agentId: string, input: Record<string, unknown>) => $.tool.call({ ...input, agentId } as never)
 const done = ($: Engine, agentId: string) => $.turn.complete({ answer: 'finished', durationMs: 1, isAborted: false, turnId: 't', agentId, reason: 'answer' } as never)
@@ -240,7 +240,7 @@ test('TaskStop passes for an ended turn, a quiet teammate and an unknown task', 
 })
 
 for (const surface of SURFACES) {
-  test(`agent line on ${surface}: under the engine's hint, each running agent's model against the compaction trigger`, async ($, on) => {
+  test(`agent line on ${surface}: under the engine's hint, each running agent's model + effort against the compaction trigger`, async ($, on) => {
     const w = world(on)
     const a = await spawn($, 'rev-1')
     const b = await spawn($, 'res-2')
@@ -251,21 +251,28 @@ for (const surface of SURFACES) {
     const ui = await hint($, surface)
     expect(await shown(ui)).toBe('engine')
     expect(await ui.find({ type: 'Box', text: /^rev-1/ })).toMatchObject({ props: { flexWrap: 'wrap', columnGap: 1 } })
-    expect(await entries(ui)).toEqual(['rev-1 gpt-6-luna 50% 136K/272K ·', 'res-2 gpt-6-luna 50% 136K/272K ·', 'desc id-new ? ?/272K'])
+    expect(await entries(ui)).toEqual(['rev-1 gpt-6-luna xhigh 50% 136K/272K ·', 'res-2 gpt-6-luna xhigh 50% 136K/272K ·', 'desc id-new ? ?/272K'])
   })
 }
 
-test('a mounted agent line follows usage and the answering model without a remount', async ($, on) => {
+test('a mounted agent line follows usage, the answering model + the request effort without a remount', async ($, on) => {
   const w = world(on)
   w.agents = [running('tm-1', 'rev-1')]
   const ui = await hint($)
   expect(await entries(ui)).toEqual(['rev-1 ? ?/272K'])
   await step($, 'tm-1')
-  expect(await entries(ui)).toEqual(['rev-1 gpt-6-luna 50% 136K/272K'])
+  expect(await entries(ui)).toEqual(['rev-1 gpt-6-luna xhigh 50% 136K/272K'])
   w.used = 250_240
   w.model = ''
-  await step($, 'tm-1')
-  expect(await entries(ui)).toEqual(['rev-1 m 92% 250K/272K'])
+  await step($, 'tm-1', 'max')
+  expect(await entries(ui)).toEqual(['rev-1 m max 92% 250K/272K'])
+})
+
+test('a request without an effort leaves the slot out', async ($, on) => {
+  world(on).agents = [running('tm-1', 'rev-1')]
+  const ui = await hint($)
+  await step($, 'tm-1', null)
+  expect(await entries(ui)).toEqual(['rev-1 gpt-6-luna 50% 136K/272K'])
 })
 
 test('agent line yields to the engine with no running agent', async ($, on) => {
@@ -286,7 +293,7 @@ test('agent line drops a finished agent on the next list poll with no record wri
   await step($, id)
   w.agents = [running(id, 'rev-1')]
   const ui = await hint($)
-  expect(await entries(ui)).toEqual(['rev-1 gpt-6-luna 50% 136K/272K'])
+  expect(await entries(ui)).toEqual(['rev-1 gpt-6-luna xhigh 50% 136K/272K'])
   w.agents = [{ ...running(id, 'rev-1'), status: 'completed' }]
   await w.clock.advance(5_000)
   expect(await entries(ui)).toEqual([])

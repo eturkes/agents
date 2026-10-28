@@ -4,10 +4,10 @@ import type { On } from 'claude-code'
 
 import { DEFAULT_MODEL, EARLY_PHASE, NUDGE, describeLanes, phaseLine, refusal } from '../hooks/lanes'
 
-type World = { spawned: { model?: string; subagentType: string; name?: string }[]; calls: Record<string, unknown>[] }
+type World = { spawned: { model?: string; subagentType: string; name?: string }[]; calls: Record<string, unknown>[]; steps: unknown[] }
 
 function world(on: On, env: Record<string, string> = {}, spec?: string): World {
-  const w: World = { spawned: [], calls: [] }
+  const w: World = { spawned: [], calls: [], steps: [] }
   mock.env(on, env)
   on('session.cwd', () => ({ value: '/w' }))
   on('fs.exists', (_$, e) => ({ value: spec !== undefined && e.path === '/w/.agent/spec.md' }))
@@ -22,6 +22,11 @@ function world(on: On, env: Record<string, string> = {}, spec?: string): World {
   })
   on('tool.describe', (_$, e) => ({ description: e.description }))
   on('classic.SubagentStop', () => ({}))
+  on('turn.step', async function* (_$, e) {
+    w.steps.push(e.effort)
+    const usage = { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0, model: e.model }
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage }
+  })
   return w
 }
 
@@ -129,4 +134,20 @@ test('IMPLEMENT keeps astra at max', async ($, on) => {
   await agentCall($, { model: 'opus' })
   expect(w.spawned.map(s => s.model)).toEqual(['gpt-6-astra'])
   expect(w.calls.map(c => c.effort)).toEqual(['max'])
+})
+
+async function step($: Engine, agentId: string | undefined, effort = 'xhigh'): Promise<void> {
+  for await (const chunk of $.turn.step({ turnId: 't', index: 0, model: 'm', effort, messageCount: 1, agentId } as never)) void chunk
+}
+
+test('each agent runs every request at its call effort: lane fill, explicit outranks lane, none → session', async ($, on) => {
+  const w = world(on)
+  await agentCall($, { model: 'haiku', name: 'swarm-1', tool_use_id: 'c1' })
+  await spawn($, 'researcher', 'haiku', 'swarm-1', { tool_use_id: 'c1' })
+  await agentCall($, { model: 'haiku', effort: 'high', name: 'swarm-2', tool_use_id: 'c2' })
+  await spawn($, 'researcher', 'haiku', 'swarm-2', { tool_use_id: 'c2' })
+  await agentCall($, { name: 'rev-1', tool_use_id: 'c3' })
+  await spawn($, 'reviewer', undefined, 'rev-1', { tool_use_id: 'c3' })
+  for (const id of ['id-swarm-1', 'id-swarm-1', 'id-swarm-2', 'id-rev-1', undefined]) await step($, id)
+  expect(w.steps).toEqual(['medium', 'medium', 'high', 'xhigh', 'xhigh'])
 })
