@@ -15,6 +15,8 @@ Start each fresh session with this command. Replace `<level>` with the effort le
 claude --effort <level>
 ```
 
+In IMPLEMENT and MAINTAIN, also turn on the advisor (`Advisor`).
+
 The `agent-lanes` mod chooses the GPT model for each teammate. GPT-6.1 Sol is the default and does all code work. The agent picks GPT-6.1 Terra for visual work, computer use, technical writing and information-gathering fan-outs, and GPT-6 Astra for research-level reasoning. To replace the default Sol with another GPT model for one session, put `CLAUDE_CODE_SUBAGENT_MODEL=<gpt-model>` in front of the command. The other lanes keep their models. The main model and the effort level come from the command line. Without other flags, the session runs Opus 5.5 with a 1M context window at `medium` effort. To change the effort level, use only the `--effort` flag. This also applies when you resume a session. The `/effort` command writes the level into `settings.json`, and then the file differs from this repository. Choose the effort level for the phase:
 
 - In PROTOTYPE and ITERATE, the agent coordinates, and teammates build the artifacts, components and variants in parallel. Testing and research stay at the minimum that keeps the prototype running. Teammates also research questions about the domain of your product. While the work goes on, a teammate keeps checking the newest commit from a fresh clone: ignore rules, layout, required files, and that each artifact runs. Before the agent shows you work, another teammate checks it against your `Intent` and your rulings. It reports drift, features that nobody asked for, and open questions for you. Choose the `medium` effort level, because at `low` the teammates that operate apps and browsers make more errors. For each design choice that shapes a whole surface, such as the UI, these phases build at least ten conventional variants and at least five unconventional variants, each from a different idea. A teammate runs each variant and takes its screenshot. You see all variants on one contact sheet, together with a shortlist from the agent. You pick one variant or combine them.
@@ -25,8 +27,8 @@ The `agent-lanes` mod chooses the GPT model for each teammate. GPT-6.1 Sol is th
 | --- | --- | --- |
 | Start PROTOTYPE | `prototype.md` | Write your `Intent` in `.agent/spec.md` first. A new repository also needs the template files (`Template files`). In a shipped repository, also name the scope in `Phase`. After a route, `Phase` already names it. |
 | Start ITERATE | `iterate.md` | When PROTOTYPE closes or after a route, paste it. With `auto/`, the session runs until you say go. With `steered/`, it works your feedback into the prototype as one round. |
-| Start IMPLEMENT | `implement.md` | After you say go or after a route, turn on the advisor. Then paste it. It can also open a new scope directly at IMPLEMENT. |
-| MAINTAIN | `maintain.md` | Paste one body per request, bug report, queue run, code review, security review or dependency upgrade. |
+| Start IMPLEMENT | `implement.md` | After you say go or after a route, start a session with the advisor (`Advisor`). Then paste it. It can also open a new scope directly at IMPLEMENT. |
+| MAINTAIN | `maintain.md` | Start a session with the advisor (`Advisor`). Paste one body per request, bug report, queue run, code review, security review or dependency upgrade. |
 | Move work to another phase | `route.md` | Make your request in any session, or paste this body after it. |
 | Continue open work in any phase | `resume.md` | Paste in a fresh session after a pause, a crash or a restart. |
 | Stop now and continue later | `pause-now.md` | Paste into the running session. In-flight work stops, and the repository stays consistent. |
@@ -80,14 +82,17 @@ Run `copy-template` before you paste `refresh.md`. The refresh session compares 
 
 ## Advisor
 
-The advisor lets the agent consult Fable 5.1 while it works. Each consultation uses part of your Fable usage limit. The advisor is off until you turn it on.
+The advisor lets the agent consult Fable 5.1 while it works. Each consultation uses part of your Fable usage limit. To turn on the advisor, start the session with this command. The footer then shows `◆ adv`.
 
-For deep work in IMPLEMENT and MAINTAIN, the agent consults the advisor often, for example on the contract of each unit and before each commit. In IMPLEMENT, the agent also consults the advisor on decisions that are costly to reverse, after the teammates report. For other work in these phases, a consultation occurs only when a decision needs Fable. Keep the advisor off in PROTOTYPE and ITERATE. If it is on from an earlier session, send `/advisor off` before you paste the body.
+```sh
+CLAUDE_CODE_FOOTER_INDICATOR=adv claude --advisor claude-fable-5-1 --effort <level>
+```
 
-- To use the advisor for one session, add `--advisor claude-fable-5-1` to the start command. Put `CLAUDE_CODE_FOOTER_INDICATOR=adv` in front of the command. The footer then shows `◆ adv`.
-- To turn on the advisor from inside a session, send `/advisor claude-fable-5-1` as a message of its own. Then paste the body in a new message. This setting also applies to new sessions until you send `/advisor off`.
+When you resume a session, put `--advisor claude-fable-5-1` on that command too. To add the advisor to a running session, end the session and resume it with the flag.
 
-Claude Code reads a whole message that starts with `/advisor` as the advisor model name. Thus, a body in the same message does not get to the agent.
+In IMPLEMENT and MAINTAIN, the agent consults the advisor whenever Fable can improve the result: your intent, design and taste, naming and wording, its plan before it starts, a problem after a failed attempt, and its work before it finishes. For deep work, it also consults the advisor on the contract of each unit and before each commit. In IMPLEMENT, it also consults the advisor on decisions that are costly to reverse, after the teammates report.
+
+Start PROTOTYPE and ITERATE sessions without the advisor. For a decision that needs Fable, resume the session with the flag.
 
 ## Fable as MAIN
 
@@ -99,7 +104,7 @@ CLAUDE_CONFIG_DIR=$HOME/.claude/fable claude --model claude-fable-5-1 --effort <
 
 With `CLAUDE_CONFIG_DIR`, Claude Code reads its global `CLAUDE.md` from `~/.claude/fable`. The other entries in that folder link into `~/.claude`, so Fable and Opus sessions share settings, transcripts, history, MCP servers, plugins and mods. The Fable `CLAUDE.md` is the Opus `CLAUDE.md` with model-specific changes. It replaces the prompts from the Opus 5.5 prompting guide with prompts from the Fable 5.1 prompting guide, and it compares the teammates with Fable instead of Opus.
 
-A Fable session has no advisor. Skip the advisor steps in this README and in the prompt headers.
+A Fable session has no advisor, so its command leaves out `--advisor`.
 
 To deploy or update the profile, run these commands from the repository root. Replace `<host>` with `cachyos` or `aeon`.
 

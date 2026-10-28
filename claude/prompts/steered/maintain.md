@@ -1,6 +1,6 @@
 # Maintain
 
-Use: `Phase` = `MAINTAIN`. Fresh session at the project root; `<request>` → your request (`Code review`: a bug report or a review scope), or `<rows>` → `.agent/deferred.md` row names → paste one body = the text between its two rules. Every row, or the sequence after an IMPLEMENT close → `auto/maintain.md`.
+Use: `Phase` = `MAINTAIN`. Fresh session at the project root + advisor on (README `Advisor`); `<request>` → your request (`Code review`: a bug report or a review scope), or `<rows>` → `.agent/deferred.md` row names → paste one body = the text between its two rules. Every row, or the sequence after an IMPLEMENT close → `auto/maintain.md`.
 
 ## Request
 
