@@ -90,7 +90,7 @@ Checks = `bash -n host/cachyos/cli-proxy-api-patch`, `shellcheck host/cachyos/cl
 - `sonicde-meta` requires `sonic-dr-robotnik`; retain that dormant package to preserve desktop dependencies.
 - `KCRASH_DUMP_ONLY=1` + `KCRASH_NO_METADATA=1` persist in `~/.config/environment.d/90-agent-crash.conf`; activation environments receive the same values.
 - Future user-manager/D-Bus launches inherit dump-only mode; existing processes + direct descendants retain their environment. Unit masks act immediately. Preserve existing crash data.
-- Native `systemd-coredump`, `coredumpctl`, journal + GDB remain available; use these agent diagnostics instead of interactive crash reporting.
+- Native `systemd-coredump`, `coredumpctl`, journal + GDB remain available; use these agent diagnostics.
 - `agent-crash-policy check` checks masks, inactive/clear service state, persistent/live settings, native collector routing + diagnostic executables.
 - Static checks = `bash -n host/cachyos/agent-crash-policy` + `shellcheck host/cachyos/agent-crash-policy`; repeat apply must preserve mask targets + configuration bytes.
 - Pickup timeout cause = journal end leaves its watcher active; no report → `RuntimeMaxSec=30 minutes` expires. [Processor](https://github.com/Sonic-DE/sonic-dr-robotnik/blob/6.7.5/src/coredump/processor/main.cpp), [watcher](https://github.com/Sonic-DE/sonic-dr-robotnik/blob/6.7.5/src/coredump/coredumpwatcher.cpp).

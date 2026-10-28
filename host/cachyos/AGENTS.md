@@ -3,7 +3,7 @@
 - Workflow → `MAINTENANCE.md`; one package-manager owner; preserve existing upgrade gates.
 - Recipes = `agent-desktop`, `agent-crash-policy`, `lid-policy`, `ac-loss-policy`, `intel-graphics-policy`, `normalize-dns`, `cache-retention`, `prune-desktop`, `kernel-recovery`, `cli-proxy-api-patch`, `zram-policy`, `journal-policy`.
 - Host use = agents only. Crash diagnostics = native core dumps + journal + GDB; DrKonqi GUI/reporting stays dormant via `./agent-crash-policy apply`.
-- Browsers = BrowserOS for the user, Neo for agents; preserve both profiles. Profile/PSD/cache + launchers + verification → `BROWSER.md`.
+- Preserve both browser profiles; profile/PSD/cache + launchers + verification → `BROWSER.md`.
 - Neo + ChatGPT recovery policy/replay/checks → `MAINTENANCE.md#desktop-recovery`.
 - Package protection → `prune-desktop` policy; preserve project runtimes + user app data.
 - Host checks, cwd=this directory → `./agent-desktop check`, `./agent-crash-policy check`, `./lid-policy check`, `./zram-policy check`, `./journal-policy check`, `sudo -n ./kernel-recovery check`, `python ./check-kernel-recovery`.

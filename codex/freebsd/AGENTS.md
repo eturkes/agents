@@ -1,7 +1,7 @@
 # Codex
 
 - Runtime = Codex + GPT only; plain `codex --yolo` from repo root; instructions = `~/.codex/AGENTS.md` + `~/.codex/config.toml` + applicable repo `AGENTS.md`.
-- Verbosity = low; personality/reasoning-summary/raw-reasoning display = off; Apps = disabled.
+- Verbosity = low.
 - Filesystem = launch dir + user-scoped targets; task-serving file + Codex configuration changes = in scope.
 - Edits to `~/.codex/AGENTS.md` → final response names each + its change.
 
