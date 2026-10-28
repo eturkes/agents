@@ -51,11 +51,10 @@ export const NUDGE =
 /** Appended to the Agent tool's description: the mapping beside the enum it reinterprets. */
 export function describeLanes(): string {
   const lanes = Object.entries(LANES).map(([alias, l]) =>
-    `\`${alias}\` → ${l.model}${l.effort ? ` at ${l.effort} effort` : ''}${l.lateOnly ? ' (PROTOTYPE + ITERATE: the omitted lane)' : ''}`)
+    `\`${alias}\` → ${l.model}${l.effort ? ` at ${l.effort} effort` : ''}`)
   const roles = Object.entries(ROLE_LANES).map(([role, alias]) => `${role} → \`${alias}\``)
   return [
-    `Model lanes (this machine): \`model\` names a GPT lane — omitted → ${DEFAULT_MODEL}; ${lanes.join('; ')}; \`${REFUSED}\` → refused.`,
-    `Role defaults: ${roles.join(', ')}. A lane's effort applies where \`effort\` is omitted; forks run your own model.`,
-    `When to pick each = CLAUDE.md \`Model lanes\`.`,
+    `Model lanes (this machine): \`model\` names a GPT lane — omitted → ${DEFAULT_MODEL}; ${lanes.join('; ')}.`,
+    `Role defaults: ${roles.join(', ')}. A lane's effort applies where \`effort\` is omitted. When to pick each = CLAUDE.md \`Model lanes\`.`,
   ].join(' ')
 }
