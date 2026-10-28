@@ -1,0 +1,6 @@
+{
+  "name": "agent-lanes",
+  "version": "1.0.0",
+  "description": "Routes every subagent to a GPT model by lane: the Agent tool's model alias or the role's default, with the lane's effort. Sends each terra agent back once at its first stop.",
+  "types": "./types/index.d.ts"
+}

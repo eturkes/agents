@@ -6,6 +6,7 @@ Folder = one CC mod = a plugin of function hooks running inside the CC process o
 | --- | --- | --- |
 | `context-alert` | cachyos, aeon | One notice per session, loop + tier as context nears compaction: main loop at 65K + 27K below its compaction point, teammate at 82K + 35K. A session resumed within 7 days of its last notice keeps the notices already given. |
 | `agent-flow` | cachyos, aeon | Appends the deliverable note to every subagent brief; performs a subagent `Write` CC rejects for a report filename; adds the deliverable line to compaction instructions; asks a long run that wrote nothing at stop; holds the first `TaskStop` on a mid-turn teammate; line under the prompt hint = each running agent's model + context use against its compaction trigger, idle teammates included, wrapping onto more lines when full. |
+| `agent-lanes` | cachyos, aeon | Routes every subagent but a fork to a GPT lane (`hooks/lanes.ts`): the Agent tool's `model` alias names the lane, else the role's default, else sol (launch env `CLAUDE_CODE_SUBAGENT_MODEL` in its place); fills the lane's effort where the call names none; refuses `fable` + non-GPT models; appends the lanes to the Agent tool description; sends each terra agent back once at its first stop. Needs settings `env` without `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, which drops every per-call + hook model. |
 | `idle-compact` | cachyos, aeon | Every 30 s tells [`cache-keepalive`](../cache-keepalive/README.md) whether the session is quiet (no running turn; last turn left no background task or scheduled wakeup); compacts the session when the keeper asks at its 55-min mark. Interactive sessions alone. |
 | `turn-email` | cachyos | One email per completed main turn I start, one per run ending with no work in flight, one per dialog waiting on me. Relay setup = `../cachyos/turn-email/README.md`. |
 
@@ -20,7 +21,7 @@ From the repo root; aeon omits `turn-email`.
 
 ```sh
 mkdir -p ~/.claude/mods
-for m in context-alert agent-flow idle-compact turn-email; do
+for m in context-alert agent-flow agent-lanes idle-compact turn-email; do
   rsync -a --delete --exclude .claude-plugin/types/ --exclude tsconfig.json "claude/mods/$m/" "$HOME/.claude/mods/$m/"
 done
 ```
