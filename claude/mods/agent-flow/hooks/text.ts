@@ -6,7 +6,7 @@ import type { AgentFlowAgent } from '../types'
 // findings/analysis .md files …", whose own exception reads "Files written as input to
 // another tool are fine". The brief files the deliverable under that exception.
 export const SPAWN_NOTE =
-  'Output file named in your task = the deliverable + the input to the validator the brief names ⇒ the Notes clause "Files written as input to another tool are fine" covers it. Write it early + keep it current; final message = its path + the headline. Each claim you could not confirm → marked unconfirmed + where you looked. Work held only in this conversation ends with the run.'
+  'Output file named in your task = the deliverable + the input to the validator the brief names ⇒ the Notes clause "Files written as input to another tool are fine" covers it. Write it early + keep it current, each open cell holding its seed value until filled; final message = its path + the headline. Each claim you could not confirm → marked unconfirmed + where you looked. Work held only in this conversation ends with the run.'
 
 // Auto-compaction can drop a brief's paths and marker; only the summary survives it.
 export const COMPACT_NOTE =
