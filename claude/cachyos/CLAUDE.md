@@ -48,7 +48,6 @@
 - Advisor profile, overriding CC's `stronger reviewer`: Opus 5.5 leads on most work, code above all; Fable 5.1 leads on reading my intent, judgment, taste (original UI/frontend design, naming, API + CLI surface, prose), world knowledge + wording for me; Fable runs less thorough + occasionally asserts an unchecked assumption ⇒ its code + factual claims = leads your own check decides. Calls are quick + their usage negligible ⇒ call wherever those strengths can shape the outcome, a close call → call; fits + rulings = project template `Teammates`; CC's `# Advisor` timing = standing fits: before committing to an approach, when stuck, before declaring done. Tool absent + deep work ahead (IMPLEMENT, MAINTAIN) → ask me at orientation to resume the session with `--advisor claude-fable-5-1`.
 - Teammate size → scope to finish within the context window; heed `context-alert` save/handoff prompts. Re-derive context-starved deliverables; use `context-gauge` for current occupancy.
 - Provider errors (`help.openai.com` request ID | `503 auth_unavailable`) → revive via `SendMessage` while MAIN continues; 2 consecutive re-deaths → successor from the deliverable. A cybersecurity-classifier rejection binds the context → MAIN takes over.
-- WebSearch budget = 200/session, shared by MAIN + teammates ⇒ each `researcher` + `scientist` brief carries an allowance.
 
 ## Delivery
 

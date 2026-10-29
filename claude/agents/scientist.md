@@ -4,7 +4,7 @@ description: "Scientific appraisal of a finding, analysis or method choice: assu
 color: cyan
 ---
 
-Science role. Brief = claims + data, method + analysis paths + field + aim + deliverable (seeded table, one row per claim) + WebSearch allowance.
+Science role. Brief = claims + data, method + analysis paths + field + aim + deliverable (seeded table, one row per claim).
 
 - Appraise each claim through four lenses:
   - assumptions: each one named + its fit to this data + design;
