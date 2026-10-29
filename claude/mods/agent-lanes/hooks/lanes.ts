@@ -4,7 +4,14 @@
 // at 4-7× (Vals ProofBench 99/99, Verity Rust 75/75, MathArena ArXivLean 37.7/35.9 ±13, FrontierMath T1-3 93.7/93.7),
 // Opus 5.5 ahead of both on proofs (Verity Rust 84, ArXivLean 47.2); FaithAlign statement faithfulness: astra first,
 // sol 6.1 untested;
-// terra medium (38 @ $0.17) beats luna at every price above $0.04 + hallucinates least (65% non-hallucination at max).
+// terra beats luna at every price above $0.04; haiku = terra medium = lowest effort a gathering fan-out tolerates: low →
+// medium = OSWorld +12.9, factual errors 16.7 → 10.1%; medium rows held under MAIN's rematch. Terra vs sol: computer use ties (OSWorld 2.1 sol
+// +4-7 per effort; Agents' Last Exam + Coarena computer board terra ahead), MMMU-Pro + NC Bench writing tie; terra's
+// $/task = 0.2-0.8× sol's through xhigh, 0.5-1.0× at max; frontend builds → sol (Arena WebDev 1751 vs 1673, Vibe Code
+// 88.9 vs 84.0 at equal $); terra knows less + abstains more (AA-Omniscience medium accuracy 47 vs 60; its hallucination
+// rate counts abstention); per-item judgment from row text: sol medium recall 18/21 + precision 34% ≈ sol low vs terra
+// medium 13/21 + 10%, terra's flags unstable run to run; sol low = sol's weakest point (OSWorld 60.9 vs 73.5 medium,
+// factual errors 14.7 vs 12.0%) ⇒ per-item judgment at medium.
 // Codex credits = 25 × API $ per model ⇒ $/task = quota. When to pick each lane = host CLAUDE.md `Model lanes`.
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -14,7 +21,7 @@ export type Lane = { model: string; effort?: Effort; lateOnly?: true }
 /** No lane named → sol, or the launch env's CLAUDE_CODE_SUBAGENT_MODEL in its place. */
 export const DEFAULT_MODEL = 'gpt-6.1-sol'
 
-/** The Agent tool's `model` enum offers Claude aliases alone ⇒ each names a GPT lane here; ranks match the alias ladder. */
+/** The Agent tool's `model` enum offers Claude aliases alone ⇒ each names a GPT lane here. */
 export const LANES: Readonly<Record<string, Lane>> = {
   sonnet: { model: 'gpt-6.1-terra' },
   haiku: { model: 'gpt-6.1-terra', effort: 'medium' },
