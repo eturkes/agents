@@ -2,7 +2,8 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { DEFAULT_MODEL, EARLY_PHASE, NUDGE, describeLanes, phaseLine, refusal } from '../hooks/lanes'
+import { DEFAULT_MODEL, EARLY_PHASE, EFFORTS, LANES, NUDGE, ROLE_LANES, describeLanes, laneEffort, phaseLine, refusal } from '../hooks/lanes'
+import type { Lane } from '../hooks/lanes'
 
 type World = { spawned: { model?: string; subagentType: string; name?: string }[]; calls: Record<string, unknown>[]; steps: unknown[] }
 
@@ -37,6 +38,10 @@ const agentCall = ($: Engine, input: Record<string, unknown>) =>
 const stop = ($: Engine, agent_id: string, stop_hook_active = false) =>
   $.classic.SubagentStop({ agent_id, stop_hook_active, agent_transcript_path: '/t.jsonl', agent_type: 'reviewer' } as never)
 
+async function step($: Engine, agentId: string | undefined, effort = 'xhigh'): Promise<void> {
+  for await (const chunk of $.turn.step({ turnId: 't', index: 0, model: 'm', effort, messageCount: 1, agentId } as never)) void chunk
+}
+
 test('each alias spawns its lane model; no alias spawns sol', async ($, on) => {
   const w = world(on)
   await spawn($, 'reviewer')
@@ -50,16 +55,18 @@ test('roles default to their lane; a named alias outranks the role', async ($, o
   const w = world(on)
   await spawn($, 'operator')
   await spawn($, 'scientist')
+  await spawn($, 'classifier')
   await spawn($, 'scientist', 'sonnet')
-  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6.1-terra', 'gpt-6-astra', 'gpt-6.1-terra'])
+  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6.1-terra', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra'])
 })
 
 test('the launch pin replaces the default lane alone', async ($, on) => {
   const w = world(on, { CLAUDE_CODE_SUBAGENT_MODEL: 'gpt-6-luna' })
   await spawn($, 'reviewer')
   await spawn($, 'operator')
+  await spawn($, 'classifier')
   await spawn($, 'general-purpose', 'opus')
-  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6-astra'])
+  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-astra'])
 })
 
 test('a GPT id passes; fable, inherit and Claude ids are refused; forks + resumes pass untouched', async ($, on) => {
@@ -71,24 +78,46 @@ test('a GPT id passes; fable, inherit and Claude ids are refused; forks + resume
   expect(w.spawned.map(s => s.model)).toEqual(['gpt-6-luna', undefined, 'haiku'])
 })
 
-test('Agent calls gain the lane effort when they name none, keep their own, and fable is refused', async ($, on) => {
+test('each lane shifts MAIN\'s effort, clamped to the ladder, raised to its floor; MAIN\'s unknown → none', () => {
+  const lanes: (Lane | undefined)[] = [undefined, LANES.sonnet, LANES.haiku, ROLE_LANES.classifier as Lane, LANES.opus]
+  expect(EFFORTS.map(m => lanes.map(l => laneEffort(l, m)))).toEqual([
+    ['low', 'low', 'medium', 'low', 'medium'],
+    ['medium', 'medium', 'medium', 'low', 'high'],
+    ['high', 'high', 'medium', 'low', 'xhigh'],
+    ['xhigh', 'xhigh', 'high', 'medium', 'max'],
+    ['max', 'max', 'xhigh', 'high', 'max'],
+  ])
+  expect(['', undefined, 'ultra'].map(m => laneEffort(LANES.haiku, m))).toEqual([undefined, undefined, undefined])
+})
+
+test('Agent calls gain their lane\'s effort from MAIN\'s, keep their own, and fable is refused', async ($, on) => {
   const w = world(on)
+  await step($, undefined, 'xhigh')
   await agentCall($, { model: 'haiku' })
   await agentCall($, { model: 'opus', effort: 'high' })
   await agentCall($, { subagent_type: 'scientist' })
+  await agentCall($, { subagent_type: 'classifier' })
   await agentCall($, { model: 'sonnet' })
   await agentCall($, {})
   await agentCall($, { subagent_type: 'fork', model: 'opus' })
-  expect(w.calls.map(c => c.effort)).toEqual(['medium', 'high', 'max', undefined, undefined, undefined])
+  expect(w.calls.map(c => c.effort)).toEqual(['high', 'high', 'max', 'medium', 'xhigh', 'xhigh', undefined])
   expect(await agentCall($, { model: 'fable' })).toEqual({ deny: refusal('fable') })
-  expect(w.calls).toHaveLength(6)
+  expect(w.calls).toHaveLength(7)
+})
+
+test('before MAIN\'s first request, Agent calls keep their own effort or none', async ($, on) => {
+  const w = world(on)
+  await agentCall($, { model: 'haiku' })
+  await agentCall($, { model: 'opus', effort: 'low' })
+  expect(w.calls.map(c => c.effort)).toEqual([undefined, 'low'])
 })
 
 test('the Agent tool description carries the lanes', async ($, on) => {
   world(on)
   const r = await $.tool.describe({ tool: 'Agent', description: 'Launch a new agent.' } as never)
   expect(r.description).toBe(`Launch a new agent.\n\n${describeLanes()}`)
-  expect(r.description).toContain('`haiku` → gpt-6.1-terra at medium effort')
+  expect(r.description).toContain('`haiku` → gpt-6.1-terra at MAIN effort −1, floor medium')
+  expect(r.description).toContain('classifier → gpt-6.1-sol at MAIN effort −2')
 })
 
 test('a terra agent is sent back once at its first stop; others stop freely', async ($, on) => {
@@ -116,8 +145,9 @@ test('phaseLine reads the first non-blank Phase line past a BOM + fenced blocks'
   expect(['PROTOTYPE — ui', 'Phase: ITERATE — x', 'IMPLEMENT — core', 'ITERATE —'].map(l => EARLY_PHASE.test(l))).toEqual([true, true, false, false])
 })
 
-test('PROTOTYPE + ITERATE route opus + scientist to the default lane at session effort', async ($, on) => {
+test('PROTOTYPE + ITERATE route opus + scientist to the default lane at MAIN\'s effort', async ($, on) => {
   const w = world(on, {}, spec('Phase: ITERATE — ui'))
+  await step($, undefined, 'xhigh')
   await spawn($, 'general-purpose', 'opus')
   await spawn($, 'scientist')
   await spawn($, 'operator')
@@ -125,29 +155,39 @@ test('PROTOTYPE + ITERATE route opus + scientist to the default lane at session 
   await agentCall($, { subagent_type: 'scientist' })
   await agentCall($, { model: 'haiku' })
   expect(w.spawned.map(s => s.model)).toEqual([DEFAULT_MODEL, DEFAULT_MODEL, 'gpt-6.1-terra'])
-  expect(w.calls.map(c => c.effort)).toEqual([undefined, undefined, 'medium'])
+  expect(w.calls.map(c => c.effort)).toEqual(['xhigh', 'xhigh', 'high'])
 })
 
-test('IMPLEMENT keeps astra at max', async ($, on) => {
+test('IMPLEMENT keeps astra one effort above MAIN', async ($, on) => {
   const w = world(on, {}, spec('IMPLEMENT — core'))
+  await step($, undefined, 'high')
   await spawn($, 'scientist')
   await agentCall($, { model: 'opus' })
   expect(w.spawned.map(s => s.model)).toEqual(['gpt-6-astra'])
-  expect(w.calls.map(c => c.effort)).toEqual(['max'])
+  expect(w.calls.map(c => c.effort)).toEqual(['xhigh'])
 })
 
-async function step($: Engine, agentId: string | undefined, effort = 'xhigh'): Promise<void> {
-  for await (const chunk of $.turn.step({ turnId: 't', index: 0, model: 'm', effort, messageCount: 1, agentId } as never)) void chunk
-}
-
-test('each agent runs every request at its call effort: lane fill, explicit outranks lane, none → session', async ($, on) => {
+test('each agent runs every request at its call effort, whatever the session\'s teammate default; MAIN keeps its own', async ($, on) => {
   const w = world(on)
+  await step($, undefined, 'medium')
   await agentCall($, { model: 'haiku', name: 'swarm-1', tool_use_id: 'c1' })
   await spawn($, 'researcher', 'haiku', 'swarm-1', { tool_use_id: 'c1' })
   await agentCall($, { model: 'haiku', effort: 'high', name: 'swarm-2', tool_use_id: 'c2' })
   await spawn($, 'researcher', 'haiku', 'swarm-2', { tool_use_id: 'c2' })
   await agentCall($, { name: 'rev-1', tool_use_id: 'c3' })
   await spawn($, 'reviewer', undefined, 'rev-1', { tool_use_id: 'c3' })
-  for (const id of ['id-swarm-1', 'id-swarm-1', 'id-swarm-2', 'id-rev-1', undefined]) await step($, id)
-  expect(w.steps).toEqual(['medium', 'medium', 'high', 'xhigh', 'xhigh'])
+  for (const id of ['id-swarm-1', 'id-swarm-1', 'id-swarm-2', 'id-rev-1']) await step($, id, 'high')
+  expect(w.steps).toEqual(['medium', 'medium', 'medium', 'high', 'medium'])
+})
+
+test('a MAIN effort change reaches agents spawned after it; earlier agents keep theirs', async ($, on) => {
+  const w = world(on)
+  await step($, undefined, 'medium')
+  await agentCall($, { model: 'haiku', name: 'swarm-1', tool_use_id: 'c1' })
+  await spawn($, 'researcher', 'haiku', 'swarm-1', { tool_use_id: 'c1' })
+  await step($, undefined, 'max')
+  await agentCall($, { model: 'haiku', name: 'swarm-2', tool_use_id: 'c2' })
+  await spawn($, 'researcher', 'haiku', 'swarm-2', { tool_use_id: 'c2' })
+  for (const id of ['id-swarm-1', 'id-swarm-2']) await step($, id, 'high')
+  expect(w.steps).toEqual(['medium', 'max', 'medium', 'xhigh'])
 })

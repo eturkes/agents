@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Effort, Lane } from './lanes'
-import { DEFAULT_MODEL, EARLY_PHASE, LANES, NUDGE, NUDGED_MODEL, REFUSED, ROLE_LANES, describeLanes, phaseLine, refusal } from './lanes'
+import { DEFAULT_MODEL, EARLY_PHASE, LANES, NUDGE, NUDGED_MODEL, REFUSED, ROLE_LANES, describeLanes, laneEffort, phaseLine, refusal } from './lanes'
 
 // Agent ids routed to terra whose first stop has not been sent back; kept across mod reloads + resumes.
 const pending = atom({ plugin: 'agent-lanes', key: 'nudge' } as const, {})
@@ -10,6 +10,8 @@ const pending = atom({ plugin: 'agent-lanes', key: 'nudge' } as const, {})
 // agent's call effort is pinned per agent id + set on its requests (turn.step); this mod loads before agent-flow,
 // whose agent line then reads the pinned level.
 const efforts = atom({ plugin: 'agent-lanes', key: 'efforts' } as const, {})
+// MAIN's effort, as its own requests carry it; each lane's effort shifts from it.
+const main = atom({ plugin: 'agent-lanes', key: 'main' } as const, '')
 /** Agent call → its effort, until agent.spawn names the agent (same tool_use_id). */
 const callEfforts = new Map<string, string>()
 
@@ -25,8 +27,8 @@ async function earlyPhase($: EngineInterface): Promise<boolean> {
 
 /** The lane a call's alias names, else its role's; undefined = the default lane, which a lateOnly lane takes early. */
 async function routedLane($: EngineInterface, alias: string | undefined, role: string | undefined): Promise<Lane | undefined> {
-  const name = alias ?? (role === undefined ? undefined : ROLE_LANES[role])
-  const lane = name === undefined ? undefined : LANES[name]
+  const named = alias ?? (role === undefined ? undefined : ROLE_LANES[role])
+  const lane = typeof named === 'string' ? LANES[named] : named
   return lane?.lateOnly && (await earlyPhase($)) ? undefined : lane
 }
 
@@ -42,7 +44,7 @@ export const register: Register = on => {
     const alias = (e as { model?: string }).model
     if (alias === REFUSED) return { deny: refusal(alias) }
     const lane = await routedLane($, alias, e.subagent_type)
-    const effort = e.effort ?? lane?.effort
+    const effort = e.effort ?? laneEffort(lane, await read($, main))
     if (effort !== undefined && e.tool_use_id !== undefined) callEfforts.set(e.tool_use_id, effort)
     return effort !== e.effort ? next({ ...e, effort }) : next(e)
   })
@@ -63,6 +65,10 @@ export const register: Register = on => {
   // tool.call + SubagentStop fail open: agent.spawn still routes, and a missed nudge costs one stop check.
 
   on('turn.step', async function* ($, e, next) {
+    if (e.agentId === undefined && typeof e.effort === 'string' && (await read($, main)) !== e.effort) {
+      const level = e.effort
+      await update($, main, () => level)
+    }
     const want = e.agentId === undefined ? undefined : (await read($, efforts))[e.agentId]
     return yield* next(want !== undefined && e.effort !== want ? { ...e, effort: want as Effort } : e)
   })

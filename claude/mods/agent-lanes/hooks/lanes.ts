@@ -1,22 +1,17 @@
-// Picks = Artificial Analysis Intelligence Index v5 per model × effort: sol = best index per cost medium → max; astra
-// beats sol max at max alone (high/xhigh 55 = sol max at 2.5-2.9× cost), its lead = empirical science (Vals
-// TB-Science 62.9 vs 52.9 same harness, MysteryMechanism 53.2 vs 46.4) at 5.6-6×; maths + machine-checked proofs tie sol
-// at 4-7× (Vals ProofBench 99/99, Verity Rust 75/75, MathArena ArXivLean 37.7/35.9 ±13, FrontierMath T1-3 93.7/93.7),
-// Opus 5.5 ahead of both on proofs (Verity Rust 84, ArXivLean 47.2); FaithAlign statement faithfulness: astra first,
-// sol 6.1 untested;
-// terra beats luna at every price above $0.04; haiku = terra medium = lowest effort a gathering fan-out tolerates: low →
-// medium = OSWorld +12.9, factual errors 16.7 → 10.1%; medium rows held under MAIN's rematch. Terra vs sol: computer use ties (OSWorld 2.1 sol
-// +4-7 per effort; Agents' Last Exam + Coarena computer board terra ahead), MMMU-Pro + NC Bench writing tie; terra's
-// $/task = 0.2-0.8× sol's through xhigh, 0.5-1.0× at max; frontend builds → sol (Arena WebDev 1751 vs 1673, Vibe Code
-// 88.9 vs 84.0 at equal $); terra knows less + abstains more (AA-Omniscience medium accuracy 47 vs 60; its hallucination
-// rate counts abstention); per-item judgment from row text: sol medium recall 18/21 + precision 34% ≈ sol low vs terra
-// medium 13/21 + 10%, terra's flags unstable run to run; sol low = sol's weakest point (OSWorld 60.9 vs 73.5 medium,
-// factual errors 14.7 vs 12.0%) ⇒ per-item judgment at medium.
+// Lane picks: sol = default (best quality per cost from medium up; ties astra on code, maths + machine-checked proofs;
+// leads terra on frontend builds, knowledge + per-item judgment); a proof sol fails → MAIN (Opus 5.5 leads both on
+// proofs). astra = empirical science, its sole lead, + statement-faithfulness judging until checked (led the one
+// benchmark; sol 6.1 untested). terra = visual work, computer use + writing (ties sol at lower cost) + gathering
+// (copies + abstains well, judges less); beats luna at every price above $0.04.
+// Effort shifts: haiku −1, floor medium (terra's steepest drop = medium → low); classifier −2 (sol low ≈ medium on
+// row-text judgment); opus +1 (astra's max gains sit on the hardest problems).
 // Codex credits = 25 × API $ per model ⇒ $/task = quota. When to pick each lane = host CLAUDE.md `Model lanes`.
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-/** lateOnly → PROTOTYPE + ITERATE route the lane to the default (cheap phases keep astra's cost out). */
-export type Lane = { model: string; effort?: Effort; lateOnly?: true }
+export const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
+/** shift = levels from MAIN's effort; floor = the lowest it takes; lateOnly → PROTOTYPE + ITERATE route the lane to the
+ *  default (cheap phases keep astra's cost out). */
+export type Lane = { model: string; shift?: number; floor?: Effort; lateOnly?: true }
 
 /** No lane named → sol, or the launch env's CLAUDE_CODE_SUBAGENT_MODEL in its place. */
 export const DEFAULT_MODEL = 'gpt-6.1-sol'
@@ -24,12 +19,24 @@ export const DEFAULT_MODEL = 'gpt-6.1-sol'
 /** The Agent tool's `model` enum offers Claude aliases alone ⇒ each names a GPT lane here. */
 export const LANES: Readonly<Record<string, Lane>> = {
   sonnet: { model: 'gpt-6.1-terra' },
-  haiku: { model: 'gpt-6.1-terra', effort: 'medium' },
-  opus: { model: 'gpt-6-astra', effort: 'max', lateOnly: true },
+  haiku: { model: 'gpt-6.1-terra', shift: -1, floor: 'medium' },
+  opus: { model: 'gpt-6-astra', shift: 1, lateOnly: true },
 }
 
-/** A role's lane when the call names none. */
-export const ROLE_LANES: Readonly<Record<string, string>> = { operator: 'sonnet', scientist: 'opus' }
+/** A role's lane when the call names no alias: an alias, or a lane the aliases leave out. */
+export const ROLE_LANES: Readonly<Record<string, string | Lane>> = {
+  operator: 'sonnet',
+  scientist: 'opus',
+  classifier: { model: DEFAULT_MODEL, shift: -2 },
+}
+
+/** A teammate's effort: MAIN's shifted by its lane (none = the default lane, shift 0); MAIN's unknown → undefined. */
+export function laneEffort(lane: Lane | undefined, main: string | undefined): Effort | undefined {
+  const i = EFFORTS.indexOf(main as Effort)
+  if (i < 0) return undefined
+  const shifted = Math.min(EFFORTS.length - 1, Math.max(0, i + (lane?.shift ?? 0)))
+  return EFFORTS[Math.max(shifted, lane?.floor === undefined ? 0 : EFFORTS.indexOf(lane.floor))]
+}
 
 /** Terra stops before its task is done ⇒ each terra agent's first stop is sent back once. */
 export const NUDGED_MODEL = 'gpt-6.1-terra'
@@ -61,11 +68,13 @@ export const NUDGE =
 
 /** Appended to the Agent tool's description: the mapping beside the enum it reinterprets. */
 export function describeLanes(): string {
-  const lanes = Object.entries(LANES).map(([alias, l]) =>
-    `\`${alias}\` → ${l.model}${l.effort ? ` at ${l.effort} effort` : ''}`)
-  const roles = Object.entries(ROLE_LANES).map(([role, alias]) => `${role} → \`${alias}\``)
+  const effort = (l: Lane) =>
+    l.shift ? ` at MAIN effort ${l.shift > 0 ? '+' : '−'}${Math.abs(l.shift)}${l.floor ? `, floor ${l.floor}` : ''}` : ''
+  const lane = (l: Lane) => `${l.model}${effort(l)}`
+  const lanes = Object.entries(LANES).map(([alias, l]) => `\`${alias}\` → ${lane(l)}`)
+  const roles = Object.entries(ROLE_LANES).map(([role, r]) => `${role} → ${typeof r === 'string' ? `\`${r}\`` : lane(r)}`)
   return [
     `Model lanes (this machine): \`model\` names a GPT lane — omitted → ${DEFAULT_MODEL}; ${lanes.join('; ')}.`,
-    `Role defaults: ${roles.join(', ')}. A lane's effort applies where \`effort\` is omitted. When to pick each = CLAUDE.md \`Model lanes\`.`,
+    `Role defaults: ${roles.join(', ')}. Effort, where \`effort\` is omitted = MAIN's, shifted by the lane. When to pick each = CLAUDE.md \`Model lanes\`.`,
   ].join(' ')
 }
