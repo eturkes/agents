@@ -1,5 +1,9 @@
 // Picks = Artificial Analysis Intelligence Index v5 per model × effort: sol = best index per cost medium → max; astra
-// beats sol max at max alone (high/xhigh 55 = sol max at 2.5-2.9× cost), its lead = science + research-level reasoning;
+// beats sol max at max alone (high/xhigh 55 = sol max at 2.5-2.9× cost), its lead = empirical science (Vals
+// TB-Science 62.9 vs 52.9 same harness, MysteryMechanism 53.2 vs 46.4) at 5.6-6×; maths + machine-checked proofs tie sol
+// at 4-7× (Vals ProofBench 99/99, Verity Rust 75/75, MathArena ArXivLean 37.7/35.9 ±13, FrontierMath T1-3 93.7/93.7),
+// Opus 5.5 ahead of both on proofs (Verity Rust 84, ArXivLean 47.2); FaithAlign statement faithfulness: astra first,
+// sol 6.1 untested;
 // terra medium (38 @ $0.17) beats luna at every price above $0.04 + hallucinates least (65% non-hallucination at max).
 // Codex credits = 25 × API $ per model ⇒ $/task = quota. When to pick each lane = host CLAUDE.md `Model lanes`.
 
