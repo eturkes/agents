@@ -372,6 +372,59 @@ def status_lists_dir_stop_time_and_count():
 
 
 @check
+def status_reports_state_renewal_and_next_mark():
+    Up.reset()
+    live("mk")
+    server = proxy("--interval", "100", "--touches", "1")
+    post(server, session="mk")
+    entry = entries(server)["mk"]
+    renewed = calendar.timegm(time.strptime(entry["renewed"], "%Y-%m-%dT%H:%M:%SZ"))
+    assert entry["state"] == "armed" and entry["mark"] == "touch", entry
+    assert 0 <= server.keeper.entries["mk"].renewed_at - renewed < 1, "renewed not the request time in UTC"
+    poll(server, "mk", True)
+    assert entries(server)["mk"]["mark"] == "compact", "quiet session not marked to compact"
+    server.keeper.entries["mk"].polled_at -= ka.POLL_FRESH
+    assert entries(server)["mk"]["mark"] == "touch", "stale quiet report marked to compact"
+    poll(server, "mk", False)
+    backdate(server, "mk", 101)
+    tick(server)
+    assert entries(server)["mk"]["mark"] == "stop", "spent budget not marked to stop"
+    poll(server, "mk", True)
+    assert entries(server)["mk"]["mark"] == "compact", "quiet session with a spent budget not marked to compact"
+    backdate(server, "mk", 101)
+    assert poll(server, "mk", True) is True
+    entry = entries(server)["mk"]
+    assert entry["state"] == "compacting" and entry["mark"] is None, entry
+    conn = http.client.HTTPConnection(*server.server_address, timeout=10)
+    conn.request("GET", ka.STATUS_PATH)
+    reply = json.loads(conn.getresponse().read())
+    assert reply["interval"] == 100 and reply["touches"] == 1 and reply["entries"][0]["session"] == "mk", reply
+
+
+@check
+def poll_stores_working_and_replies_touch_count():
+    Up.reset()
+    live("wk")
+    server = proxy("--interval", "100", "--touches", "3")
+    assert control(server, "poll", {"session": "wk", "quiet": False, "working": True}) == (200, {"compact": False})
+    post(server, session="wk")
+    assert entries(server)["wk"]["working"] is False, "working before any report"
+    reply = control(server, "poll", {"session": "wk", "quiet": False, "working": True})
+    assert reply == (200, {"compact": False, "touches": 0, "limit": 3, "state": "armed"}), reply
+    assert entries(server)["wk"]["working"] is True, "working report not stored"
+    server.keeper.entries["wk"].polled_at -= ka.POLL_FRESH
+    assert entries(server)["wk"]["working"] is False, "stale working report shown"
+    control(server, "poll", {"session": "wk", "quiet": False})
+    assert entries(server)["wk"]["working"] is False, "report without working read as working"
+    backdate(server, "wk", 101)
+    tick(server)
+    assert control(server, "poll", {"session": "wk", "quiet": False})[1]["touches"] == 1, "touch missing from the reply"
+    backdate(server, "wk", 101)
+    reply = control(server, "poll", {"session": "wk", "quiet": True})
+    assert reply == (200, {"compact": True, "touches": 1, "limit": 3, "state": "compacting"}), reply
+
+
+@check
 def waiting_session_touches_up_to_limit():
     Up.reset()
     live("wait")

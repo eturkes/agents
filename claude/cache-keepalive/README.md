@@ -24,7 +24,7 @@ CachyOS = systemd user service; aeon = foreground in a terminal, like CLIProxyAP
   - quiet session (no running turn; last turn left no background task or scheduled wakeup) → mod `idle-compact` compacts it: the compaction reads the cache, the next prompt writes only the short summary; keeper stops for the session.
   - else (waiting at an AskUserQuestion dialog, or work still running) → a touch = the stored request re-sent, renewing the 1-h entry; ≤19 per session (Cost).
 - Touch = stream closed at `message_start` ⇒ a cache read + almost no output. Byte-identical to the stored request, except a stored `stream: false` becomes `stream: true`: touches stream, and the flag sits outside the cached prompt ⇒ same cache entry.
-- [`idle-compact`](../mods/README.md) runs in each interactive session: every 30 s → quiet or not (`POST /_keepalive/poll`); on the keeper's ask → compacts + reports (`POST /_keepalive/compacted`). No mod report for 90 s, or a failed compaction → touches only.
+- [`idle-compact`](../mods/README.md) runs in each interactive session: every 30 s + at each turn start/end + question open/close → quiet + working (`POST /_keepalive/poll`; reply = compact now? + touches, limit + state → the touch line under an open question); on the keeper's ask → compacts + reports (`POST /_keepalive/compacted`). No mod report for 90 s, or a failed compaction → touches only.
 - Keeper stops for a session once: the mod compacted it; touch budget spent + its next 55-min mark reached; touches fail until the entry expires; upstream rejects a touch with 400/401/403/404/413/422; two touches in a row write more than they read.
 - Stopped session stays listed; its next main-thread request restarts it; it leaves the list once its CC process ends (process + launch dir from `~/.claude/sessions/<pid>.json`).
 - Stored requests live in memory ⇒ a keeper restart drops them; each session re-stores on its next main-thread request.
@@ -61,7 +61,7 @@ curl -sS http://127.0.0.1:8318/_keepalive
 journalctl --user -u cache-keepalive.service
 ```
 
-`check-cache-keepalive` = relay, block-stop hold, touch + compaction logic against a fake upstream. Status endpoint = one JSON entry per session: `dir` = launch dir; `stopped` = UTC end of the stored request's response; `kept_alive` = touches since that request | `compacted`; `last` = latest event (a touch's token counts, a stop reason). Journal (aeon: the keeper's terminal) = each stored session, touch (read + write tokens), compaction + stop.
+`check-cache-keepalive` = relay, block-stop hold, touch + compaction logic against a fake upstream. Status endpoint = `interval` + `touches` (Options) + one JSON entry per session: `dir` = launch dir; `stopped` = UTC end of the stored request's response; `renewed` = UTC of the last cache read (the stored request's send | a touch); `kept_alive` = touches since that request | `compacted`; `state` = `armed` | `compacting` | `compacted` | `done` (keeper stopped); `mark` = an armed entry's next 55-min mark: `compact` | `touch` | `stop`; `working` = the mod's last report (turn running, no question open), false once 90 s old; `last` = latest event (a touch's token counts, a stop reason). Statusline (`../statusline`) = the session's `state`, `working` + `mark`: `ready` (none stored) | `working` | `last HH:MM` (compacts) | `touches N` | `compacting` | `compacted` | `stopped`. Journal (aeon: the keeper's terminal) = each stored session, touch (read + write tokens), compaction + stop.
 
 ## Options
 

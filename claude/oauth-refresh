@@ -1,5 +1,5 @@
 #!/bin/sh
-# Refresh 5h/7d OAuth cache when age >=180s. Detached locked poll ⇒ callers
+# Refresh 7d OAuth cache when age >=180s. Detached locked poll ⇒ callers
 # return immediately and render cached state. Cache path = $1, default
 # ~/.claude/.oauth_usage.json. Consumer = statusline; token =
 # ./oauth-token.
@@ -19,7 +19,7 @@ setsid -f sh -c '
   t=$("$1" 2>/dev/null)
   if [ -n "$t" ]; then
     r=$(printf "Authorization: Bearer %s\n" "$t" | curl -fsS --max-time 8 -H @- -H "anthropic-beta: oauth-2025-04-20" https://api.anthropic.com/api/oauth/usage 2>/dev/null)
-    [ -n "$r" ] && printf %s "$r" | jq -e .five_hour >/dev/null 2>&1 && printf %s "$r" >"$2.tmp" && mv "$2.tmp" "$2"
+    [ -n "$r" ] && printf %s "$r" | jq -e .seven_day >/dev/null 2>&1 && printf %s "$r" >"$2.tmp" && mv "$2.tmp" "$2"
   fi
   rmdir "$3" 2>/dev/null
 ' _ "${OAUTH_TOKEN_CMD:-$(dirname "$0")/oauth-token}" "$uc" "$lk" </dev/null >/dev/null 2>&1 &

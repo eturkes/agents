@@ -125,7 +125,7 @@
   "statusLine": {
     "type": "command",
     "command": "$HOME/.claude/statusline",
-    "refreshInterval": 60
+    "refreshInterval": 10
   },
   "enabledPlugins": {
     "xml-lsp@global": true,

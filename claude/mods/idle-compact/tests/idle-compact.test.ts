@@ -2,10 +2,14 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-type World = { polls: { session: string; quiet: boolean }[]; reports: unknown[]; compact: boolean; compactions: number; skip?: string; down: boolean }
+type Poll = { session: string; quiet: boolean; working: boolean }
+type World = {
+  polls: Poll[]; reports: unknown[]; notices: { tool_use_id: string; text: string | undefined }[]
+  compact: boolean; compactions: number; skip?: string; down: boolean; entry: object; gate?: Promise<void>
+}
 
 function world(on: On): World & { advance: (ms: number) => Promise<void> } {
-  const w: World = { polls: [], reports: [], compact: false, compactions: 0, down: false }
+  const w: World = { polls: [], reports: [], notices: [], compact: false, compactions: 0, down: false, entry: { touches: 0, limit: 19, state: 'armed' } }
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 11, 9, 0) })
   mock.env(on, { CACHE_KEEPALIVE_URL: 'http://keeper' })
   on('session.id', () => ({ value: 's1' }))
@@ -19,7 +23,7 @@ function world(on: On): World & { advance: (ms: number) => Promise<void> } {
     let reply = {}
     if (e.url === 'http://keeper/_keepalive/poll') {
       w.polls.push(body)
-      reply = { compact: w.compact }
+      reply = { compact: w.compact, ...w.entry }
       w.compact = false
     } else w.reports.push({ url: e.url, ...body })
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(reply) } }
@@ -29,6 +33,11 @@ function world(on: On): World & { advance: (ms: number) => Promise<void> } {
     const usage = { input_tokens: 5, cache_creation_input_tokens: 40, cache_read_input_tokens: 900, output_tokens: 300, model: 'claude-opus-5-5' }
     return (w.skip ? { skip: w.skip } : { messages: [{ role: 'user', text: 'summary', toolUses: [] }], usage }) as never
   })
+  on('ui.notice', (_$, e) => (w.notices.push(e), { value: undefined }))
+  on('tool.call', async () => {
+    await w.gate
+    return { result: { answers: {} }, text: 'answered' }
+  })
   return Object.assign(w, { advance: (ms: number) => clock.advance(ms) })
 }
 
@@ -37,12 +46,19 @@ const stop = ($: Engine, background_tasks: unknown[] = [], session_crons: unknow
   $.classic.Stop({ stop_hook_active: false, cwd: '/w', transcript_path: '/t', background_tasks, session_crons } as never)
 const complete = ($: Engine, turnId: string) =>
   $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId, reason: 'answer' } as never)
+const flags = (w: World) => w.polls.map(p => `${p.quiet ? 'quiet' : 'busy'}${p.working ? '+working' : ''}`)
+function ask($: Engine, w: World): () => Promise<unknown> {
+  let release = () => {}
+  w.gate = new Promise<void>(resolve => (release = resolve))
+  const asked = $.tool.call({ tool: 'AskUserQuestion', tool_use_id: 'q1', questions: [] } as never)
+  return () => (release(), asked)
+}
 
 test('a quiet session is compacted once the keeper asks, and the result reported', async ($, on) => {
   const w = world(on)
   await start($)
   await w.advance(30_000)
-  expect(w.polls).toEqual([{ session: 's1', quiet: true }])
+  expect(w.polls).toEqual([{ session: 's1', quiet: true, working: false }])
   expect(w.compactions).toBe(0)
   w.compact = true
   await w.advance(30_000)
@@ -50,19 +66,53 @@ test('a quiet session is compacted once the keeper asks, and the result reported
   expect(w.reports).toMatchObject([{ url: 'http://keeper/_keepalive/compacted', session: 's1', ok: true, reason: '', usage: { cache_read_input_tokens: 900 } }])
 })
 
-test('a running turn, an open question, background work or a cron reports busy', async ($, on) => {
+test('a running turn, background work or a cron reports busy; a turn alone reports working, at its start + end', async ($, on) => {
   const w = world(on)
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   await w.advance(30_000)
-  await complete($, 't1')
   await stop($, [{ id: 'a1', type: 'subagent', status: 'running', description: 'reviewer-1' }])
+  await complete($, 't1')
   await w.advance(30_000)
   await stop($, [], [{ id: 'c1', schedule: '*/5 * * * *', recurring: true, prompt: 'check' }])
   await w.advance(30_000)
   await stop($)
   await w.advance(30_000)
-  expect(w.polls.map(p => p.quiet)).toEqual([false, false, false, true])
+  expect(flags(w)).toEqual(['busy+working', 'busy+working', 'busy', 'busy', 'busy', 'quiet'])
+})
+
+test('an open question = busy, not working, with the touch count under its dialog', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await w.advance(1) // turn.start's poll replies before the question opens
+  w.entry = { touches: 2, limit: 19, state: 'armed' }
+  const answer = ask($, w)
+  await w.advance(30_000)
+  w.entry = { touches: 3, limit: 19, state: 'armed' }
+  await w.advance(30_000)
+  w.entry = { touches: 19, limit: 19, state: 'done' }
+  await w.advance(30_000)
+  await answer()
+  await w.advance(30_000)
+  expect(flags(w)).toEqual(['busy+working', 'busy', 'busy', 'busy', 'busy', 'busy+working', 'busy+working'])
+  expect(w.notices).toEqual([
+    { tool_use_id: 'q1', text: 'cache touches 2/19' },
+    { tool_use_id: 'q1', text: 'cache touches 2/19' },
+    { tool_use_id: 'q1', text: 'cache touches 3/19' },
+    { tool_use_id: 'q1', text: 'cache keepalive stopped' },
+  ])
+})
+
+test('a reply without an armed entry clears the dialog line', async ($, on) => {
+  const w = world(on)
+  await start($)
+  w.entry = {}
+  const answer = ask($, w)
+  w.entry = { touches: 0, limit: 19, state: 'compacted' }
+  await w.advance(30_000)
+  await answer()
+  expect(w.notices).toEqual([{ tool_use_id: 'q1', text: undefined }, { tool_use_id: 'q1', text: undefined }])
 })
 
 test('a vetoed compaction is reported as failed', async ($, on) => {
@@ -87,6 +137,10 @@ test('polling outlives an unreachable keeper', async ($, on) => {
 test('a headless session never polls', async ($, on) => {
   const w = world(on)
   await start($, false)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await ask($, w)()
+  await complete($, 't1')
   await w.advance(60_000)
   expect(w.polls).toHaveLength(0)
+  expect(w.notices).toHaveLength(0)
 })

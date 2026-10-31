@@ -47,6 +47,7 @@ class Entry:
     misses: int = 0
     busy: bool = False
     quiet: bool = False  # idle-compact's last report
+    working: bool = False  # same report: a turn running, no dialog open
     polled_at: float = 0.0
     compact_at: float = 0.0  # when the mod was told to compact: one attempt per entry
     state: str = "armed"  # armed | compacting | compacted | done
@@ -152,7 +153,7 @@ class Keeper:
                     log(f"compaction unreported {session[:8]}: touches resume")
                 if entry.state != "armed" or now - entry.renewed_at < self.cfg.interval:
                     continue
-                if entry.quiet and now - entry.polled_at < POLL_FRESH and not entry.compact_at:
+                if self.compacts(entry, now):
                     continue  # the mod's next poll compacts it
                 if entry.touches >= self.cfg.touches:
                     self.finish(entry, "touch limit")
@@ -162,19 +163,33 @@ class Keeper:
         for entry in due:
             threading.Thread(target=self.touch, args=(entry,), daemon=True).start()
 
-    def poll(self, session, quiet, now):
-        """Store the mod's quiet report; True = compact now."""
+    @staticmethod
+    def compacts(entry, now):
+        """Caller holds the lock. True = the entry's mark goes to the mod's compaction, not a touch."""
+        return entry.quiet and now - entry.polled_at < POLL_FRESH and not entry.compact_at
+
+    def mark(self, entry, now):
+        """Caller holds the lock. What an armed entry's next mark does: compact | touch | stop; else None."""
+        if entry.state != "armed":
+            return None
+        if self.compacts(entry, now):
+            return "compact"
+        return "stop" if entry.touches >= self.cfg.touches else "touch"
+
+    def poll(self, session, quiet, working, now):
+        """Store the mod's report → {compact: True = compact now, + the entry's touches, limit + state}."""
         with self.lock:
             entry = self.entries.get(session)
             if entry is None:
-                return False
-            entry.quiet, entry.polled_at = quiet, now
+                return {"compact": False}
+            entry.quiet, entry.working, entry.polled_at = quiet, working, now
+            reply = {"compact": False, "touches": entry.touches, "limit": self.cfg.touches, "state": entry.state}
             if not quiet or entry.state != "armed" or entry.busy or entry.compact_at \
                     or now - entry.renewed_at < self.cfg.interval:
-                return False
+                return reply
             entry.state, entry.last, entry.compact_at = "compacting", "compacting", now
         log(f"compact {session[:8]} after {entry.touches} touches")
-        return True
+        return reply | {"compact": True, "state": "compacting"}
 
     def compacted(self, session, ok, reason, usage):
         tokens = ""
@@ -218,10 +233,13 @@ class Keeper:
 
     def status(self):
         dirs, _ = live_sessions(self.cfg.sessions_dir)
+        now = time.time()
         with self.lock:
             return [{
                 "session": e.session[:8], "dir": dirs.get(e.session), "stopped": utc(e.stopped_at),
                 "kept_alive": "compacted" if e.state == "compacted" else e.touches, "last": e.last,
+                "state": e.state, "renewed": utc(e.renewed_at), "mark": self.mark(e, now),
+                "working": e.working and now - e.polled_at < POLL_FRESH,
             } for e in self.entries.values()]
 
 
@@ -297,14 +315,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 entry.stopped_at = time.time()
 
     def control(self):
-        """GET status; POST /poll {session, quiet} → {compact}; POST /compacted {session, ok, reason, usage}."""
+        """GET status; POST /poll {session, quiet, working} → poll(); POST /compacted {session, ok, reason, usage}."""
         keeper = self.server.keeper
         if self.command == "GET" and self.path == STATUS_PATH:
-            return self.reply(200, {"entries": keeper.status()})
+            cfg = self.server.cfg
+            return self.reply(200, {"entries": keeper.status(), "interval": cfg.interval, "touches": cfg.touches})
         try:
             report = json.loads(self.read_body())
             if self.path == STATUS_PATH + "/poll":
-                return self.reply(200, {"compact": keeper.poll(report["session"], report["quiet"] is True, time.time())})
+                return self.reply(200, keeper.poll(report["session"], report["quiet"] is True, report.get("working") is True, time.time()))
             if self.path == STATUS_PATH + "/compacted":
                 keeper.compacted(report["session"], report["ok"] is True, str(report.get("reason"))[:200], report.get("usage"))
                 return self.reply(200, {})

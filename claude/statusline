@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude Code context gauge + effort + project phase + rate limits.
+# Claude Code context gauge + effort + project phase + cache keeper + rate limits.
 # Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
 # Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens =
 # CC's last-executor-iteration figure; transcript fallback applies the same rule (ctx).
@@ -10,8 +10,8 @@
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u ⇒ manual.
-{ read -r u; read -r w; read -r sp; read -r sr; read -r wp; read -r wr; read -r ef; read -r pd; } <<EOF
-$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.five_hour.used_percentage // "", .rate_limits.five_hour.resets_at // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .effort.level // "", .workspace.project_dir // .cwd // ""' 2>/dev/null)
+{ read -r u; read -r w; read -r wp; read -r wr; read -r ef; read -r pd; read -r sid; } <<EOF
+$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .effort.level // "", .workspace.project_dir // .cwd // "", .session_id // ""' 2>/dev/null)
 EOF
 # Real API turn = non-sidechain assistant record carrying usage → gauge fallback.
 ctx='def ctx: (.input_tokens//0) as $i | (.cache_creation_input_tokens//0) as $c | (.cache_read_input_tokens//0) as $r | (.output_tokens//0) as $o | ([.iterations[]?|select(type!="object" or (.type!="advisor_message" and .type!="compaction"))]|last) as $x | if $i+$c+$r>0 and (.iterations|type)=="array" and ($x|type)=="object" and ($x.type=="message" or $x.type=="fallback_message") and ([$x.input_tokens,$x.output_tokens,$x.cache_creation_input_tokens,$x.cache_read_input_tokens]|all(type=="number" and (isinfinite or isnan|not) and .>=0)) and $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens>0 then $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens+$x.output_tokens else $i+$c+$r+$o end;'
@@ -25,6 +25,7 @@ else
   w=1000000  # MAIN's first-party window
   c=0
 fi
+sid=${sid:-$CLAUDE_CODE_SESSION_ID}
 [ "$w" -gt 0 ] 2>/dev/null || w=1000000
 acw=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
 [ "$acw" -gt 0 ] 2>/dev/null && [ "$acw" -lt "$w" ] && w=$acw
@@ -38,29 +39,27 @@ lp() {
     else if(q>=50)printf "\033[32m%s %d%%\033[0m",l,q
     else printf "%s %d%%",l,q}'
 }
-# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S EXTRA FMT] ⇒ "LABEL N%EXTRA MM/DD HH:MM".
-# EXTRA = preformatted leading-space insert between used% and reset; FMT = reset date format.
+# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S] ⇒ "LABEL N% MM/DD HH:MM".
 seg() {
   pct=$(lp "$3" "$1")
-  dt=$(date -d "@$2" +"${8:-%m/%d %H:%M}"); delta=$(( $2 - now ))
+  dt=$(date -d "@$2" +'%m/%d %H:%M'); delta=$(( $2 - now ))
   rs=${4:-3600}; ys=${5:-7200}
   if [ "$delta" -le "$rs" ]; then dt=$(printf '\033[31m%s\033[0m' "$dt")
   elif [ "$delta" -le "$ys" ]; then dt=$(printf '\033[33m%s\033[0m' "$dt")
   elif [ -n "$6" ]; then [ "$delta" -le "$6" ] && dt=$(printf '\033[32m%s\033[0m' "$dt")
   elif [ "$(date -d "@$2" +%Y%m%d)" = "$(date +%Y%m%d)" ]; then dt=$(printf '\033[32m%s\033[0m' "$dt")
   fi
-  printf '%s%s %s' "$pct" "$7" "$dt"
+  printf '%s %s' "$pct" "$dt"
 }
 # Empty native rate_limits ⇒ cached OAuth usage. oauth-refresh owns cache +
 # detached poll; render reads cache synchronously.
-if [ -z "$sp$wp" ]; then
+if [ -z "$wp" ]; then
   uc="$HOME/.claude/.oauth_usage.json"
   "$HOME/.claude/oauth-refresh" "$uc"
   if [ -s "$uc" ]; then  # render the last good poll; utilization is a %, ISO resets_at → epoch
-    { read -r sp; read -r sri; read -r wp; read -r wri; } <<EOF2
-$(jq -r '.five_hour.utilization // "", .five_hour.resets_at // "", .seven_day.utilization // "", .seven_day.resets_at // ""' "$uc" 2>/dev/null)
+    { read -r wp; read -r wri; } <<EOF2
+$(jq -r '.seven_day.utilization // "", .seven_day.resets_at // ""' "$uc" 2>/dev/null)
 EOF2
-    [ -n "$sri" ] && sr=$(date -d "$sri" +%s 2>/dev/null)
     [ -n "$wri" ] && wr=$(date -d "$wri" +%s 2>/dev/null)
   fi
 fi
@@ -75,7 +74,32 @@ xs=""
 if [ -n "$xa" ]; then xs=" | $(seg "$xp" "$xa" codex 18000 36000 54000)"
 elif [ -n "$xp" ]; then xs=" | $(lp codex "$xp")"
 fi
-[ -n "$sp" ] && [ -n "$sr" ] && rl=" | $(seg "$sp" "$sr" 5h 3600 7200 10800 "" '%H:%M')"
+# Cache keeper: state + next-mark rule = the keeper's status (one source with its
+# tick); `working` = idle-compact's report, since statusline input lacks turn state.
+# Renders follow token usage, which settles before turn end ⇒ settings
+# refreshInterval 10 s bounds a stale `working`. Keeper down | predating these
+# fields ⇒ no segment.
+ks=$(curl -sf --max-time 1 "${CACHE_KEEPALIVE_URL:-http://127.0.0.1:8318}/_keepalive" 2>/dev/null | jq -r --arg s "$sid" --argjson now "$now" '
+  select(.interval > 0 and .touches >= 0) | .interval as $i | .touches as $l
+  | first(.entries[]? | select(.session == $s[:8])) // {state: "ready"}
+  | if .state == "ready" then "0 ready"
+    elif .state == "armed" and .working == true then "0 working"
+    elif .state == "armed" and .mark == "compact" then (.renewed | fromdate) as $r | (($now - $r) * 3 / $i) as $p
+      | "\(if $p >= 2 then 31 elif $p >= 1 then 33 else 32 end) last \($r)"
+    elif .state == "armed" then "\(if .kept_alive >= $l then 31 elif .kept_alive * 3 >= $l * 2 then 33 else 32 end) touches \(.kept_alive)"
+    elif .state == "compacting" or .state == "compacted" then "0 \(.state)"
+    elif .state == "done" then "31 stopped"
+    else empty end' 2>/dev/null)
+{ read -r kc kw ka; } <<EOF3
+$ks
+EOF3
+case $kw in
+  last) kp="last $(date -d "@$ka" +%H:%M)" ;;
+  touches) kp="touches $ka" ;;
+  *) kp=$kw ;;
+esac
+[ "$kc" -gt 0 ] 2>/dev/null && kp=$(printf '\033[%sm%s\033[0m' "$kc" "$kp")
+[ -n "$kp" ] && rl=" | $kp"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000)"
 rl="$rl$xs"
 # Effort varies per launch (`--effort`) → shown beside the gauge; high/xhigh/max

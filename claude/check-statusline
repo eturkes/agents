@@ -1,12 +1,14 @@
 #!/bin/sh
-# Check statusline's phase segment: each case = a `.agent/spec.md` body → the rendered phase.
+# Check statusline's phase + cache keeper segments: each case = a `.agent/spec.md` body → the
+# rendered phase | a keeper status document → the rendered keeper segment.
 # Usage: check-statusline [AWK...] — AWK = the command standing in for awk, e.g. `busybox awk`.
 sl=$(dirname "$(readlink -f "$0")")/statusline
 t=$(mktemp -d) || exit 1
 trap 'rm -rf "$t"' EXIT
-if [ $# -gt 0 ]; then
-  mkdir "$t/bin"; printf '#!/bin/sh\nexec %s "$@"\n' "$*" > "$t/bin/awk"; chmod +x "$t/bin/awk"; PATH=$t/bin:$PATH
-fi
+mkdir "$t/bin"; PATH=$t/bin:$PATH
+# curl stand-in = the keeper's status endpoint: $t/ka.json, absent ⇒ unreachable (curl's exit 7).
+printf '#!/bin/sh\n[ -f %s/ka.json ] && exec cat %s/ka.json\nexit 7\n' "$t" "$t" > "$t/bin/curl"; chmod +x "$t/bin/curl"
+[ $# -gt 0 ] && { printf '#!/bin/sh\nexec %s "$@"\n' "$*" > "$t/bin/awk"; chmod +x "$t/bin/awk"; }
 E=$(printf '\033') n=0 fail=0
 # ck NAME WANT SPEC [LAUNCH_SUBDIR [GIT_SUBDIR]]: WANT = `[color]:text`; SPEC `-` ⇒ no spec file.
 ck() {
@@ -172,5 +174,50 @@ ck routed-field 31:implement 'Phase: IMPLEMENT — plugins
 Suspended: ITERATE — demo UI'
 ck parent-dir 31:implement 'Phase: IMPLEMENT' a/b
 ck repo-root ':no phase' 'Phase: IMPLEMENT' r/s r
+# kk NAME WANT STATE [MARK KEPT AGO WORKING]: WANT = `[color]:text` of the keeper segment, `:` ⇒
+# none, `last` gains the read's HH:MM; STATE = this session's entry state beside another session's
+# entry | `-` ⇒ no entry of its own | `{…}` = the document verbatim | `off` ⇒ unreachable;
+# MARK `-` ⇒ null; KEPT = kept_alive as JSON; AGO = s since the last cache read; WORKING = JSON.
+kk() {
+  n=$((n + 1)); now=$(date +%s); r=$((now - ${6:-0})); rm -f "$t/ka.json"
+  case $3 in
+    off) ;;
+    \{*) printf '%s' "$3" > "$t/ka.json" ;;
+    *) e=""; m=null; [ "${4:--}" = - ] || m="\"$4\""
+       [ "$3" = - ] || e=$(printf ',{"session":"5e551011","state":"%s","mark":%s,"kept_alive":%s,"renewed":"%s","working":%s}' "$3" "$m" "${5:-0}" "$(date -u -d "@$r" +%Y-%m-%dT%H:%M:%SZ)" "${7:-false}")
+       printf '{"interval":3300.0,"touches":19,"entries":[{"session":"0ther000","state":"armed","mark":"touch","kept_alive":3,"renewed":null,"working":true}%s]}' "$e" > "$t/ka.json" ;;
+  esac
+  out=$(printf '{"session_id":"5e551011-0000-4000-8000-000000000000","workspace":{"project_dir":"%s"},"context_window":{"total_input_tokens":1,"context_window_size":200000}}' "$t/k" | HOME=$t sh "$sl" 2>/dev/null)
+  got=${out#* | no phase} want=${2#*:}
+  [ "$want" = last ] && want="last $(date -d "@$r" +%H:%M)"
+  [ -n "${2%%:*}" ] && want="${E}[${2%%:*}m$want${E}[0m"
+  [ -n "$want" ] && want=" | $want"
+  [ "$got" = "$want" ] || { fail=$((fail + 1)); printf 'FAIL %s: want %s, got %s\n' "$1" "$want" "$got" | cat -v; }
+  rm -f "$t/ka.json"
+}
+mkdir "$t/k"
+kk keeper-off : off
+kk keeper-predates-fields : '{"entries":[]}'
+kk keeper-malformed : '{"interval":'
+kk ready :ready -
+kk ready-no-touch-budget :ready '{"interval":3300.0,"touches":0,"entries":[]}'
+kk last-fresh 32:last armed compact 0 330
+kk last-green-edge 32:last armed compact 0 990
+kk last-middle 33:last armed compact 0 1320
+kk last-late 31:last armed compact 0 2640
+kk last-overdue 31:last armed compact 0 3960
+kk last-after-touches 33:last armed compact 4 1650
+kk touches-none '32:touches 0' armed touch 0 3000
+kk touches-early '32:touches 12' armed touch 12
+kk touches-late '33:touches 13' armed touch 13
+kk touches-penultimate '33:touches 18' armed touch 18
+kk touches-last '31:touches 19' armed stop 19
+kk working :working armed touch 0 0 true
+kk working-after-touches :working armed touch 5 0 true
+kk working-unarmed :compacted compacted - '"compacted"' 0 true
+kk compacting :compacting compacting - 0
+kk compacted :compacted compacted - '"compacted"'
+kk stopped 31:stopped 'done' - 19
+kk unknown-state : bogus
 printf '%d/%d passed\n' $((n - fail)) "$n"
 [ "$fail" -eq 0 ]

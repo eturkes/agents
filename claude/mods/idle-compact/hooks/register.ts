@@ -1,12 +1,24 @@
 import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
-// cache-keepalive decides at its mark (claude/cache-keepalive/README.md); this mod reports quiet + runs the compaction.
+// cache-keepalive decides at its mark (claude/cache-keepalive/README.md); this mod reports quiet + working + runs the compaction.
 const POLL_MS = 30_000
 const KEEPER = 'http://127.0.0.1:8318'
 // Quiet = no turn running (an AskUserQuestion wait included) + the last main Stop left no background task or cron.
+// Working = a turn running + no question open ⇒ statusline `working`; a question wait = touches.
 const running = new Set<string>()
+// Open main-thread questions: the dialog hides the statusline ⇒ the touch count rides a notice under it.
+const asking = new Set<string>()
 let background = false
 let compacting = false
+let interactive = false
+
+type Reply = { compact?: unknown; touches?: unknown; limit?: unknown; state?: unknown }
+
+function notice(r: Reply | undefined): string | undefined {
+  if (r?.state === 'done') return 'cache keepalive stopped'
+  if (r?.state !== 'armed' || typeof r.touches !== 'number' || typeof r.limit !== 'number') return undefined
+  return `cache touches ${r.touches}/${r.limit}`
+}
 
 async function report($: EngineInterface, path: string, body: object): Promise<unknown> {
   const url = `${(await $.env.get('CACHE_KEEPALIVE_URL')) || KEEPER}/_keepalive/${path}`
@@ -17,7 +29,10 @@ async function report($: EngineInterface, path: string, body: object): Promise<u
 async function poll($: EngineInterface): Promise<void> {
   const session = await $.session.id()
   const quiet = running.size === 0 && !background && !compacting
-  const asked = (await report($, 'poll', { session, quiet })) as { compact?: unknown } | undefined
+  const working = running.size > 0 && asking.size === 0
+  const asked = (await report($, 'poll', { session, quiet, working })) as Reply | undefined
+  const text = notice(asked)
+  for (const id of asking) $.ui.notice(id, text) // refusal (call resolved, another plugin's $.tool.call) = engine-logged drop
   if (asked?.compact !== true) return
   let reason = ''
   let usage: ModelUsage | undefined
@@ -34,21 +49,41 @@ async function poll($: EngineInterface): Promise<void> {
   await report($, 'compacted', { session, ok: !reason, reason, usage })
 }
 
+// State changes report at once: the statusline renders on its own clock, between 30-s polls.
+function pollNow($: EngineInterface): void {
+  if (interactive) void poll($).catch(() => {})
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const r = await next(e)
-    if (e.isInteractive) $.clock.every(POLL_MS, () => void poll($).catch(() => {}))
+    interactive = e.isInteractive
+    if (interactive) $.clock.every(POLL_MS, () => void poll($).catch(() => {}))
     return r
   })
 
-  on('turn.start', (_$, e, next) => {
+  on('turn.start', ($, e, next) => {
     running.add(e.turnId)
+    pollNow($)
     return next(e)
   })
 
-  on('turn.complete', (_$, e, next) => {
+  on('turn.complete', ($, e, next) => {
     running.delete(e.turnId)
+    pollNow($)
     return next(e)
+  })
+
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
+    asking.add(e.tool_use_id)
+    pollNow($)
+    try {
+      return await next(e)
+    } finally {
+      asking.delete(e.tool_use_id)
+      pollNow($)
+    }
   })
 
   on('classic.Stop', (_$, e, next) => {
