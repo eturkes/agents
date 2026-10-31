@@ -1,18 +1,10 @@
-From 6f6fe73c3bccdc7da54427b3805f8d3a507aadc9 Mon Sep 17 00:00:00 2001
+From f864ab623e4ccdd3b2e0c37786c02c55ee5ff19c Mon Sep 17 00:00:00 2001
 From: Emir Turkes <eturkes@bu.edu>
-Date: Wed, 21 Oct 2026 11:57:57 +0900
-Subject: [PATCH] codex/claude: ToolSearch discoveries declared top-level ahead
- of the input → each discovery reset the prompt cache → declare at the
- reference via additional_tools
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Date: Sat, 31 Oct 2026 09:49:09 +0900
+Subject: [PATCH] codex/claude: keep ToolSearch discoveries at reference
+ position
 
-- Claude Code: discovered deferred tool → tools[] (defer_loading) + tool_reference in the search tool_result.
-- Referenced deferred tool → additional_tools developer item after the referencing function_call_output ⇒ input append-only.
-- Top-level stays: unreferenced deferred tools, tools called before their first retained reference (compaction), compat endpoints.
-- additional_tools declarations ≡ top-level: schema normalization, image-function check, parallel_tool_calls cleanup, count_tokens.
-- gpt-6.1-sol via the ChatGPT backend, request after ToolSearch: cached 0/6,908 → 6,656/7,006.
+Declare referenced deferred tools via additional_tools to preserve the cached prompt prefix. Keep upstream system-message tool additions and compatibility endpoints intact.
 ---
  .../codex_executor_additional_tools_test.go   |  29 +++
  .../executor/codex_executor_request.go        |  21 +-
@@ -21,8 +13,8 @@ Content-Transfer-Encoding: 8bit
  .../executor/helps/codex_tool_schema.go       |  26 ++-
  .../executor/helps/codex_tool_schema_test.go  |  16 ++
  .../codex_claude_deferred_tools_test.go       | 208 ++++++++++++++++++
- .../codex/claude/codex_claude_request.go      | 123 ++++++++---
- 8 files changed, 447 insertions(+), 54 deletions(-)
+ .../codex/claude/codex_claude_request.go      |  67 ++++++
+ 8 files changed, 417 insertions(+), 28 deletions(-)
  create mode 100644 internal/runtime/executor/codex_executor_additional_tools_test.go
  create mode 100644 internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 
@@ -62,7 +54,7 @@ index 0000000000000000000000000000000000000000..86a31ecfbf4766ecb97522f315a8a494
 +	}
 +}
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index b03948d7ec215493a3a9194cef1d24335af8522c..c9fa7ebcedf0abc84a4ae76b19fb5a160203e13a 100644
+index 3f9bb2d9c18eaa95956a5fbf04f37f73a7452f36..6857dd51b8668e60217931537000c6b5e2180809 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
 @@ -688,6 +688,11 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
@@ -108,10 +100,10 @@ index b03948d7ec215493a3a9194cef1d24335af8522c..c9fa7ebcedf0abc84a4ae76b19fb5a16
  	}
  
 diff --git a/internal/runtime/executor/codex_executor_tokens.go b/internal/runtime/executor/codex_executor_tokens.go
-index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..1730e7fcf2d9a7d4e304b7414c6dd3349e47da9e 100644
+index 4719e1a9da082dec3b79fc66ac8147f96af7ac61..29387185075c9935624b3430c724203f33e934c4 100644
 --- a/internal/runtime/executor/codex_executor_tokens.go
 +++ b/internal/runtime/executor/codex_executor_tokens.go
-@@ -123,6 +123,8 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+@@ -127,6 +127,8 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
  				if out := strings.TrimSpace(item.Get("output").String()); out != "" {
  					segments = append(segments, out)
  				}
@@ -120,7 +112,7 @@ index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..1730e7fcf2d9a7d4e304b7414c6dd334
  			default:
  				if text := strings.TrimSpace(item.Get("text").String()); text != "" {
  					segments = append(segments, text)
-@@ -131,28 +133,7 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+@@ -135,28 +137,7 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
  		}
  	}
  
@@ -150,7 +142,7 @@ index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..1730e7fcf2d9a7d4e304b7414c6dd334
  
  	textFormat := root.Get("text.format")
  	if textFormat.Exists() {
-@@ -181,3 +162,29 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+@@ -185,3 +166,29 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
  	}
  	return int64(count), nil
  }
@@ -499,12 +491,12 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +	}
 +}
 diff --git a/internal/translator/codex/claude/codex_claude_request.go b/internal/translator/codex/claude/codex_claude_request.go
-index 504a5b11617a4cce9c280f5d96250e5209ee5145..cc65551d61627c5f7dc97be258da49bccae9f436 100644
+index 5842e509cf8d500e41fbc1baf33b0a3385357356..05112f6303b928f141257bab8d489097b0e77ea4 100644
 --- a/internal/translator/codex/claude/codex_claude_request.go
 +++ b/internal/translator/codex/claude/codex_claude_request.go
-@@ -64,6 +64,46 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
- 	template, _ = sjson.SetBytes(template, "model", modelName)
- 	inputItems := translatorcommon.NewRawArrayItems(rootResult.Get("messages.#").Int())
+@@ -69,6 +69,46 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+ 	declaredToolsIndexed := false
+ 	hasAdditionalTools := false
  
 +	// Claude Code tool search: discovered tool → tools[] (defer_loading) + tool_reference in the
 +	// search tool_result. Codex renders top-level tools ahead of the input ⇒ a top-level declaration
@@ -549,7 +541,7 @@ index 504a5b11617a4cce9c280f5d96250e5209ee5145..cc65551d61627c5f7dc97be258da49bc
  	// Process system messages and convert them to input content format.
  	systemsResult := rootResult.Get("system")
  	if systemsResult.Exists() {
-@@ -322,6 +362,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -336,6 +376,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  						}
  
  						inputItems = append(inputItems, functionCallOutputMessage)
@@ -561,77 +553,20 @@ index 504a5b11617a4cce9c280f5d96250e5209ee5145..cc65551d61627c5f7dc97be258da49bc
  						turnSendable++
  					}
  				}
-@@ -365,33 +410,10 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -380,6 +425,9 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  				toolItems = append(toolItems, convertClaudeWebSearchToolToCodex(toolResult))
  				continue
  			}
--			tool := []byte(toolResult.Raw)
--			if toolResult.Get("type").Type != gjson.String || toolResult.Get("type").String() != "function" {
--				tool, _ = sjson.SetBytes(tool, "type", "function")
--			}
--			// Apply shortened name if needed
--			if v := toolResult.Get("name"); v.Exists() {
--				originalName := v.String()
--				name := originalName
--				if short, ok := toolNameMap[name]; ok {
--					name = short
--				} else {
--					name = shortenNameIfNeeded(name)
--				}
--				if v.Type != gjson.String || name != originalName {
--					tool, _ = sjson.SetBytes(tool, "name", name)
--				}
--			}
--			tool, _ = sjson.SetRawBytes(tool, "parameters", []byte(normalizeToolParameters(toolResult.Get("input_schema").Raw)))
--			for _, path := range []string{"input_schema", "parameters.$schema", "cache_control", "defer_loading"} {
--				if gjson.GetBytes(tool, path).Exists() {
--					tool, _ = sjson.DeleteBytes(tool, path)
--				}
--			}
--			if gjson.GetBytes(tool, "strict").Type != gjson.False {
--				tool, _ = sjson.SetBytes(tool, "strict", false)
 +			if placedTools[toolResult.Get("name").String()] {
 +				continue
- 			}
--			toolItems = append(toolItems, tool)
-+			toolItems = append(toolItems, convertClaudeFunctionToolToCodex(toolResult, toolNameMap))
++			}
+ 			toolItems = append(toolItems, convertClaudeFunctionToolToCodex(toolResult, toolNameMap))
  		}
  	}
- 
-@@ -485,6 +507,55 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -474,6 +522,25 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  	return template, drops.Err()
  }
  
-+func convertClaudeFunctionToolToCodex(toolResult gjson.Result, toolNameMap map[string]string) []byte {
-+	tool := []byte(toolResult.Raw)
-+	if toolResult.Get("type").Type != gjson.String || toolResult.Get("type").String() != "function" {
-+		tool, _ = sjson.SetBytes(tool, "type", "function")
-+	}
-+	// Apply shortened name if needed
-+	if v := toolResult.Get("name"); v.Exists() {
-+		originalName := v.String()
-+		name := originalName
-+		if short, ok := toolNameMap[name]; ok {
-+			name = short
-+		} else {
-+			name = shortenNameIfNeeded(name)
-+		}
-+		if v.Type != gjson.String || name != originalName {
-+			tool, _ = sjson.SetBytes(tool, "name", name)
-+		}
-+	}
-+	tool, _ = sjson.SetRawBytes(tool, "parameters", []byte(normalizeToolParameters(toolResult.Get("input_schema").Raw)))
-+	for _, path := range []string{"input_schema", "parameters.$schema", "cache_control", "defer_loading"} {
-+		if gjson.GetBytes(tool, path).Exists() {
-+			tool, _ = sjson.DeleteBytes(tool, path)
-+		}
-+	}
-+	if gjson.GetBytes(tool, "strict").Type != gjson.False {
-+		tool, _ = sjson.SetBytes(tool, "strict", false)
-+	}
-+	return tool
-+}
-+
 +func referencedDeferredTools(content gjson.Result, deferredTools map[string]gjson.Result, placedTools map[string]bool, toolNameMap map[string]string) [][]byte {
 +	if len(deferredTools) == 0 || !content.IsArray() {
 +		return nil
@@ -655,5 +590,5 @@ index 504a5b11617a4cce9c280f5d96250e5209ee5145..cc65551d61627c5f7dc97be258da49bc
  	if !result.Exists() || result.Type != gjson.String {
  		return ""
 -- 
-2.56.0
+2.47.3
 
