@@ -1,0 +1,594 @@
+From f864ab623e4ccdd3b2e0c37786c02c55ee5ff19c Mon Sep 17 00:00:00 2001
+From: Emir Turkes <eturkes@bu.edu>
+Date: Sat, 31 Oct 2026 09:49:09 +0900
+Subject: [PATCH] codex/claude: keep ToolSearch discoveries at reference
+ position
+
+Declare referenced deferred tools via additional_tools to preserve the cached prompt prefix. Keep upstream system-message tool additions and compatibility endpoints intact.
+---
+ .../codex_executor_additional_tools_test.go   |  29 +++
+ .../executor/codex_executor_request.go        |  21 +-
+ .../runtime/executor/codex_executor_tokens.go |  51 +++--
+ .../executor/codex_executor_tokens_test.go    |  27 +++
+ .../executor/helps/codex_tool_schema.go       |  26 ++-
+ .../executor/helps/codex_tool_schema_test.go  |  16 ++
+ .../codex_claude_deferred_tools_test.go       | 208 ++++++++++++++++++
+ .../codex/claude/codex_claude_request.go      |  67 ++++++
+ 8 files changed, 417 insertions(+), 28 deletions(-)
+ create mode 100644 internal/runtime/executor/codex_executor_additional_tools_test.go
+ create mode 100644 internal/translator/codex/claude/codex_claude_deferred_tools_test.go
+
+diff --git a/internal/runtime/executor/codex_executor_additional_tools_test.go b/internal/runtime/executor/codex_executor_additional_tools_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..86a31ecfbf4766ecb97522f315a8a494a146d270
+--- /dev/null
++++ b/internal/runtime/executor/codex_executor_additional_tools_test.go
+@@ -0,0 +1,29 @@
++package executor
++
++import (
++	"testing"
++
++	"github.com/tidwall/gjson"
++)
++
++const codexAdditionalImageFunction = `{"type":"function","name":"image_gen.imagegen","parameters":{"type":"object","properties":{}}}`
++
++func TestEnsureImageGenerationToolSeesAdditionalToolsDeclaration(t *testing.T) {
++	body := []byte(`{"tools":[{"type":"function","name":"Read","parameters":{"type":"object","properties":{}}}],"input":[{"type":"additional_tools","role":"developer","tools":[` + codexAdditionalImageFunction + `]}]}`)
++	out := ensureImageGenerationTool(body, "gpt-6-luna", nil, nil)
++	if gjson.GetBytes(out, `tools.#(type=="image_generation")`).Exists() {
++		t.Fatalf("image_generation injected despite an additional_tools image function: %s", out)
++	}
++}
++
++func TestNormalizeCodexParallelToolCallsKeepsFieldForAdditionalTools(t *testing.T) {
++	body := []byte(`{"parallel_tool_calls":false,"tools":[],"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"function","name":"Lookup","parameters":{"type":"object","properties":{}}}]}]}`)
++	out := normalizeCodexParallelToolCallsForTools(body)
++	if got := gjson.GetBytes(out, "parallel_tool_calls"); !got.Exists() || got.Bool() {
++		t.Fatalf("parallel_tool_calls = %s, want false", got.Raw)
++	}
++	bare := normalizeCodexParallelToolCallsForTools([]byte(`{"parallel_tool_calls":false,"tools":[],"input":[]}`))
++	if gjson.GetBytes(bare, "parallel_tool_calls").Exists() {
++		t.Fatalf("parallel_tool_calls kept without any tools: %s", bare)
++	}
++}
+diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
+index 3f9bb2d9c18eaa95956a5fbf04f37f73a7452f36..6857dd51b8668e60217931537000c6b5e2180809 100644
+--- a/internal/runtime/executor/codex_executor_request.go
++++ b/internal/runtime/executor/codex_executor_request.go
+@@ -688,6 +688,11 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
+ 		return body
+ 	}
+ 
++	for _, t := range codexAdditionalToolDeclarations(body) {
++		if t.Get("type").String() == "image_generation" || isImageGenerationFunctionTool(t) {
++			return body
++		}
++	}
+ 	tools := gjson.GetBytes(body, "tools")
+ 	if !tools.Exists() || !tools.IsArray() {
+ 		body, _ = sjson.SetRawBytes(body, "tools", imageGenToolArrayJSON)
+@@ -702,6 +707,20 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
+ 	return body
+ }
+ 
++func codexAdditionalToolDeclarations(body []byte) []gjson.Result {
++	if !bytes.Contains(body, []byte(`"additional_tools"`)) {
++		return nil
++	}
++	var tools []gjson.Result
++	gjson.GetBytes(body, "input").ForEach(func(_, item gjson.Result) bool {
++		if item.Get("type").String() == "additional_tools" {
++			tools = append(tools, item.Get("tools").Array()...)
++		}
++		return true
++	})
++	return tools
++}
++
+ func normalizeCodexParallelToolCalls(body []byte, headers http.Header) []byte {
+ 	if util.IsCodexResponsesLiteRequest(body, headers) {
+ 		body = helps.SetBoolIfDifferent(body, "parallel_tool_calls", false)
+@@ -717,7 +736,7 @@ func normalizeCodexParallelToolCallsForTools(body []byte) []byte {
+ 
+ 	tools := gjson.GetBytes(body, "tools")
+ 	hasTools := tools.Exists() && tools.IsArray() && len(tools.Array()) > 0
+-	if hasTools {
++	if hasTools || len(codexAdditionalToolDeclarations(body)) > 0 {
+ 		return body
+ 	}
+ 
+diff --git a/internal/runtime/executor/codex_executor_tokens.go b/internal/runtime/executor/codex_executor_tokens.go
+index 4719e1a9da082dec3b79fc66ac8147f96af7ac61..29387185075c9935624b3430c724203f33e934c4 100644
+--- a/internal/runtime/executor/codex_executor_tokens.go
++++ b/internal/runtime/executor/codex_executor_tokens.go
+@@ -127,6 +127,8 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+ 				if out := strings.TrimSpace(item.Get("output").String()); out != "" {
+ 					segments = append(segments, out)
+ 				}
++			case "additional_tools":
++				segments = appendCodexToolSegments(segments, item.Get("tools"))
+ 			default:
+ 				if text := strings.TrimSpace(item.Get("text").String()); text != "" {
+ 					segments = append(segments, text)
+@@ -135,28 +137,7 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+ 		}
+ 	}
+ 
+-	tools := root.Get("tools")
+-	if tools.IsArray() {
+-		tarr := tools.Array()
+-		for i := range tarr {
+-			tool := tarr[i]
+-			if name := strings.TrimSpace(tool.Get("name").String()); name != "" {
+-				segments = append(segments, name)
+-			}
+-			if desc := strings.TrimSpace(tool.Get("description").String()); desc != "" {
+-				segments = append(segments, desc)
+-			}
+-			if params := tool.Get("parameters"); params.Exists() {
+-				val := params.Raw
+-				if params.Type == gjson.String {
+-					val = params.String()
+-				}
+-				if trimmed := strings.TrimSpace(val); trimmed != "" {
+-					segments = append(segments, trimmed)
+-				}
+-			}
+-		}
+-	}
++	segments = appendCodexToolSegments(segments, root.Get("tools"))
+ 
+ 	textFormat := root.Get("text.format")
+ 	if textFormat.Exists() {
+@@ -185,3 +166,29 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+ 	}
+ 	return int64(count), nil
+ }
++
++func appendCodexToolSegments(segments []string, tools gjson.Result) []string {
++	if !tools.IsArray() {
++		return segments
++	}
++	tarr := tools.Array()
++	for i := range tarr {
++		tool := tarr[i]
++		if name := strings.TrimSpace(tool.Get("name").String()); name != "" {
++			segments = append(segments, name)
++		}
++		if desc := strings.TrimSpace(tool.Get("description").String()); desc != "" {
++			segments = append(segments, desc)
++		}
++		if params := tool.Get("parameters"); params.Exists() {
++			val := params.Raw
++			if params.Type == gjson.String {
++				val = params.String()
++			}
++			if trimmed := strings.TrimSpace(val); trimmed != "" {
++				segments = append(segments, trimmed)
++			}
++		}
++	}
++	return segments
++}
+diff --git a/internal/runtime/executor/codex_executor_tokens_test.go b/internal/runtime/executor/codex_executor_tokens_test.go
+index a73f8674bacf4a8ec2214cded4083b0398c8f861..7dd917dd8688303c68e9e37dfaacacfe4d57cad2 100644
+--- a/internal/runtime/executor/codex_executor_tokens_test.go
++++ b/internal/runtime/executor/codex_executor_tokens_test.go
+@@ -12,6 +12,7 @@ import (
+ 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
+ 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
+ 	"github.com/tidwall/gjson"
++	"github.com/tiktoken-go/tokenizer"
+ )
+ 
+ type codexTokenSchemaHooks struct {
+@@ -78,3 +79,29 @@ func TestCodexExecutorCountTokensPreservesToolNumberSchemas(t *testing.T) {
+ 		}
+ 	}
+ }
++
++func TestCountCodexInputTokensCountsAdditionalTools(t *testing.T) {
++	enc, errEnc := tokenizer.Get(tokenizer.Cl100kBase)
++	if errEnc != nil {
++		t.Fatalf("tokenizer: %v", errEnc)
++	}
++	tool := `{"type":"function","name":"LSP","description":"Code intelligence for hover, definitions and references","parameters":{"type":"object","properties":{"operation":{"type":"string"}}}}`
++	message := `{"type":"message","role":"user","content":[{"type":"input_text","text":"Check the diagnostics"}]}`
++	topLevel := []byte(`{"input":[` + message + `],"tools":[` + tool + `]}`)
++	declared := []byte(`{"input":[` + message + `,{"type":"additional_tools","role":"developer","tools":[` + tool + `]}],"tools":[]}`)
++	bare := []byte(`{"input":[` + message + `],"tools":[]}`)
++
++	count := func(body []byte) int64 {
++		n, err := countCodexInputTokens(enc, body)
++		if err != nil {
++			t.Fatalf("countCodexInputTokens: %v", err)
++		}
++		return n
++	}
++	if got, want := count(declared), count(topLevel); got != want {
++		t.Fatalf("additional_tools count = %d, top-level count = %d", got, want)
++	}
++	if count(declared) <= count(bare) {
++		t.Fatalf("additional_tools tools were not counted")
++	}
++}
+diff --git a/internal/runtime/executor/helps/codex_tool_schema.go b/internal/runtime/executor/helps/codex_tool_schema.go
+index d97e5e516097a822a57bf9012f527682afdf183e..34fba85cba52e810009c49d7974cc605aa67812c 100644
+--- a/internal/runtime/executor/helps/codex_tool_schema.go
++++ b/internal/runtime/executor/helps/codex_tool_schema.go
+@@ -54,12 +54,28 @@ func NormalizeCodexToolSchemas(body []byte) []byte {
+ 	if len(body) == 0 {
+ 		return body
+ 	}
+-	updatedTools, changed := normalizeCodexToolList(gjson.GetBytes(body, "tools"))
+-	if !changed {
+-		return body
++	out, changedAny := body, false
++	if updatedTools, changed := normalizeCodexToolList(gjson.GetBytes(body, "tools")); changed {
++		if updated, errSet := sjson.SetRawBytes(out, "tools", updatedTools); errSet == nil {
++			out, changedAny = updated, true
++		}
+ 	}
+-	out, errSet := sjson.SetRawBytes(body, "tools", updatedTools)
+-	if errSet != nil {
++	// additional_tools items declare tools mid-input → same backend validation.
++	if bytes.Contains(body, []byte(`"additional_tools"`)) {
++		gjson.GetBytes(body, "input").ForEach(func(index, item gjson.Result) bool {
++			if item.Get("type").String() != "additional_tools" {
++				return true
++			}
++			if updatedTools, changed := normalizeCodexToolList(item.Get("tools")); changed {
++				path := "input." + strconv.FormatInt(index.Int(), 10) + ".tools"
++				if updated, errSet := sjson.SetRawBytes(out, path, updatedTools); errSet == nil {
++					out, changedAny = updated, true
++				}
++			}
++			return true
++		})
++	}
++	if !changedAny {
+ 		return body
+ 	}
+ 	log.Debugf("codex: normalized tool schemas to prevent upstream failure")
+diff --git a/internal/runtime/executor/helps/codex_tool_schema_test.go b/internal/runtime/executor/helps/codex_tool_schema_test.go
+index cc6da6af257d1115dfb1e70b3577efba454e9caa..4a5a0264e01c30cfe3b741b776df809fa2fd3585 100644
+--- a/internal/runtime/executor/helps/codex_tool_schema_test.go
++++ b/internal/runtime/executor/helps/codex_tool_schema_test.go
+@@ -1422,3 +1422,19 @@ func TestNormalizeCodexToolSchemas_StripsOutOfRangeInt64Bounds(t *testing.T) {
+ 		t.Errorf("expected NormalizeCodexToolSchemas to be idempotent")
+ 	}
+ }
++
++func TestNormalizeCodexToolSchemas_AdditionalToolsDeclarations(t *testing.T) {
++	tool := `{"type":"function","name":"Lookup","parameters":{"type":"object","properties":{"n":{"type":"integer","maximum":18446744073709551615}}}}`
++	body := []byte(`{"tools":[` + tool + `],"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]},{"type":"additional_tools","role":"developer","tools":[` + tool + `]}]}`)
++
++	out := gjson.ParseBytes(NormalizeCodexToolSchemas(body))
++	if out.Get("tools.0.parameters.properties.n.maximum").Exists() {
++		t.Fatalf("top-level maximum kept: %s", out.Get("tools").Raw)
++	}
++	if out.Get("input.1.tools.0.parameters.properties.n.maximum").Exists() {
++		t.Fatalf("additional_tools maximum kept: %s", out.Get("input.1").Raw)
++	}
++	if out.Get("input.0").Raw != gjson.GetBytes(body, "input.0").Raw {
++		t.Fatalf("message item changed: %s", out.Get("input.0").Raw)
++	}
++}
+diff --git a/internal/translator/codex/claude/codex_claude_deferred_tools_test.go b/internal/translator/codex/claude/codex_claude_deferred_tools_test.go
+new file mode 100644
+index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd2cb297e5
+--- /dev/null
++++ b/internal/translator/codex/claude/codex_claude_deferred_tools_test.go
+@@ -0,0 +1,208 @@
++package claude
++
++import (
++	"strings"
++	"testing"
++
++	"github.com/tidwall/gjson"
++)
++
++const deferredToolsBase = `{
++	"model": "claude-opus-4-8",
++	"system": [{"type": "text", "text": "Be helpful"}],
++	"tools": [
++		{"name": "Read", "description": "Read a file", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}},
++		{"name": "ToolSearch", "description": "Load deferred tools", "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}}}
++		%s
++	],
++	"messages": [
++		{"role": "user", "content": [{"type": "text", "text": "Check the diagnostics"}]}
++		%s
++	]
++}`
++
++const (
++	deferredLSPTool = `{"name": "LSP", "description": "Code intelligence", "input_schema": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"operation": {"type": "string"}}}, "defer_loading": true}`
++	searchToolUse   = `{"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_search", "name": "ToolSearch", "input": {"query": "select:LSP"}}]}`
++	searchResult    = `{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_search", "content": [{"type": "tool_reference", "tool_name": "LSP"}]}]}`
++	lspToolUse      = `{"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_lsp", "name": "LSP", "input": {"operation": "hover"}}]}`
++	lspResult       = `{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_lsp", "content": "no diagnostics"}]}`
++)
++
++func deferredToolsRequest(extraTools string, messages ...string) []byte {
++	tools := ""
++	if extraTools != "" {
++		tools = "," + extraTools
++	}
++	history := ""
++	if len(messages) > 0 {
++		history = "," + strings.Join(messages, ",")
++	}
++	return []byte(strings.Replace(strings.Replace(deferredToolsBase, "%s", tools, 1), "%s", history, 1))
++}
++
++func translatedToolNames(t *testing.T, body gjson.Result) []string {
++	t.Helper()
++	var names []string
++	for _, tool := range body.Get("tools").Array() {
++		names = append(names, tool.Get("name").String())
++	}
++	return names
++}
++
++func TestConvertClaudeRequestToCodex_DeclaresDiscoveredToolAtReference(t *testing.T) {
++	result, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult), true)
++	if err != nil {
++		t.Fatalf("translate: %v", err)
++	}
++	body := gjson.ParseBytes(result)
++
++	if got := strings.Join(translatedToolNames(t, body), ","); got != "Read,ToolSearch" {
++		t.Fatalf("top-level tools = %s, want Read,ToolSearch", got)
++	}
++	input := body.Get("input").Array()
++	var types []string
++	for _, item := range input {
++		types = append(types, item.Get("type").String())
++	}
++	if got := strings.Join(types, ","); got != "message,message,function_call,function_call_output,additional_tools" {
++		t.Fatalf("input types = %s", got)
++	}
++	added := input[4]
++	if added.Get("role").String() != "developer" {
++		t.Fatalf("additional_tools role = %q, want developer", added.Get("role").String())
++	}
++	tools := added.Get("tools").Array()
++	if len(tools) != 1 {
++		t.Fatalf("additional_tools tools = %s", added.Get("tools").Raw)
++	}
++	lsp := tools[0]
++	if lsp.Get("type").String() != "function" || lsp.Get("name").String() != "LSP" || lsp.Get("strict").Type != gjson.False {
++		t.Fatalf("declared tool = %s", lsp.Raw)
++	}
++	if lsp.Get("defer_loading").Exists() || lsp.Get("input_schema").Exists() || lsp.Get("parameters.$schema").Exists() {
++		t.Fatalf("declared tool kept Claude-only fields: %s", lsp.Raw)
++	}
++	if lsp.Get("parameters.properties.operation.type").String() != "string" {
++		t.Fatalf("declared tool parameters = %s", lsp.Get("parameters").Raw)
++	}
++}
++
++func TestConvertClaudeRequestToCodex_ToolDiscoveryKeepsPromptPrefix(t *testing.T) {
++	steps := [][]byte{
++		deferredToolsRequest(""),
++		deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult),
++		deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult, lspToolUse, lspResult),
++	}
++	var previous gjson.Result
++	for i, step := range steps {
++		result, err := ConvertClaudeRequestToCodex("gpt-6-luna", step, true)
++		if err != nil {
++			t.Fatalf("step %d: translate: %v", i, err)
++		}
++		body := gjson.ParseBytes(result)
++		if i > 0 {
++			if body.Get("tools").Raw != previous.Get("tools").Raw {
++				t.Fatalf("step %d: tools changed:\n%s\n%s", i, previous.Get("tools").Raw, body.Get("tools").Raw)
++			}
++			before, after := previous.Get("input").Array(), body.Get("input").Array()
++			if len(after) <= len(before) {
++				t.Fatalf("step %d: input did not grow", i)
++			}
++			for j := range before {
++				if before[j].Raw != after[j].Raw {
++					t.Fatalf("step %d: input[%d] changed:\n%s\n%s", i, j, before[j].Raw, after[j].Raw)
++				}
++			}
++		}
++		previous = body
++	}
++}
++
++func TestConvertClaudeRequestToCodex_UnreferencedDeferredToolStaysTopLevel(t *testing.T) {
++	result, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool), true)
++	if err != nil {
++		t.Fatalf("translate: %v", err)
++	}
++	body := gjson.ParseBytes(result)
++	if got := strings.Join(translatedToolNames(t, body), ","); got != "Read,ToolSearch,LSP" {
++		t.Fatalf("top-level tools = %s, want Read,ToolSearch,LSP", got)
++	}
++	if body.Get(`input.#(type=="additional_tools")`).Exists() {
++		t.Fatalf("unexpected additional_tools item: %s", body.Get("input").Raw)
++	}
++}
++
++func TestConvertClaudeRequestToCodex_RepeatedReferenceDeclaresToolOnce(t *testing.T) {
++	again := strings.NewReplacer("toolu_search", "toolu_search_again").Replace(searchToolUse)
++	againResult := strings.NewReplacer("toolu_search", "toolu_search_again").Replace(searchResult)
++	result, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult, again, againResult), true)
++	if err != nil {
++		t.Fatalf("translate: %v", err)
++	}
++	input := gjson.ParseBytes(result).Get("input").Array()
++	count := 0
++	for i, item := range input {
++		if item.Get("type").String() == "additional_tools" {
++			count++
++			if prev := input[i-1]; prev.Get("call_id").String() != "toolu_search" {
++				t.Fatalf("additional_tools follows %s, want the first search result", prev.Raw)
++			}
++		}
++	}
++	if count != 1 {
++		t.Fatalf("additional_tools items = %d, want 1", count)
++	}
++}
++
++func TestConvertClaudeRequestToCodexWithCompat_KeepsDeferredToolTopLevel(t *testing.T) {
++	result, err := ConvertClaudeRequestToCodexWithCompat("gpt-6-luna", deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult), true)
++	if err != nil {
++		t.Fatalf("translate: %v", err)
++	}
++	body := gjson.ParseBytes(result)
++	if got := strings.Join(translatedToolNames(t, body), ","); got != "Read,ToolSearch,LSP" {
++		t.Fatalf("top-level tools = %s, want Read,ToolSearch,LSP", got)
++	}
++	if body.Get(`input.#(type=="additional_tools")`).Exists() {
++		t.Fatalf("compat request has additional_tools: %s", body.Get("input").Raw)
++	}
++}
++
++func TestConvertClaudeRequestToCodex_DiscoveredToolUsesShortenedName(t *testing.T) {
++	long := "mcp__browseros-neo-with-a-very-long-server-name__" + strings.Repeat("x", 40)
++	tool := strings.Replace(deferredLSPTool, `"LSP"`, `"`+long+`"`, 1)
++	search := strings.Replace(searchResult, `"LSP"`, `"`+long+`"`, 1)
++	call := strings.Replace(lspToolUse, `"LSP"`, `"`+long+`"`, 1)
++	result, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(tool, searchToolUse, search, call, lspResult), true)
++	if err != nil {
++		t.Fatalf("translate: %v", err)
++	}
++	body := gjson.ParseBytes(result)
++	declared := body.Get(`input.#(type=="additional_tools").tools.0.name`).String()
++	called := body.Get(`input.#(call_id=="toolu_lsp").name`).String()
++	if declared == "" || len(declared) > 64 || declared != called {
++		t.Fatalf("declared name %q, called name %q", declared, called)
++	}
++}
++
++func TestConvertClaudeRequestToCodex_ToolUsedBeforeReferenceStaysTopLevel(t *testing.T) {
++	// Post-compaction: discovered tool stays in tools[], reference summarized away → a repeat search keeps it top-level.
++	before, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool, lspToolUse, lspResult), true)
++	if err != nil {
++		t.Fatalf("translate: %v", err)
++	}
++	after, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool, lspToolUse, lspResult, searchToolUse, searchResult), true)
++	if err != nil {
++		t.Fatalf("translate: %v", err)
++	}
++	if got := strings.Join(translatedToolNames(t, gjson.ParseBytes(after)), ","); got != "Read,ToolSearch,LSP" {
++		t.Fatalf("top-level tools = %s, want Read,ToolSearch,LSP", got)
++	}
++	if gjson.GetBytes(before, "tools").Raw != gjson.GetBytes(after, "tools").Raw {
++		t.Fatalf("tools changed on rediscovery")
++	}
++	if gjson.GetBytes(after, `input.#(type=="additional_tools")`).Exists() {
++		t.Fatalf("rediscovered tool declared again: %s", gjson.GetBytes(after, "input").Raw)
++	}
++}
+diff --git a/internal/translator/codex/claude/codex_claude_request.go b/internal/translator/codex/claude/codex_claude_request.go
+index 5842e509cf8d500e41fbc1baf33b0a3385357356..05112f6303b928f141257bab8d489097b0e77ea4 100644
+--- a/internal/translator/codex/claude/codex_claude_request.go
++++ b/internal/translator/codex/claude/codex_claude_request.go
+@@ -69,6 +69,46 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+ 	declaredToolsIndexed := false
+ 	hasAdditionalTools := false
+ 
++	// Claude Code tool search: discovered tool → tools[] (defer_loading) + tool_reference in the
++	// search tool_result. Codex renders top-level tools ahead of the input ⇒ a top-level declaration
++	// resets the cached prefix per discovery → declare it in an additional_tools item after the
++	// referencing tool_result (Anthropic's render position). Compat endpoints → top-level
++	// (additional_tools support unknown).
++	deferredTools := map[string]gjson.Result{}
++	placedTools := map[string]bool{}
++	if !preserveEmptyThinkingBlocks {
++		rootResult.Get("tools").ForEach(func(_, tool gjson.Result) bool {
++			if tool.Get("defer_loading").Bool() && !isClaudeWebSearchToolType(tool.Get("type").String()) {
++				if name := tool.Get("name").String(); name != "" {
++					deferredTools[name] = tool
++				}
++			}
++			return true
++		})
++		// Called before its first retained reference (reference compacted away) ⇒ already
++		// top-level; moving it rewrites that prefix.
++		referenced := map[string]bool{}
++		rootResult.Get("messages.#.content").ForEach(func(_, content gjson.Result) bool {
++			content.ForEach(func(_, part gjson.Result) bool {
++				switch part.Get("type").String() {
++				case "tool_use":
++					if name := part.Get("name").String(); !referenced[name] {
++						delete(deferredTools, name)
++					}
++				case "tool_result":
++					part.Get("content").ForEach(func(_, block gjson.Result) bool {
++						if block.Get("type").String() == "tool_reference" {
++							referenced[block.Get("tool_name").String()] = true
++						}
++						return true
++					})
++				}
++				return true
++			})
++			return len(deferredTools) > 0
++		})
++	}
++
+ 	// Process system messages and convert them to input content format.
+ 	systemsResult := rootResult.Get("system")
+ 	if systemsResult.Exists() {
+@@ -336,6 +376,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+ 						}
+ 
+ 						inputItems = append(inputItems, functionCallOutputMessage)
++						if referenced := referencedDeferredTools(contentResult, deferredTools, placedTools, toolNameMap); len(referenced) > 0 {
++							additionalTools := []byte(`{"type":"additional_tools","role":"developer"}`)
++							additionalTools, _ = sjson.SetRawBytes(additionalTools, "tools", translatorcommon.JoinRawArray(referenced))
++							inputItems = append(inputItems, additionalTools)
++						}
+ 						turnSendable++
+ 					}
+ 				}
+@@ -380,6 +425,9 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+ 				toolItems = append(toolItems, convertClaudeWebSearchToolToCodex(toolResult))
+ 				continue
+ 			}
++			if placedTools[toolResult.Get("name").String()] {
++				continue
++			}
+ 			toolItems = append(toolItems, convertClaudeFunctionToolToCodex(toolResult, toolNameMap))
+ 		}
+ 	}
+@@ -474,6 +522,25 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+ 	return template, drops.Err()
+ }
+ 
++func referencedDeferredTools(content gjson.Result, deferredTools map[string]gjson.Result, placedTools map[string]bool, toolNameMap map[string]string) [][]byte {
++	if len(deferredTools) == 0 || !content.IsArray() {
++		return nil
++	}
++	var tools [][]byte
++	content.ForEach(func(_, part gjson.Result) bool {
++		if part.Get("type").String() != "tool_reference" {
++			return true
++		}
++		name := part.Get("tool_name").String()
++		if tool, ok := deferredTools[name]; ok && !placedTools[name] {
++			placedTools[name] = true
++			tools = append(tools, convertClaudeFunctionToolToCodex(tool, toolNameMap))
++		}
++		return true
++	})
++	return tools
++}
++
+ func normalizeCodexServiceTier(result gjson.Result) string {
+ 	if !result.Exists() || result.Type != gjson.String {
+ 		return ""
+-- 
+2.47.3
+

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Patched CLIProxyAPI (Aeon Debian): Claude Code tool-search discoveries keep the Codex prompt cache.
-# Host counterpart = host/cachyos/cli-proxy-api-patch; shared patch + rationale = host/cachyos/cli-proxy-api-patch.patch,
-# host/cachyos/MAINTENANCE.md#cliproxyapi-patch.
+# Patch = cli-proxy-api-patch.patch = this host's own, rebased at this host's upgrade (releases differ per host);
+# rationale + rebase recipe = host/cachyos/MAINTENANCE.md#cliproxyapi-patch; host counterpart = host/cachyos/cli-proxy-api-patch.
 # Install = cliproxyapi-installer: stock release in ~/cliproxyapi/<version>/; launched binary = ~/cliproxyapi/cli-proxy-api
 # (installer upgrade copies stock over it → container/aeon/upgrade reruns apply). Toolchain = apt golang-go + GOTOOLCHAIN=auto
 # (go.mod's go line pulls the release's toolchain).
@@ -26,7 +26,7 @@ case $1 in
 esac
 
 script_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
-patch="$script_dir/../../host/cachyos/cli-proxy-api-patch.patch"
+patch="$script_dir/cli-proxy-api-patch.patch"
 install_dir=$(readlink -m -- "$HOME/cliproxyapi")
 live="$install_dir/cli-proxy-api"
 state="${XDG_CACHE_HOME:-$HOME/.cache}/cli-proxy-api-patch"
@@ -163,7 +163,7 @@ keep_stock() {
   install_live "$(stock_of "$version")"
   set_status "stock $version: $reason"
   echo "The stock $version binary stays: $reason."
-  echo 'Next: Rebase host/cachyos/cli-proxy-api-patch.patch onto the new release. Then run cli-proxy-api-patch apply.'
+  echo 'Next: Rebase container/aeon/cli-proxy-api-patch.patch onto the new release. Then run cli-proxy-api-patch apply.'
   exit 2
 }
 

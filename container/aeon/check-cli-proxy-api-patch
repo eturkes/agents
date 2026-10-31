@@ -49,9 +49,8 @@ class Patch(unittest.TestCase):
         self.dir = self.home / ".local/app/agents/container/aeon"
         self.dir.mkdir(parents=True)
         shutil.copy(repo / "container/aeon/cli-proxy-api-patch", self.dir)
-        self.patch = self.home / ".local/app/agents/host/cachyos/cli-proxy-api-patch.patch"
-        self.patch.parent.mkdir(parents=True)
-        shutil.copy(repo / "host/cachyos/cli-proxy-api-patch.patch", self.patch)
+        self.patch = self.dir / "cli-proxy-api-patch.patch"
+        shutil.copy(repo / "container/aeon/cli-proxy-api-patch.patch", self.patch)
         self.bin = self.root / "bin"
         self.bin.mkdir()
         for name in ("git", "go"):
