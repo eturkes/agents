@@ -77,7 +77,7 @@ fi
 # Cache keeper: state + next-mark rule = the keeper's status (one source with its
 # tick); `working` = idle-compact's report, since statusline input lacks turn state.
 # Renders follow token usage, which settles before turn end ⇒ settings
-# refreshInterval 10 s bounds a stale `working`. Keeper down | predating these
+# refreshInterval 10 s bounds a stale `in progress`. Keeper down | predating these
 # fields ⇒ no segment.
 ks=$(curl -sf --max-time 1 "${CACHE_KEEPALIVE_URL:-http://127.0.0.1:8318}/_keepalive" 2>/dev/null | jq -r --arg s "$sid" --argjson now "$now" '
   select(.interval > 0 and .touches >= 0) | .interval as $i | .touches as $l
@@ -86,7 +86,7 @@ ks=$(curl -sf --max-time 1 "${CACHE_KEEPALIVE_URL:-http://127.0.0.1:8318}/_keepa
     elif .state == "ready" then "0 ready"
     elif .state == "armed" and .mark == "compact" then (.renewed | fromdate) as $r | (($now - $r) * 3 / $i) as $p
       | "\(if $p >= 2 then 31 elif $p >= 1 then 33 else 32 end) last \($r)"
-    elif .state == "armed" then "\(if .kept_alive >= $l then 31 elif .kept_alive * 3 >= $l * 2 then 33 else 32 end) touches \(.kept_alive)"
+    elif .state == "armed" then "\(if .kept_alive >= $l then 31 elif .kept_alive * 3 >= $l * 2 then 33 else 32 end) touches \(.kept_alive)/\($l)"
     elif .state == "compacting" or .state == "compacted" then "0 \(.state)"
     elif .state == "done" then "31 stopped"
     else empty end' 2>/dev/null)
@@ -94,6 +94,8 @@ ks=$(curl -sf --max-time 1 "${CACHE_KEEPALIVE_URL:-http://127.0.0.1:8318}/_keepa
 $ks
 EOF3
 case $kw in
+  ready) kp="fresh session" ;;
+  working) kp="in progress" ;;
   last) kp="last $(date -d "@$ka" +%H:%M)" ;;
   touches) kp="touches $ka" ;;
   *) kp=$kw ;;

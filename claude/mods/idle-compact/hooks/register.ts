@@ -15,9 +15,9 @@ let interactive = false
 type Reply = { compact?: unknown; touches?: unknown; limit?: unknown; state?: unknown }
 
 function notice(r: Reply | undefined): string | undefined {
-  if (r?.state === 'done') return 'cache keepalive stopped'
+  if (r?.state === 'done') return 'stopped'
   if (r?.state !== 'armed' || typeof r.touches !== 'number' || typeof r.limit !== 'number') return undefined
-  return `cache touches ${r.touches}/${r.limit}`
+  return `touches ${r.touches}/${r.limit}`
 }
 
 async function report($: EngineInterface, path: string, body: object): Promise<unknown> {

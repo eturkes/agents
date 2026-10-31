@@ -104,10 +104,10 @@ test('an open question = busy, not working, with the touch count under its dialo
   await w.advance(30_000)
   expect(flags(w)).toEqual(['busy+working', 'busy', 'busy', 'busy', 'busy', 'busy+working', 'busy+working'])
   expect(w.notices).toEqual([
-    { tool_use_id: 'q1', text: 'cache touches 2/19' },
-    { tool_use_id: 'q1', text: 'cache touches 2/19' },
-    { tool_use_id: 'q1', text: 'cache touches 3/19' },
-    { tool_use_id: 'q1', text: 'cache keepalive stopped' },
+    { tool_use_id: 'q1', text: 'touches 2/19' },
+    { tool_use_id: 'q1', text: 'touches 2/19' },
+    { tool_use_id: 'q1', text: 'touches 3/19' },
+    { tool_use_id: 'q1', text: 'stopped' },
   ])
 })
 

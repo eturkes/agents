@@ -200,23 +200,23 @@ mkdir "$t/k"
 kk keeper-off : off
 kk keeper-predates-fields : '{"entries":[]}'
 kk keeper-malformed : '{"interval":'
-kk ready :ready -
-kk ready-no-touch-budget :ready '{"interval":3300.0,"touches":0,"entries":[]}'
+kk ready ':fresh session' -
+kk ready-no-touch-budget ':fresh session' '{"interval":3300.0,"touches":0,"entries":[]}'
 kk last-fresh 32:last armed compact 0 330
 kk last-green-edge 32:last armed compact 0 990
 kk last-middle 33:last armed compact 0 1320
 kk last-late 31:last armed compact 0 2640
 kk last-overdue 31:last armed compact 0 3960
 kk last-after-touches 33:last armed compact 4 1650
-kk touches-none '32:touches 0' armed touch 0 3000
-kk touches-early '32:touches 12' armed touch 12
-kk touches-late '33:touches 13' armed touch 13
-kk touches-penultimate '33:touches 18' armed touch 18
-kk touches-last '31:touches 19' armed stop 19
-kk working :working armed touch 0 0 true
-kk working-unstored :working ready - 0 0 true
-kk ready-reported :ready ready - 0 0 false
-kk working-after-touches :working armed touch 5 0 true
+kk touches-none '32:touches 0/19' armed touch 0 3000
+kk touches-early '32:touches 12/19' armed touch 12
+kk touches-late '33:touches 13/19' armed touch 13
+kk touches-penultimate '33:touches 18/19' armed touch 18
+kk touches-last '31:touches 19/19' armed stop 19
+kk working ':in progress' armed touch 0 0 true
+kk working-unstored ':in progress' ready - 0 0 true
+kk ready-reported ':fresh session' ready - 0 0 false
+kk working-after-touches ':in progress' armed touch 5 0 true
 kk working-unarmed :compacted compacted - '"compacted"' 0 true
 kk compacting :compacting compacting - 0
 kk compacted :compacted compacted - '"compacted"'
