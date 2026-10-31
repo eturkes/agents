@@ -15,6 +15,10 @@ function world(on: On): World & { advance: (ms: number) => Promise<void> } {
   on('session.id', () => ({ value: 's1' }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.step', async function* (_$, e) {
+    const usage = { input_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 1, model: e.model }
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage }
+  })
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('classic.Stop', () => ({}))
   on('http.fetch', (_$, e) => {
@@ -46,6 +50,9 @@ const stop = ($: Engine, background_tasks: unknown[] = [], session_crons: unknow
   $.classic.Stop({ stop_hook_active: false, cwd: '/w', transcript_path: '/t', background_tasks, session_crons } as never)
 const complete = ($: Engine, turnId: string) =>
   $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId, reason: 'answer' } as never)
+const step = async ($: Engine, turnId: string, agentId?: string) => {
+  for await (const c of $.turn.step({ turnId, index: 1, model: 'claude-opus-5-5', messageCount: 3, agentId } as never)) void c
+}
 const flags = (w: World) => w.polls.map(p => `${p.quiet ? 'quiet' : 'busy'}${p.working ? '+working' : ''}`)
 function ask($: Engine, w: World): () => Promise<unknown> {
   let release = () => {}
@@ -112,7 +119,20 @@ test('a reply without an armed entry clears the dialog line', async ($, on) => {
   w.entry = { touches: 0, limit: 19, state: 'compacted' }
   await w.advance(30_000)
   await answer()
+  await w.advance(1)
   expect(w.notices).toEqual([{ tool_use_id: 'q1', text: undefined }, { tool_use_id: 'q1', text: undefined }])
+  expect(flags(w)).toEqual(['busy', 'busy', 'quiet']) // a question outside any turn (a plugin's $.ui.ask) = busy
+})
+
+test('a teammate turn in flight at a reload returns at its next step', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await w.advance(30_000)
+  await step($, 'a1', 'teammate-1')
+  await w.advance(30_000)
+  await complete($, 'a1')
+  await w.advance(30_000)
+  expect(flags(w)).toEqual(['quiet', 'busy+working', 'busy+working', 'quiet', 'quiet'])
 })
 
 test('a vetoed compaction is reported as failed', async ($, on) => {

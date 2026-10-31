@@ -406,9 +406,18 @@ def poll_stores_working_and_replies_touch_count():
     Up.reset()
     live("wk")
     server = proxy("--interval", "100", "--touches", "3")
-    assert control(server, "poll", {"session": "wk", "quiet": False, "working": True}) == (200, {"compact": False})
+    reply = control(server, "poll", {"session": "wk", "quiet": False, "working": True})
+    assert reply == (200, {"compact": False, "touches": 0, "limit": 3, "state": "ready"}), reply
+    entry = entries(server)["wk"]
+    assert entry["state"] == "ready" and entry["working"] is True and entry["mark"] is None, entry
+    tick(server, ahead=1e4)
+    assert Up.seen == [] and entries(server)["wk"]["state"] == "ready", "report-only session touched or lost"
     post(server, session="wk")
-    assert entries(server)["wk"]["working"] is False, "working before any report"
+    entry = entries(server)["wk"]
+    assert entry["state"] == "armed" and entry["working"] is True, "stored request dropped the mod's report"
+    live("wk2")
+    post(server, session="wk2")
+    assert entries(server)["wk2"]["working"] is False, "working before any report"
     reply = control(server, "poll", {"session": "wk", "quiet": False, "working": True})
     assert reply == (200, {"compact": False, "touches": 0, "limit": 3, "state": "armed"}), reply
     assert entries(server)["wk"]["working"] is True, "working report not stored"

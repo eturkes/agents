@@ -28,7 +28,7 @@ async function report($: EngineInterface, path: string, body: object): Promise<u
 
 async function poll($: EngineInterface): Promise<void> {
   const session = await $.session.id()
-  const quiet = running.size === 0 && !background && !compacting
+  const quiet = running.size === 0 && asking.size === 0 && !background && !compacting
   const working = running.size > 0 && asking.size === 0
   const asked = (await report($, 'poll', { session, quiet, working })) as Reply | undefined
   const text = notice(asked)
@@ -66,6 +66,16 @@ export const register: Register = on => {
     running.add(e.turnId)
     pollNow($)
     return next(e)
+  })
+
+  // A reload lands between main turns ("it reloads when your turn ends") ⇒ a teammate turn in flight missed its
+  // turn.start; its next step brings it back.
+  on('turn.step', async function* ($, e, next) {
+    if (!running.has(e.turnId)) {
+      running.add(e.turnId)
+      pollNow($)
+    }
+    return yield* next(e)
   })
 
   on('turn.complete', ($, e, next) => {

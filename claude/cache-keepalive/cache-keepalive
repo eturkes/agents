@@ -50,7 +50,7 @@ class Entry:
     working: bool = False  # same report: a turn running, no dialog open
     polled_at: float = 0.0
     compact_at: float = 0.0  # when the mod was told to compact: one attempt per entry
-    state: str = "armed"  # armed | compacting | compacted | done
+    state: str = "armed"  # ready (mod report, no stored request) | armed | compacting | compacted | done
     last: str = "armed"
 
 
@@ -123,6 +123,8 @@ class Keeper:
     def record(self, entry):
         with self.lock:
             old = self.entries.get(entry.session)
+            if old is not None:  # a turn stores requests between the mod's 30-s polls
+                entry.quiet, entry.working, entry.polled_at = old.quiet, old.working, old.polled_at
             self.entries[entry.session] = entry
         if old is None or old.state != "armed":
             log(f"armed {entry.session[:8]} model={entry.model} bytes={len(entry.body)}")
@@ -180,8 +182,8 @@ class Keeper:
         """Store the mod's report → {compact: True = compact now, + the entry's touches, limit + state}."""
         with self.lock:
             entry = self.entries.get(session)
-            if entry is None:
-                return {"compact": False}
+            if entry is None:  # no stored request yet (new session, keeper restart mid-turn): the report alone
+                entry = self.entries[session] = Entry(session, "", "", [], b"", 0.0, state="ready", last="ready")
             entry.quiet, entry.working, entry.polled_at = quiet, working, now
             reply = {"compact": False, "touches": entry.touches, "limit": self.cfg.touches, "state": entry.state}
             if not quiet or entry.state != "armed" or entry.busy or entry.compact_at \

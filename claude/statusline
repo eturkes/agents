@@ -82,8 +82,8 @@ fi
 ks=$(curl -sf --max-time 1 "${CACHE_KEEPALIVE_URL:-http://127.0.0.1:8318}/_keepalive" 2>/dev/null | jq -r --arg s "$sid" --argjson now "$now" '
   select(.interval > 0 and .touches >= 0) | .interval as $i | .touches as $l
   | first(.entries[]? | select(.session == $s[:8])) // {state: "ready"}
-  | if .state == "ready" then "0 ready"
-    elif .state == "armed" and .working == true then "0 working"
+  | if .working == true and (.state == "armed" or .state == "ready") then "0 working"
+    elif .state == "ready" then "0 ready"
     elif .state == "armed" and .mark == "compact" then (.renewed | fromdate) as $r | (($now - $r) * 3 / $i) as $p
       | "\(if $p >= 2 then 31 elif $p >= 1 then 33 else 32 end) last \($r)"
     elif .state == "armed" then "\(if .kept_alive >= $l then 31 elif .kept_alive * 3 >= $l * 2 then 33 else 32 end) touches \(.kept_alive)"
