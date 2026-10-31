@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude Code context gauge + effort + project phase + cache keeper + rate limits.
+# Claude Code context gauge + effort + cache keeper + project phase + rate limits.
 # Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
 # Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens =
 # CC's last-executor-iteration figure; transcript fallback applies the same rule (ctx).
@@ -99,7 +99,6 @@ case $kw in
   *) kp=$kw ;;
 esac
 [ "$kc" -gt 0 ] 2>/dev/null && kp=$(printf '\033[%sm%s\033[0m' "$kc" "$kp")
-[ -n "$kp" ] && rl=" | $kp"
 [ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000)"
 rl="$rl$xs"
 # Effort varies per launch (`--effort`) → shown beside the gauge; high/xhigh/max
@@ -176,6 +175,7 @@ esac
 [ "$pv" = "${pv% RESUME}" ] || pc=35
 [ -n "$pc" ] && pt=$(printf '\033[%sm%s\033[0m' "$pc" "$pt")
 rl=" | $pt$rl"
+[ -n "$kp" ] && rl=" | $kp$rl"
 [ -n "$ef" ] && rl=" | $ef$rl"
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}

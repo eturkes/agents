@@ -188,10 +188,11 @@ kk() {
        printf '{"interval":3300.0,"touches":19,"entries":[{"session":"0ther000","state":"armed","mark":"touch","kept_alive":3,"renewed":null,"working":true}%s]}' "$e" > "$t/ka.json" ;;
   esac
   out=$(printf '{"session_id":"5e551011-0000-4000-8000-000000000000","workspace":{"project_dir":"%s"},"context_window":{"total_input_tokens":1,"context_window_size":200000}}' "$t/k" | HOME=$t sh "$sl" 2>/dev/null)
-  got=${out#* | no phase} want=${2#*:}
+  got=${out#* | } want=${2#*:}
+  got=${got%no phase}
   [ "$want" = last ] && want="last $(date -d "@$r" +%H:%M)"
   [ -n "${2%%:*}" ] && want="${E}[${2%%:*}m$want${E}[0m"
-  [ -n "$want" ] && want=" | $want"
+  [ -n "$want" ] && want="$want | "
   [ "$got" = "$want" ] || { fail=$((fail + 1)); printf 'FAIL %s: want %s, got %s\n' "$1" "$want" "$got" | cat -v; }
   rm -f "$t/ka.json"
 }
