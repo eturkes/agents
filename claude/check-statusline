@@ -231,12 +231,12 @@ wk() {
 # Weekly windows: reset ≤ 5 | 10 | 15 h away ⇒ red | yellow | green date, missing ⇒ no segment; Claude = native
 # seven_day, GPT = the Codex cache's 604800-s window.
 r=$(( $(date +%s) + 7 * 86400 )); rd=$(date -d "@$r" +'%m/%d %H:%M')
-wk claude-weekly "7d. 42% $rd" "{\"seven_day\":{\"used_percentage\":42,\"resets_at\":$r}}"
+wk claude-weekly "7d 42% $rd" "{\"seven_day\":{\"used_percentage\":42,\"resets_at\":$r}}"
 wk claude-weekly-no-reset "no phase" '{"seven_day":{"used_percentage":42}}'
 for tier in 31:270 33:330 33:570 32:630 32:870 :930; do  # COLOR:MINUTES, 30 min either side of each boundary
   r=$(( $(date +%s) + ${tier#*:} * 60 )); rd=$(date -d "@$r" +'%m/%d %H:%M')
   [ -n "${tier%%:*}" ] && rd="${E}[${tier%%:*}m$rd${E}[0m"
-  wk "claude-weekly-reset-${tier#*:}m" "7d. 42% $rd" "{\"seven_day\":{\"used_percentage\":42,\"resets_at\":$r}}"
+  wk "claude-weekly-reset-${tier#*:}m" "7d 42% $rd" "{\"seven_day\":{\"used_percentage\":42,\"resets_at\":$r}}"
 done
 r=$(( $(date +%s) + 7 * 86400 )); rd=$(date -d "@$r" +'%m/%d %H:%M')
 mkdir -p "$t/.claude"
