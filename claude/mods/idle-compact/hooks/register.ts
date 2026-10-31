@@ -3,8 +3,9 @@ import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 // cache-keepalive decides at its mark (claude/cache-keepalive/README.md); this mod reports quiet + working + runs the compaction.
 const POLL_MS = 30_000
 const KEEPER = 'http://127.0.0.1:8318'
-// Quiet = no turn running (an AskUserQuestion wait included) + the last main Stop left no background task or cron.
-// Working = a turn running + no question open ⇒ statusline `working`; a question wait = touches.
+// Quiet = no turn running + no question open (a plugin's $.ui.ask runs outside turns) + the last main Stop left no
+// background task or cron.
+// Working = a turn running + no question open ⇒ statusline `in progress`; a question wait = touches.
 const running = new Set<string>()
 // Open main-thread questions: the dialog hides the statusline ⇒ the touch count rides a notice under it.
 const asking = new Set<string>()
@@ -68,8 +69,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // A reload lands between main turns ("it reloads when your turn ends") ⇒ a teammate turn in flight missed its
-  // turn.start; its next step brings it back.
+  // CC reloads a mod between main turns ⇒ a teammate turn in flight missed its turn.start; its next step brings it back.
   on('turn.step', async function* ($, e, next) {
     if (!running.has(e.turnId)) {
       running.add(e.turnId)

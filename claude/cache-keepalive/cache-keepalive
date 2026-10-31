@@ -47,7 +47,7 @@ class Entry:
     misses: int = 0
     busy: bool = False
     quiet: bool = False  # idle-compact's last report
-    working: bool = False  # same report: a turn running, no dialog open
+    working: bool = False  # same report: a turn running, no question open
     polled_at: float = 0.0
     compact_at: float = 0.0  # when the mod was told to compact: one attempt per entry
     state: str = "armed"  # ready (mod report, no stored request) | armed | compacting | compacted | done

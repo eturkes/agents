@@ -39,15 +39,13 @@ lp() {
     else if(q>=50)printf "\033[32m%s %d%%\033[0m",l,q
     else printf "%s %d%%",l,q}'
 }
-# seg PCT EPOCH LABEL [RED_S YELLOW_S GREEN_S] ⇒ "LABEL N% MM/DD HH:MM".
+# seg PCT EPOCH LABEL ⇒ "LABEL N% MM/DD HH:MM"; reset ≤ 5 | 10 | 15 h away ⇒ red | yellow | green date.
 seg() {
   pct=$(lp "$3" "$1")
   dt=$(date -d "@$2" +'%m/%d %H:%M'); delta=$(( $2 - now ))
-  rs=${4:-3600}; ys=${5:-7200}
-  if [ "$delta" -le "$rs" ]; then dt=$(printf '\033[31m%s\033[0m' "$dt")
-  elif [ "$delta" -le "$ys" ]; then dt=$(printf '\033[33m%s\033[0m' "$dt")
-  elif [ -n "$6" ]; then [ "$delta" -le "$6" ] && dt=$(printf '\033[32m%s\033[0m' "$dt")
-  elif [ "$(date -d "@$2" +%Y%m%d)" = "$(date +%Y%m%d)" ]; then dt=$(printf '\033[32m%s\033[0m' "$dt")
+  if [ "$delta" -le 18000 ]; then dt=$(printf '\033[31m%s\033[0m' "$dt")
+  elif [ "$delta" -le 36000 ]; then dt=$(printf '\033[33m%s\033[0m' "$dt")
+  elif [ "$delta" -le 54000 ]; then dt=$(printf '\033[32m%s\033[0m' "$dt")
   fi
   printf '%s %s' "$pct" "$dt"
 }
@@ -71,7 +69,7 @@ xc="$HOME/.claude/.codex_usage.json"
 "$HOME/.claude/codex-refresh" "$xc"
 xw=$(jq -r 'first(.rate_limit | .primary_window, .secondary_window | select(.limit_window_seconds? == 604800 and (.used_percent | type) == "number" and (.reset_at | type) == "number")) | "\(.used_percent) \(.reset_at)"' "$xc" 2>/dev/null) || xw=""  # parse error after a leading document ⇒ drop its output
 xs=""
-[ -n "$xw" ] && xs=" | $(seg "${xw%% *}" "${xw#* }" gpt 18000 36000 54000)"
+[ -n "$xw" ] && xs=" | $(seg "${xw%% *}" "${xw#* }" gpt)"
 # Cache keeper: state + next-mark rule = the keeper's status (one source with its
 # tick); `working` = idle-compact's report, since statusline input lacks turn state.
 # Renders follow token usage, which settles before turn end ⇒ settings
@@ -99,7 +97,7 @@ case $kw in
   *) kp=$kw ;;
 esac
 [ "$kc" -gt 0 ] 2>/dev/null && kp=$(printf '\033[%sm%s\033[0m' "$kc" "$kp")
-[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d. 18000 36000 54000)"
+[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d.)"
 rl="$rl$xs"
 # Effort varies per launch (`--effort`) → shown beside the gauge; high/xhigh/max
 # spend more per turn ⇒ green/yellow/red.
