@@ -71,8 +71,8 @@ xc="$HOME/.claude/.codex_usage.json"
 xw=$(jq -r 'first(.rate_limit | .primary_window, .secondary_window | select(.limit_window_seconds? == 604800 and (.used_percent | type) == "number")) | "\(.used_percent) \(.reset_at | numbers // "")"' "$xc" 2>/dev/null) || xw=""  # parse error after a leading document ⇒ drop its output
 xp=${xw%% *}; xa=${xw#* }
 xs=""
-if [ -n "$xa" ]; then xs=" | $(seg "$xp" "$xa" codex 18000 36000 54000)"
-elif [ -n "$xp" ]; then xs=" | $(lp codex "$xp")"
+if [ -n "$xa" ]; then xs=" | $(seg "$xp" "$xa" gpt 18000 36000 54000)"
+elif [ -n "$xp" ]; then xs=" | $(lp gpt "$xp")"
 fi
 # Cache keeper: state + next-mark rule = the keeper's status (one source with its
 # tick); `working` = idle-compact's report, since statusline input lacks turn state.
@@ -101,7 +101,7 @@ case $kw in
   *) kp=$kw ;;
 esac
 [ "$kc" -gt 0 ] 2>/dev/null && kp=$(printf '\033[%sm%s\033[0m' "$kc" "$kp")
-[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" claude 18000 36000 54000)"
+[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d. 18000 36000 54000)"
 rl="$rl$xs"
 # Effort varies per launch (`--effort`) → shown beside the gauge; high/xhigh/max
 # spend more per turn ⇒ green/yellow/red.

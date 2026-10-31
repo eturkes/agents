@@ -222,10 +222,20 @@ kk compacting :compacting compacting - 0
 kk compacted :compacted compacted - '"compacted"'
 kk stopped 31:stopped 'done' - 19
 kk unknown-state : bogus
-# Claude weekly = native rate_limits.seven_day → `claude N% MM/DD HH:MM` (reset > 15 h away ⇒ plain).
-n=$((n + 1)); r=$(( $(date +%s) + 7 * 86400 ))
-out=$(printf '{"workspace":{"project_dir":"%s"},"context_window":{"total_input_tokens":1,"context_window_size":200000},"rate_limits":{"seven_day":{"used_percentage":42,"resets_at":%s}}}' "$t/k" "$r" | HOME=$t sh "$sl" 2>/dev/null)
-want="claude 42% $(date -d "@$r" +'%m/%d %H:%M')"
-[ "${out##* | }" = "$want" ] || { fail=$((fail + 1)); printf 'FAIL claude-weekly: want %s, got %s\n' "$want" "${out##* | }" | cat -v; }
+# wk NAME WANT [RATE_LIMITS]: WANT = the line's last segment; RATE_LIMITS = native rate_limits JSON.
+wk() {
+  n=$((n + 1))
+  out=$(printf '{"workspace":{"project_dir":"%s"},"context_window":{"total_input_tokens":1,"context_window_size":200000}%s}' "$t/k" "${3:+,\"rate_limits\":$3}" | HOME=$t sh "$sl" 2>/dev/null)
+  [ "${out##* | }" = "$2" ] || { fail=$((fail + 1)); printf 'FAIL %s: want %s, got %s\n' "$1" "$2" "${out##* | }" | cat -v; }
+}
+# Weekly windows, resets > 15 h away ⇒ plain: Claude = native seven_day; GPT = the Codex cache's 604800-s window.
+r=$(( $(date +%s) + 7 * 86400 )); rd=$(date -d "@$r" +'%m/%d %H:%M')
+wk claude-weekly "7d. 42% $rd" "{\"seven_day\":{\"used_percentage\":42,\"resets_at\":$r}}"
+mkdir -p "$t/.claude"
+printf '{"rate_limit":{"primary_window":{"limit_window_seconds":604800,"used_percent":35,"reset_at":%s}}}' "$r" > "$t/.claude/.codex_usage.json"
+wk gpt-weekly "gpt 35% $rd"
+printf '{"rate_limit":{"primary_window":{"limit_window_seconds":604800,"used_percent":35}}}' > "$t/.claude/.codex_usage.json"
+wk gpt-weekly-no-reset "gpt 35%"
+rm "$t/.claude/.codex_usage.json"
 printf '%d/%d passed\n' $((n - fail)) "$n"
 [ "$fail" -eq 0 ]
