@@ -65,15 +65,13 @@ EOF2
 fi
 rl=""
 # Codex weekly = the 604800 s window; own segment since its reset ≠ Claude's.
-# codex-refresh = detached poll ⇒ render reads the last good cache.
+# codex-refresh = detached poll ⇒ render reads the last good cache. Used % or
+# reset missing ⇒ no segment, as for Claude's.
 xc="$HOME/.claude/.codex_usage.json"
 "$HOME/.claude/codex-refresh" "$xc"
-xw=$(jq -r 'first(.rate_limit | .primary_window, .secondary_window | select(.limit_window_seconds? == 604800 and (.used_percent | type) == "number")) | "\(.used_percent) \(.reset_at | numbers // "")"' "$xc" 2>/dev/null) || xw=""  # parse error after a leading document ⇒ drop its output
-xp=${xw%% *}; xa=${xw#* }
+xw=$(jq -r 'first(.rate_limit | .primary_window, .secondary_window | select(.limit_window_seconds? == 604800 and (.used_percent | type) == "number" and (.reset_at | type) == "number")) | "\(.used_percent) \(.reset_at)"' "$xc" 2>/dev/null) || xw=""  # parse error after a leading document ⇒ drop its output
 xs=""
-if [ -n "$xa" ]; then xs=" | $(seg "$xp" "$xa" gpt 18000 36000 54000)"
-elif [ -n "$xp" ]; then xs=" | $(lp gpt "$xp")"
-fi
+[ -n "$xw" ] && xs=" | $(seg "${xw%% *}" "${xw#* }" gpt 18000 36000 54000)"
 # Cache keeper: state + next-mark rule = the keeper's status (one source with its
 # tick); `working` = idle-compact's report, since statusline input lacks turn state.
 # Renders follow token usage, which settles before turn end ⇒ settings
