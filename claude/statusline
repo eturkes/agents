@@ -101,7 +101,7 @@ case $kw in
   *) kp=$kw ;;
 esac
 [ "$kc" -gt 0 ] 2>/dev/null && kp=$(printf '\033[%sm%s\033[0m' "$kc" "$kp")
-[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" 7d 18000 36000 54000)"
+[ -n "$wp" ] && [ -n "$wr" ] && rl="$rl | $(seg "$wp" "$wr" claude 18000 36000 54000)"
 rl="$rl$xs"
 # Effort varies per launch (`--effort`) → shown beside the gauge; high/xhigh/max
 # spend more per turn ⇒ green/yellow/red.
