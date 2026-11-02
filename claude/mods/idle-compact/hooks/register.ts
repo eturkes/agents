@@ -1,15 +1,22 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
 // cache-keepalive decides at its mark (claude/cache-keepalive/README.md); this mod reports quiet + working + runs the compaction.
 const POLL_MS = 30_000
 const KEEPER = 'http://127.0.0.1:8318'
-// Quiet = no turn running + no question open (a plugin's $.ui.ask runs outside turns) + the last main Stop left no
-// background task or cron.
+// Quiet = no turn running + no question open (a plugin's $.ui.ask runs outside turns) + no agent at work + the last
+// main Stop left nothing in flight.
 // Working = a turn running + no question open ⇒ statusline `in progress`; a question wait = touches.
 const running = new Set<string>()
 // Open main-thread questions: the dialog hides the statusline ⇒ the touch count rides a notice under it.
 const asking = new Set<string>()
-let background = false
+// In flight = turn-email's rule (CC's busy/shell status). Stop lists an idle teammate `running` ⇒ agents count by
+// `$.agent.list()` status per poll; idle teammate = waits on MAIN ⇒ quiet.
+const BUSY_TASKS = new Set(['shell', 'subagent', 'workflow', 'cloud session'])
+const BUSY_AGENTS = new Set(['pending', 'running', 'waiting'])
+// Host state ⇒ survives a reload (no Stop re-runs); before the process's first main Stop = in flight (no stored
+// request to compact yet).
+const background = atom({ plugin: 'idle-compact', key: 'background' } as const, true)
 let compacting = false
 let interactive = false
 
@@ -29,7 +36,8 @@ async function report($: EngineInterface, path: string, body: object): Promise<u
 
 async function poll($: EngineInterface): Promise<void> {
   const session = await $.session.id()
-  const quiet = running.size === 0 && asking.size === 0 && !background && !compacting
+  const agents = (await $.agent.list()).some(a => BUSY_AGENTS.has(a.status))
+  const quiet = running.size === 0 && asking.size === 0 && !agents && !(await read($, background)) && !compacting
   const working = running.size > 0 && asking.size === 0
   const asked = (await report($, 'poll', { session, quiet, working })) as Reply | undefined
   const text = notice(asked)
@@ -96,8 +104,11 @@ export const register: Register = on => {
     }
   })
 
-  on('classic.Stop', (_$, e, next) => {
-    if (e.agent_id === undefined) background = !!(e.background_tasks?.length || e.session_crons?.length)
+  on('classic.Stop', async ($, e, next) => {
+    if (e.agent_id === undefined) {
+      const busy = !!e.session_crons?.length || !!e.background_tasks?.some(t => BUSY_TASKS.has(t.type))
+      await update($, background, () => busy)
+    }
     return next(e)
   })
 }

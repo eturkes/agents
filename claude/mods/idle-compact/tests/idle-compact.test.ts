@@ -1,15 +1,15 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { AgentInfo, On } from 'claude-code'
 
 type Poll = { session: string; quiet: boolean; working: boolean }
 type World = {
   polls: Poll[]; reports: unknown[]; notices: { tool_use_id: string; text: string | undefined }[]
-  compact: boolean; compactions: number; skip?: string; down: boolean; entry: object; gate?: Promise<void>
+  compact: boolean; compactions: number; skip?: string; down: boolean; entry: object; gate?: Promise<void>; agents: AgentInfo[]
 }
 
 function world(on: On): World & { advance: (ms: number) => Promise<void> } {
-  const w: World = { polls: [], reports: [], notices: [], compact: false, compactions: 0, down: false, entry: { touches: 0, limit: 19, state: 'armed' } }
+  const w: World = { polls: [], reports: [], notices: [], compact: false, compactions: 0, down: false, entry: { touches: 0, limit: 19, state: 'armed' }, agents: [] }
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 11, 9, 0) })
   mock.env(on, { CACHE_KEEPALIVE_URL: 'http://keeper' })
   on('session.id', () => ({ value: 's1' }))
@@ -21,6 +21,7 @@ function world(on: On): World & { advance: (ms: number) => Promise<void> } {
   })
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('classic.Stop', () => ({}))
+  on('agent.list', () => ({ value: w.agents }))
   on('http.fetch', (_$, e) => {
     if (w.down) throw new Error('connection refused')
     const body = JSON.parse(e.init?.body ?? '{}')
@@ -53,6 +54,9 @@ const complete = ($: Engine, turnId: string) =>
 const step = async ($: Engine, turnId: string, agentId?: string) => {
   for await (const c of $.turn.step({ turnId, index: 1, model: 'claude-opus-5-5', messageCount: 3, agentId } as never)) void c
 }
+/** A teammate in `$.agent.list()`: `idle` once its turn ended, until a message wakes it; Stop lists it `running`. */
+const teammate = (status: AgentInfo['status']): AgentInfo => ({ id: 'a1', description: 'reviewer-1', type: 'teammate', status })
+const stopTask = { id: 'a1', type: 'teammate', status: 'running', description: 'reviewer-1' }
 const flags = (w: World) => w.polls.map(p => `${p.quiet ? 'quiet' : 'busy'}${p.working ? '+working' : ''}`)
 function ask($: Engine, w: World): () => Promise<unknown> {
   let release = () => {}
@@ -64,6 +68,7 @@ function ask($: Engine, w: World): () => Promise<unknown> {
 test('a quiet session is compacted once the keeper asks, and the result reported', async ($, on) => {
   const w = world(on)
   await start($)
+  await stop($)
   await w.advance(30_000)
   expect(w.polls).toEqual([{ session: 's1', quiet: true, working: false }])
   expect(w.compactions).toBe(0)
@@ -86,6 +91,30 @@ test('a running turn, background work or a cron reports busy; a turn alone repor
   await stop($)
   await w.advance(30_000)
   expect(flags(w)).toEqual(['busy+working', 'busy+working', 'busy', 'busy', 'busy', 'quiet'])
+})
+
+test('idle + ended teammates and MCP monitors leave the session quiet; a teammate at work = busy, at each poll', async ($, on) => {
+  const w = world(on)
+  await start($)
+  w.agents = [teammate('idle'), { ...teammate('completed'), id: 'a2' }]
+  await stop($, [stopTask, { ...stopTask, id: 'a2' }, { id: 'm1', type: 'monitor', status: 'running', description: 'feed' }])
+  await w.advance(30_000)
+  for (const status of ['pending', 'running', 'waiting'] as const) {
+    w.agents = [teammate(status)]
+    await w.advance(30_000)
+  }
+  w.agents = [teammate('idle')]
+  await w.advance(30_000)
+  expect(flags(w)).toEqual(['quiet', 'busy', 'busy', 'busy', 'quiet'])
+})
+
+test('before its first main Stop (a fresh process, or a reload: no Stop re-runs) the session reports busy', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await w.advance(30_000)
+  await stop($)
+  await w.advance(30_000)
+  expect(flags(w)).toEqual(['busy', 'quiet'])
 })
 
 test('an open question = busy, not working, with the touch count under its dialog', async ($, on) => {
@@ -114,6 +143,7 @@ test('an open question = busy, not working, with the touch count under its dialo
 test('a reply without an armed entry clears the dialog line', async ($, on) => {
   const w = world(on)
   await start($)
+  await stop($)
   w.entry = {}
   const answer = ask($, w)
   w.entry = { touches: 0, limit: 19, state: 'compacted' }
@@ -127,6 +157,7 @@ test('a reply without an armed entry clears the dialog line', async ($, on) => {
 test('a teammate turn in flight at a reload returns at its next step', async ($, on) => {
   const w = world(on)
   await start($)
+  await stop($)
   await w.advance(30_000)
   await step($, 'a1', 'teammate-1')
   await w.advance(30_000)
@@ -140,6 +171,7 @@ test('a vetoed compaction is reported as failed', async ($, on) => {
   w.skip = 'vetoed by a hook'
   w.compact = true
   await start($)
+  await stop($)
   await w.advance(30_000)
   expect(w.reports).toEqual([{ url: 'http://keeper/_keepalive/compacted', session: 's1', ok: false, reason: 'vetoed by a hook' }])
 })
