@@ -39,13 +39,12 @@ helpers remain on the host through forced-command SSH.
 
 ## Project ownership and recovery
 
-- Live VM runtime = PromptVM shared wheel; eturkes.com controller trees = frozen
-  provisioning/receipt/recovery assets. Deployed 0.2.19 reapply →
-  `~/pro/promptvm/dist/model-policy-20261027/promptvm-0.2.19-py3-none-any.whl`
-  + adjacent `release-receipt.json`. This artifact excludes pending
-  configuration-pin edits retained in the checkout. Exact Bubblewrap pins support
-  the signed package transition; native ownership/mode gates remain enforced.
-  Native Rehab memory cap → 0.2.15 record
+- PromptVM runtime = shared immutable wheel; eturkes.com controller trees =
+  frozen provisioning/receipt/recovery assets. Reapply 0.2.20 → exact artifact
+  `~/pro/promptvm/dist/prompt-recovery-20261102/promptvm-0.2.20-py3-none-any.whl`
+  + adjacent `source-receipt.json`. Live wheel excludes canonical config-pin
+  changes. Sandbox = reviewed exact-binary pins + native ownership/mode gates.
+  Rehab job-memory policy →
   `~/pro/promptvm/docs/rehab-job-memory-2026-10-20.md`.
 - Evidence root = `~/.local/state/t70-deployment-20261020/`; index =
   `FINAL-RESULTS.md`; disk recovery = `rightsize/ROLLBACK.md`; migration receipts
@@ -54,6 +53,9 @@ helpers remain on the host through forced-command SSH.
   retain current resource limits. Original-disk selector rollback is retired.
 - Wedding recovery = targeted retained-host-service rollback against unchanged
   state; preserve the shared host-root dataset.
+- Prompt/auth recovery → `~/pro/promptvm/docs/prompt-recovery-2026-11-02.md`;
+  root-only wedding rollback/evidence →
+  `/var/backups/wedding-prompt-recovery-20261102/`.
 - Veriformatics production/admin/backups/log handling → `veriformatics-applied.md`
   under the evidence root. Production = T70; T25 development =
   `~/Projects/veriformatics` + linked worktrees, including Naoto research.
@@ -66,13 +68,12 @@ helpers remain on the host through forced-command SSH.
 
 ## Maintenance boundaries
 
-- Package/boot handoff → `~/.local/state/t70-upgrade-20261027/RESULTS.md`.
-  Handoff state = installed/running p6; VMs/jails current + cleanly stopped for
-  user reboot; autostart enabled. Current service state → live checks.
-  Previous p5 post-reboot checks →
+- Booted release = `15.1-RELEASE-p6`; VM/jail autostart = enabled.
+  Current services → live checks. Package/boot + selected-font recovery evidence →
+  `~/.local/state/t70-upgrade-20261030/RESULTS.md`; earlier boot evidence →
   `~/.local/state/t70-upgrade-20261021/post-reboot/RESULTS.md`.
-- PromptVM 0.2.19 reapply → verified artifact, omit `--test-rollback`;
-  preimages restore 0.2.18. Historical 0.2.16 → 0.2.15 rollback requires the old
+- PromptVM 0.2.20 reapply → verified artifact, omit `--test-rollback`;
+  preimages restore 0.2.19. Historical 0.2.16 → 0.2.15 rollback requires the old
   Bubblewrap package first.
 - Naoto fixed-input quarantine →
   `~/pro/promptvm/docs/input-quarantine-2026-10-23.md`.
