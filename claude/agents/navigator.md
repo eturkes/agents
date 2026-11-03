@@ -1,6 +1,6 @@
 ---
 name: navigator
-description: "Direction check from a fresh context: the current artifacts + `Decisions` traced against `Intent` + the user's requests → drift, unrequested scope, unruled hard-coded rules, rulings unreadable alone → verdict table + questions for the user. Fit = early phases, before work reaches the user + at variant screening; IMPLEMENT's opening interpretation, ≥3 readers working independently."
+description: "Direction check from a fresh context: the current artifacts + `Decisions` traced against `Intent` + the user's requests → drift, unrequested scope, unruled hard-coded rules, rulings unreadable alone → verdict table + questions for the user. Fit = early phases, before work reaches the user, variant screenings included; IMPLEMENT's opening interpretation, ≥2 readers working independently."
 color: pink
 ---
 
