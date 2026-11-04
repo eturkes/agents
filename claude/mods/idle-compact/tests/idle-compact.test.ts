@@ -2,26 +2,28 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { AgentInfo, On } from 'claude-code'
 
-type Poll = { session: string; quiet: boolean; working: boolean }
+type Poll = { session: string; quiet: boolean; working: boolean; tokens?: number }
 type World = {
   polls: Poll[]; reports: unknown[]; notices: { tool_use_id: string; text: string | undefined }[]
   compact: boolean; compactions: number; skip?: string; down: boolean; entry: object; gate?: Promise<void>; agents: AgentInfo[]
+  tokens?: number; output: number
 }
 
 function world(on: On): World & { advance: (ms: number) => Promise<void> } {
-  const w: World = { polls: [], reports: [], notices: [], compact: false, compactions: 0, down: false, entry: { touches: 0, limit: 19, state: 'armed' }, agents: [] }
+  const w: World = { polls: [], reports: [], notices: [], compact: false, compactions: 0, down: false, entry: { touches: 0, limit: 19, state: 'armed' }, agents: [], output: 1 }
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 11, 9, 0) })
   mock.env(on, { CACHE_KEEPALIVE_URL: 'http://keeper' })
   on('session.id', () => ({ value: 's1' }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.step', async function* (_$, e) {
-    const usage = { input_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 1, model: e.model }
+    const usage = { input_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: w.output, model: e.model }
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage }
   })
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('classic.Stop', () => ({}))
   on('agent.list', () => ({ value: w.agents }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { tokens: w.tokens, window: 1_000_000 }, rateLimits: [] } }))
   on('http.fetch', (_$, e) => {
     if (w.down) throw new Error('connection refused')
     const body = JSON.parse(e.init?.body ?? '{}')
@@ -164,6 +166,27 @@ test('a teammate turn in flight at a reload returns at its next step', async ($,
   await complete($, 'a1')
   await w.advance(30_000)
   expect(flags(w)).toEqual(['quiet', 'busy+working', 'busy+working', 'quiet', 'quiet'])
+})
+
+test('each poll reports the context size: input side + the last main step\'s output, absent before a response', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await stop($)
+  await w.advance(30_000)
+  expect(w.polls.at(-1)).not.toHaveProperty('tokens')
+  w.tokens = 150_000
+  await w.advance(30_000)
+  expect(w.polls.at(-1)?.tokens).toBe(150_000)
+  w.output = 4_000
+  await step($, 't1')
+  await complete($, 't1')
+  await w.advance(30_000)
+  expect(w.polls.at(-1)?.tokens).toBe(154_000)
+  w.output = 9_000
+  await step($, 'a1', 'teammate-1') // a teammate's output stays out of MAIN's context
+  await complete($, 'a1')
+  await w.advance(30_000)
+  expect(w.polls.at(-1)?.tokens).toBe(154_000)
 })
 
 test('a vetoed compaction is reported as failed', async ($, on) => {

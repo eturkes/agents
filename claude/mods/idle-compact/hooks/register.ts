@@ -1,7 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
-// cache-keepalive decides at its mark (claude/cache-keepalive/README.md); this mod reports quiet + working + runs the compaction.
+// cache-keepalive decides at its mark (claude/cache-keepalive/README.md); this mod reports quiet + working + context
+// size + runs the compaction.
 const POLL_MS = 30_000
 const KEEPER = 'http://127.0.0.1:8318'
 // Quiet = no turn running + no question open (a plugin's $.ui.ask runs outside turns) + no agent at work + the last
@@ -19,6 +20,9 @@ const BUSY_AGENTS = new Set(['pending', 'running', 'waiting'])
 const background = atom({ plugin: 'idle-compact', key: 'background' } as const, true)
 let compacting = false
 let interactive = false
+// Context size = the engine's input side + the last main step's output = the statusline gauge (context-alert's rule);
+// host state ⇒ a reload keeps the output.
+const output = atom({ plugin: 'idle-compact', key: 'output' } as const, 0)
 
 type Reply = { compact?: unknown; touches?: unknown; limit?: unknown; state?: unknown }
 
@@ -39,7 +43,10 @@ async function poll($: EngineInterface): Promise<void> {
   const agents = (await $.agent.list()).some(a => BUSY_AGENTS.has(a.status))
   const quiet = running.size === 0 && asking.size === 0 && !agents && !(await read($, background)) && !compacting
   const working = running.size > 0 && asking.size === 0
-  const asked = (await report($, 'poll', { session, quiet, working })) as Reply | undefined
+  // Absent before the live window's first response (fresh or just compacted) ⇒ the keeper treats the size as unknown.
+  const { context } = await $.session.usage()
+  const tokens = context.tokens === undefined ? undefined : context.tokens + (await read($, output))
+  const asked = (await report($, 'poll', { session, quiet, working, tokens })) as Reply | undefined
   const text = notice(asked)
   for (const id of asking) $.ui.notice(id, text) // refusal (call resolved, another plugin's $.tool.call) = engine-logged drop
   if (asked?.compact !== true) return
@@ -83,7 +90,12 @@ export const register: Register = on => {
       running.add(e.turnId)
       pollNow($)
     }
-    return yield* next(e)
+    const r = yield* next(e)
+    if (e.agentId === undefined && r.usage) {
+      const out = r.usage.output_tokens
+      await update($, output, () => out)
+    }
+    return r
   })
 
   on('turn.complete', ($, e, next) => {

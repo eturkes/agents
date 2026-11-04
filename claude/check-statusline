@@ -208,6 +208,10 @@ kk last-middle 33:last armed compact 0 1320
 kk last-late 31:last armed compact 0 2640
 kk last-overdue 31:last armed compact 0 3960
 kk last-after-touches 33:last armed compact 4 1650
+kk lapse-fresh 32:last armed lapse 0 330
+kk lapse-late 31:last armed lapse 0 2640
+kk lapsed 35:last lapsed - 0 3700
+kk lapsed-after-touches 35:last lapsed - 3 3700
 kk touches-none '32:touches 0/19' armed touch 0 3000
 kk touches-early '32:touches 12/19' armed touch 12
 kk touches-late '33:touches 13/19' armed touch 13

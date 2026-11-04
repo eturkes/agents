@@ -165,8 +165,9 @@ def control(server, path, payload):
     return resp.status, json.loads(resp.read())
 
 
-def poll(server, session, quiet):
-    status, reply = control(server, "poll", {"session": session, "quiet": quiet})
+def poll(server, session, quiet, tokens=None):
+    report = {"session": session, "quiet": quiet} | ({} if tokens is None else {"tokens": tokens})
+    status, reply = control(server, "poll", report)
     assert status == 200, (status, reply)
     return reply["compact"]
 
@@ -399,6 +400,7 @@ def status_reports_state_renewal_and_next_mark():
     conn.request("GET", ka.STATUS_PATH)
     reply = json.loads(conn.getresponse().read())
     assert reply["interval"] == 100 and reply["touches"] == 1 and reply["entries"][0]["session"] == "mk", reply
+    assert reply["min_tokens"] == 200_000, reply
 
 
 @check
@@ -462,7 +464,8 @@ def drops_on_lapse():
     tick(server, ahead=150)
     assert entries(server)["lapse"]["last"].startswith("failed 503"), "failed touch not recorded"
     tick(server, ahead=201)
-    assert entries(server)["lapse"]["last"] == "cache lapsed", "kept past cache lapse"
+    entry = entries(server)["lapse"]
+    assert entry["last"] == "cache lapsed" and entry["state"] == "done", ("kept past cache lapse", entry)
     tick(server, ahead=1e4)
     assert len(Up.seen) == 2, "lapsed entry touched"
 
@@ -502,6 +505,68 @@ def quiet_after_touches_compacts():
     assert entries(server)["auq"]["kept_alive"] == 1
     backdate(server, "auq", 101)
     assert poll(server, "auq", True) is True, "quiet after a wait did not compact"
+
+
+@check
+def small_quiet_session_lapses_untouched():
+    Up.reset()
+    live("sm")
+    server = proxy("--interval", "100", "--ttl", "200", "--min-tokens", "1000")
+    post(server, session="sm")
+    assert poll(server, "sm", True, tokens=999) is False
+    assert entries(server)["sm"]["mark"] == "lapse" and entries(server)["sm"]["tokens"] == 999, entries(server)["sm"]
+    server.keeper.entries["sm"].polled_at -= ka.POLL_FRESH
+    assert entries(server)["sm"]["mark"] == "touch", "stale small quiet report marked to lapse"
+    post(server, session="sm")
+    assert server.keeper.entries["sm"].tokens == 999, "stored request dropped the reported size"
+    backdate(server, "sm", 101)
+    assert poll(server, "sm", True, tokens=999) is False, "small session compacted"
+    tick(server)
+    entry = entries(server)["sm"]
+    assert len(Up.seen) == 2 and entry["state"] == "armed" and entry["mark"] == "lapse", ("small session touched", entry)
+    backdate(server, "sm", 100)
+    tick(server)
+    entry = entries(server)["sm"]
+    assert entry["state"] == "lapsed" and entry["mark"] is None, entry
+    assert entry["last"] == "cache lapsed at 999 < 1000 tokens", entry
+    assert any(line.startswith("lapsed sm:") for line in LOG), LOG
+    tick(server, ahead=1e4)
+    assert len(Up.seen) == 2 and entries(server)["sm"]["state"] == "lapsed", "lapsed entry touched or changed"
+    assert poll(server, "sm", True, tokens=999) is False and entries(server)["sm"]["state"] == "lapsed"
+    post(server, session="sm")
+    assert entries(server)["sm"]["state"] == "armed", "new request did not re-arm"
+
+
+@check
+def size_floor_and_unknown_size_compact():
+    Up.reset()
+    server = proxy("--interval", "100", "--min-tokens", "1000")
+    for session, report in (("at", {"tokens": 1000}), ("none", {}), ("bad", {"tokens": "999"}), ("neg", {"tokens": -1})):
+        live(session)
+        post(server, session=session)
+        backdate(server, session, 101)
+        status, reply = control(server, "poll", {"session": session, "quiet": True} | report)
+        assert status == 200 and reply["compact"] is True, (session, reply)
+
+
+@check
+def small_session_touches_while_busy():
+    Up.reset()
+    live("sb")
+    server = proxy("--interval", "100", "--min-tokens", "1000")
+    post(server, session="sb")
+    poll(server, "sb", False, tokens=10)
+    backdate(server, "sb", 101)
+    tick(server)
+    assert entries(server)["sb"]["kept_alive"] == 1, "busy small session not touched"
+    backdate(server, "sb", 101)
+    poll(server, "sb", True, tokens=10)
+    tick(server)
+    entry = entries(server)["sb"]
+    assert entry["kept_alive"] == 1 and entry["mark"] == "lapse", ("quiet small session touched", entry)
+    poll(server, "sb", False, tokens=10)
+    tick(server)
+    assert entries(server)["sb"]["kept_alive"] == 2, "small session turning busy before the ttl not touched"
 
 
 @check

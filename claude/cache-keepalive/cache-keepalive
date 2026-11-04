@@ -2,8 +2,9 @@
 """Keep the prompt cache of live Claude Code sessions warm across long waits.
 
 Relay Claude Code → CLIProxyAPI; stores each session's last main-thread request. --interval s without one →
-quiet session (idle-compact mod report: no turn, no background work) → the mod compacts it, touches end;
-else ≤ --touches touches: re-send the request as a stream, cut at message_start ⇒ the cache read renews the
+quiet session (idle-compact mod report: no turn, no background work) → ≥ --min-tokens context: the mod compacts
+it; smaller: the cache lapses at --ttl (a rewrite that small costs less than a summary loses); touches end either
+way; else ≤ --touches touches: re-send the request as a stream, cut at message_start ⇒ the cache read renews the
 1h entry. CC's own keepalive needs a direct api.anthropic.com connection → off behind these proxies.
 
 Stdlib only: starts without a package cache.
@@ -48,9 +49,10 @@ class Entry:
     busy: bool = False
     quiet: bool = False  # idle-compact's last report
     working: bool = False  # same report: a turn running, no question open
+    tokens: int | None = None  # same report: main context size; None = unreported → compacts
     polled_at: float = 0.0
     compact_at: float = 0.0  # when the mod was told to compact: one attempt per entry
-    state: str = "armed"  # ready (mod report, no stored request) | armed | compacting | compacted | done
+    state: str = "armed"  # ready (mod report, no stored request) | armed | compacting | compacted | lapsed | done
     last: str = "armed"
 
 
@@ -124,15 +126,15 @@ class Keeper:
         with self.lock:
             old = self.entries.get(entry.session)
             if old is not None:  # a turn stores requests between the mod's 30-s polls
-                entry.quiet, entry.working, entry.polled_at = old.quiet, old.working, old.polled_at
+                entry.quiet, entry.working, entry.tokens, entry.polled_at = old.quiet, old.working, old.tokens, old.polled_at
             self.entries[entry.session] = entry
         if old is None or old.state != "armed":
             log(f"armed {entry.session[:8]} model={entry.model} bytes={len(entry.body)}")
 
-    def finish(self, entry, reason):
+    def finish(self, entry, reason, state="done"):
         """Caller holds the lock. The entry stays listed until its session ends or sends a new request."""
-        entry.state, entry.last, entry.body = "done", reason, b""
-        log(f"stop {entry.session[:8]}: {reason} after {entry.touches} touches")
+        entry.state, entry.last, entry.body = state, reason, b""
+        log(f"{'stop' if state == 'done' else state} {entry.session[:8]}: {reason} after {entry.touches} touches")
 
     def tick(self, now):
         live, complete = live_sessions(self.cfg.sessions_dir)
@@ -146,7 +148,10 @@ class Keeper:
                 if entry.busy or entry.state not in ("armed", "compacting"):
                     continue
                 if now - entry.renewed_at >= self.cfg.ttl:
-                    self.finish(entry, "cache lapsed")
+                    if entry.state == "armed" and self.lapses(entry, now):
+                        self.finish(entry, f"cache lapsed at {entry.tokens} < {self.cfg.min_tokens} tokens", "lapsed")
+                    else:
+                        self.finish(entry, "cache lapsed")
                     continue
                 if entry.state == "compacting" and now - entry.polled_at >= POLL_FRESH:
                     # The mod polls throughout its own compaction ⇒ a stale report = the mod is gone.
@@ -157,6 +162,8 @@ class Keeper:
                     continue
                 if self.compacts(entry, now):
                     continue  # the mod's next poll compacts it
+                if self.lapses(entry, now):
+                    continue  # waits out the ttl above; turning busy first → a touch
                 if entry.touches >= self.cfg.touches:
                     self.finish(entry, "touch limit")
                     continue
@@ -166,28 +173,41 @@ class Keeper:
             threading.Thread(target=self.touch, args=(entry,), daemon=True).start()
 
     @staticmethod
-    def compacts(entry, now):
+    def quiet(entry, now):
+        """Caller holds the lock. The mod's last report = quiet + recent; stale = the mod is gone → touches."""
+        return entry.quiet and now - entry.polled_at < POLL_FRESH
+
+    def small(self, entry):
+        return entry.tokens is not None and entry.tokens < self.cfg.min_tokens
+
+    def compacts(self, entry, now):
         """Caller holds the lock. True = the entry's mark goes to the mod's compaction, not a touch."""
-        return entry.quiet and now - entry.polled_at < POLL_FRESH and not entry.compact_at
+        return self.quiet(entry, now) and not self.small(entry) and not entry.compact_at
+
+    def lapses(self, entry, now):
+        """Caller holds the lock. True = the entry's mark neither compacts nor touches: its cache lapses."""
+        return self.quiet(entry, now) and self.small(entry)
 
     def mark(self, entry, now):
-        """Caller holds the lock. What an armed entry's next mark does: compact | touch | stop; else None."""
+        """Caller holds the lock. What an armed entry's next mark does: compact | lapse | touch | stop; else None."""
         if entry.state != "armed":
             return None
         if self.compacts(entry, now):
             return "compact"
+        if self.lapses(entry, now):
+            return "lapse"
         return "stop" if entry.touches >= self.cfg.touches else "touch"
 
-    def poll(self, session, quiet, working, now):
+    def poll(self, session, quiet, working, tokens, now):
         """Store the mod's report → {compact: True = compact now, + the entry's touches, limit + state}."""
         with self.lock:
             entry = self.entries.get(session)
             if entry is None:  # no stored request yet (new session, keeper restart mid-turn): the report alone
                 entry = self.entries[session] = Entry(session, "", "", [], b"", 0.0, state="ready", last="ready")
-            entry.quiet, entry.working, entry.polled_at = quiet, working, now
+            entry.quiet, entry.working, entry.tokens, entry.polled_at = quiet, working, tokens, now
             reply = {"compact": False, "touches": entry.touches, "limit": self.cfg.touches, "state": entry.state}
-            if not quiet or entry.state != "armed" or entry.busy or entry.compact_at \
-                    or now - entry.renewed_at < self.cfg.interval:
+            if entry.state != "armed" or entry.busy or now - entry.renewed_at < self.cfg.interval \
+                    or not self.compacts(entry, now):
                 return reply
             entry.state, entry.last, entry.compact_at = "compacting", "compacting", now
         log(f"compact {session[:8]} after {entry.touches} touches")
@@ -241,7 +261,7 @@ class Keeper:
                 "session": e.session[:8], "dir": dirs.get(e.session), "stopped": utc(e.stopped_at),
                 "kept_alive": "compacted" if e.state == "compacted" else e.touches, "last": e.last,
                 "state": e.state, "renewed": utc(e.renewed_at), "mark": self.mark(e, now),
-                "working": e.working and now - e.polled_at < POLL_FRESH,
+                "working": e.working and now - e.polled_at < POLL_FRESH, "tokens": e.tokens,
             } for e in self.entries.values()]
 
 
@@ -317,15 +337,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 entry.stopped_at = time.time()
 
     def control(self):
-        """GET status; POST /poll {session, quiet, working} → poll(); POST /compacted {session, ok, reason, usage}."""
+        """GET status; POST /poll {session, quiet, working, tokens} → poll(); POST /compacted {session, ok, reason, usage}."""
         keeper = self.server.keeper
         if self.command == "GET" and self.path == STATUS_PATH:
             cfg = self.server.cfg
-            return self.reply(200, {"entries": keeper.status(), "interval": cfg.interval, "touches": cfg.touches})
+            return self.reply(200, {"entries": keeper.status(), "interval": cfg.interval, "touches": cfg.touches,
+                                    "min_tokens": cfg.min_tokens})
         try:
             report = json.loads(self.read_body())
             if self.path == STATUS_PATH + "/poll":
-                return self.reply(200, keeper.poll(report["session"], report["quiet"] is True, report.get("working") is True, time.time()))
+                tokens = report.get("tokens")
+                tokens = tokens if type(tokens) is int and tokens >= 0 else None  # absent | malformed → unknown
+                return self.reply(200, keeper.poll(report["session"], report["quiet"] is True,
+                                                   report.get("working") is True, tokens, time.time()))
             if self.path == STATUS_PATH + "/compacted":
                 keeper.compacted(report["session"], report["ok"] is True, str(report.get("reason"))[:200], report.get("usage"))
                 return self.reply(200, {})
@@ -441,6 +465,9 @@ def parse(argv):
     p.add_argument("--ttl", type=float, default=3600, help="cache entry lifetime; the keeper stops for the session after it")
     # break-even: 19 touch reads × 0.1 = a miss's 1-h write 2.0 - a hit's read 0.1
     p.add_argument("--touches", type=int, default=19, help="touches per stored request while the session is not quiet")
+    # Claude Code's own idle compaction floor: below it a 1-h rewrite costs less than the summary loses
+    p.add_argument("--min-tokens", type=int, default=200_000,
+                   help="context size a quiet session needs to compact; smaller → its cache lapses")
     p.add_argument("--tick", type=float, default=30)
     p.add_argument("--touch-timeout", type=float, default=180)
     p.add_argument("--upstream-timeout", type=float, default=900, help="idle read timeout on relayed requests")
@@ -454,7 +481,7 @@ def main():
     cfg = parse(sys.argv[1:])
     server = serve(cfg)
     log(f"listening {cfg.listen} → {cfg.upstream.geturl()}; compact or touch after {cfg.interval:g}s idle, "
-        f"≤{cfg.touches} touches, ttl {cfg.ttl:g}s")
+        f"compact ≥{cfg.min_tokens} tokens, ≤{cfg.touches} touches, ttl {cfg.ttl:g}s")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
