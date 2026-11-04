@@ -14,6 +14,7 @@ CachyOS = systemd user service; aeon = foreground in a terminal, like CLIProxyAP
 
 - Behind a proxy CC writes the 5-min cache TTL; the 1-h TTL needs CC's own claude.ai sign-in. Settings `env` `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` restores 1 h for the main thread.
 - CC's built-in keepalive runs only with `ANTHROPIC_BASE_URL` unset or `api.anthropic.com` ⇒ off here.
+- CC's native idle compaction (≥ 2.1.317) fires behind the proxy too, so settings set `"idleCompaction": false`. It covers only the compaction half (at 90% of the TTL, contexts ≥ 200K tokens, no running turn or open dialog, no input in the last 60 s). It never touches, and it compacts while shells, teammates or crons are still at work. Running it alongside `idle-compact` compacts a session twice (54- vs 55-min marks).
 
 ## Mechanics
 

@@ -149,6 +149,7 @@
   "remoteControlAtStartup": false,
   "crossSessionInbound": "accept",
   "useAutoModeDuringPlan": false,
+  "idleCompaction": false,
   "pluginConfigs": {
     "agents-md@builtin": {
       "options": {
