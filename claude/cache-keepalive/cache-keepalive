@@ -3,9 +3,9 @@
 
 Relay Claude Code → CLIProxyAPI; stores each session's last main-thread request. --interval s without one →
 quiet session (idle-compact mod report: no turn, no background work) → ≥ --min-tokens context: the mod compacts
-it; smaller: the cache lapses at --ttl (a rewrite that small costs less than a summary loses); touches end either
-way; else ≤ --touches touches: re-send the request as a stream, cut at message_start ⇒ the cache read renews the
-1h entry. CC's own keepalive needs a direct api.anthropic.com connection → off behind these proxies.
+it; smaller: the cache lapses at --ttl; touches end either way; else ≤ --touches touches: re-send the request as
+a stream, cut at message_start ⇒ the cache read renews the 1h entry. CC's own keepalive needs a direct
+api.anthropic.com connection → off behind these proxies.
 
 Stdlib only: starts without a package cache.
 """
@@ -466,9 +466,9 @@ def parse(argv):
     p.add_argument("--ttl", type=float, default=3600, help="cache entry lifetime; the keeper stops for the session after it")
     # break-even: 19 touch reads × 0.1 = a miss's 1-h write 2.0 - a hit's read 0.1
     p.add_argument("--touches", type=int, default=19, help="touches per stored request while the session is not quiet")
-    # Claude Code's own idle compaction floor: below it a 1-h rewrite costs less than the summary loses
+    # below it a 1-h rewrite costs less than a summary loses
     p.add_argument("--min-tokens", type=int, default=200_000,
-                   help="context size a quiet session needs to compact; smaller → its cache lapses")
+                   help="context tokens a quiet session needs to compact; a smaller session lets its cache lapse")
     p.add_argument("--tick", type=float, default=30)
     p.add_argument("--touch-timeout", type=float, default=180)
     p.add_argument("--upstream-timeout", type=float, default=900, help="idle read timeout on relayed requests")

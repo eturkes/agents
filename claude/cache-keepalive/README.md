@@ -14,7 +14,7 @@ CachyOS = systemd user service; aeon = foreground in a terminal, like CLIProxyAP
 
 - Behind a proxy CC writes the 5-min cache TTL; the 1-h TTL needs CC's own claude.ai sign-in. Settings `env` `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` restores 1 h for the main thread.
 - CC's built-in keepalive runs only with `ANTHROPIC_BASE_URL` unset or `api.anthropic.com` ⇒ off here.
-- CC's native idle compaction (≥ 2.1.317) fires behind the proxy too, so settings set `"idleCompaction": false`. It covers only the compaction half (at 90% of the TTL, no running turn or open dialog, no input in the last 60 s; its 200K floor = `--min-tokens`). It never touches, and it compacts while shells, teammates or crons are still at work. Running it alongside `idle-compact` compacts a session twice (54- vs 55-min marks).
+- CC's native idle compaction fires behind the proxy too ⇒ settings `"idleCompaction": false`: compaction half alone (at 90% of the TTL; no running turn, open dialog or input in the last 60 s; 200K floor = `--min-tokens`), no touches, compacts while shells, teammates or crons work; beside `idle-compact` → a session compacts twice (54- vs 55-min marks).
 
 ## Mechanics
 
@@ -24,10 +24,10 @@ CachyOS = systemd user service; aeon = foreground in a terminal, like CLIProxyAP
 - 55 min without a main-thread request →
   - quiet session (no running turn or agent at work, idle teammates = quiet; last turn left no shell, subagent, workflow, cloud session or scheduled wakeup):
     - context ≥ 200K tokens (`--min-tokens`) or size unreported → mod `idle-compact` compacts it: the compaction reads the cache, the next prompt writes only the short summary; keeper stops for the session.
-    - smaller → neither compaction nor touch: the cache lapses at 1 h (state `lapsed`); a rewrite that small costs less than a summary loses (CC's own idle-compaction floor). Turning busy before then → touches.
+    - smaller → neither compaction nor touch: the cache lapses at 1 h (state `lapsed`); a rewrite that small costs less than a summary loses; turning busy first → touches.
   - else (waiting at an AskUserQuestion dialog, or work still running), any size → a touch = the stored request re-sent, renewing the 1-h entry; ≤19 per session (Cost).
 - Touch = stream closed at `message_start` ⇒ a cache read + almost no output. Byte-identical to the stored request, except a stored `stream: false` becomes `stream: true`: touches stream, and the flag sits outside the cached prompt ⇒ same cache entry.
-- [`idle-compact`](../mods/README.md) runs in each interactive session: every 30 s + at each turn start/end + question open/close → quiet + working + context size (`POST /_keepalive/poll`; size = input side + the last main step's output = the statusline gauge, absent before the live window's first response or from a mod predating it ⇒ unreported; reply = compact now? + touches, limit + state → the touch line under an open question); on the keeper's ask → compacts + reports (`POST /_keepalive/compacted`). No mod report for 90 s, or a failed compaction → touches only.
+- [`idle-compact`](../mods/README.md) runs in each interactive session: every 30 s + at each turn start/end + question open/close → quiet + working + context size (`POST /_keepalive/poll`; size = input side + the last main step's output = the statusline gauge, absent before the live window's first response ⇒ unreported; reply = compact now? + touches, limit + state → the touch line under an open question); on the keeper's ask → compacts + reports (`POST /_keepalive/compacted`). No mod report for 90 s, or a failed compaction → touches only.
 - Keeper stops for a session once: the mod compacted it; a quiet session under the floor reached its TTL (`lapsed`); touch budget spent + its next 55-min mark reached; touches fail until the entry expires; upstream rejects a touch with 400/401/403/404/413/422; two touches in a row write more than they read.
 - Stopped session stays listed; its next main-thread request restarts it; it leaves the list once its CC process ends (process + launch dir from `~/.claude/sessions/<pid>.json`).
 - Stored requests live in memory ⇒ a keeper restart drops them; each session re-stores on its next main-thread request.
