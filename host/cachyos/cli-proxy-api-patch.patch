@@ -1,34 +1,50 @@
-From 6f6fe73c3bccdc7da54427b3805f8d3a507aadc9 Mon Sep 17 00:00:00 2001
+From 2a3d75784e98f2805328deb77bb98321dc4259a4 Mon Sep 17 00:00:00 2001
 From: Emir Turkes <eturkes@bu.edu>
-Date: Wed, 21 Oct 2026 11:57:57 +0900
-Subject: [PATCH] codex/claude: ToolSearch discoveries declared top-level ahead
- of the input → each discovery reset the prompt cache → declare at the
- reference via additional_tools
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Date: Sat, 31 Oct 2026 09:49:09 +0900
+Subject: [PATCH] codex/claude: keep ToolSearch discoveries at reference
+ position
 
-- Claude Code: discovered deferred tool → tools[] (defer_loading) + tool_reference in the search tool_result.
-- Referenced deferred tool → additional_tools developer item after the referencing function_call_output ⇒ input append-only.
-- Top-level stays: unreferenced deferred tools, tools called before their first retained reference (compaction), compat endpoints.
-- additional_tools declarations ≡ top-level: schema normalization, image-function check, parallel_tool_calls cleanup, count_tokens.
-- gpt-6.1-sol via the ChatGPT backend, request after ToolSearch: cached 0/6,908 → 6,656/7,006.
+Declare referenced deferred tools via additional_tools to preserve the cached prompt prefix. Keep upstream system-message tool additions and compatibility endpoints intact.
 ---
+ .../client/codex/tool-schema/tool_schema.go   |  12 +-
  .../codex_executor_additional_tools_test.go   |  29 +++
- .../executor/codex_executor_request.go        |  21 +-
+ .../executor/codex_executor_request.go        |  18 +-
  .../runtime/executor/codex_executor_tokens.go |  51 +++--
  .../executor/codex_executor_tokens_test.go    |  27 +++
- .../executor/helps/codex_tool_schema.go       |  26 ++-
  .../executor/helps/codex_tool_schema_test.go  |  16 ++
  .../codex_claude_deferred_tools_test.go       | 208 ++++++++++++++++++
- .../codex/claude/codex_claude_request.go      | 123 ++++++++---
- 8 files changed, 447 insertions(+), 54 deletions(-)
+ .../codex/claude/codex_claude_request.go      |  67 ++++++
+ 8 files changed, 401 insertions(+), 27 deletions(-)
  create mode 100644 internal/runtime/executor/codex_executor_additional_tools_test.go
  create mode 100644 internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 
+diff --git a/internal/client/codex/tool-schema/tool_schema.go b/internal/client/codex/tool-schema/tool_schema.go
+index ccdc404bc5d5253f3ac6015b891e627f75de8654..705c9c63cb7960ca3e911ec591d309ff5ba00fe2 100644
+--- a/internal/client/codex/tool-schema/tool_schema.go
++++ b/internal/client/codex/tool-schema/tool_schema.go
+@@ -383,11 +383,15 @@ func NormalizeCodexToolSchemasDoc(doc *ojson.Doc) bool {
+ 	if doc == nil || doc.Len() == 0 {
+ 		return false
+ 	}
+-	tools := doc.Get("tools")
+-	if !tools.IsArray() {
+-		return false
++	changed := normalizeCodexToolListDoc(doc, doc.Get("tools"), "tools")
++	for i, item := range doc.Get("input").Array() {
++		if item.Get("type").String() == "additional_tools" {
++			path := fmt.Sprintf("input.%d.tools", i)
++			if normalizeCodexToolListDoc(doc, item.Get("tools"), path) {
++				changed = true
++			}
++		}
+ 	}
+-	changed := normalizeCodexToolListDoc(doc, tools, "tools")
+ 	if changed {
+ 		log.Debugf("codex: normalized tool schemas to prevent upstream failure")
+ 	}
 diff --git a/internal/runtime/executor/codex_executor_additional_tools_test.go b/internal/runtime/executor/codex_executor_additional_tools_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..86a31ecfbf4766ecb97522f315a8a494a146d270
+index 0000000000000000000000000000000000000000..c3ff1b99002ea18b7d2f08584631883e1b0875e7
 --- /dev/null
 +++ b/internal/runtime/executor/codex_executor_additional_tools_test.go
 @@ -0,0 +1,29 @@
@@ -37,7 +53,7 @@ index 0000000000000000000000000000000000000000..86a31ecfbf4766ecb97522f315a8a494
 +import (
 +	"testing"
 +
-+	"github.com/tidwall/gjson"
++	"github.com/MoeForge/moego/ojson"
 +)
 +
 +const codexAdditionalImageFunction = `{"type":"function","name":"image_gen.imagegen","parameters":{"type":"object","properties":{}}}`
@@ -45,7 +61,7 @@ index 0000000000000000000000000000000000000000..86a31ecfbf4766ecb97522f315a8a494
 +func TestEnsureImageGenerationToolSeesAdditionalToolsDeclaration(t *testing.T) {
 +	body := []byte(`{"tools":[{"type":"function","name":"Read","parameters":{"type":"object","properties":{}}}],"input":[{"type":"additional_tools","role":"developer","tools":[` + codexAdditionalImageFunction + `]}]}`)
 +	out := ensureImageGenerationTool(body, "gpt-6-luna", nil, nil)
-+	if gjson.GetBytes(out, `tools.#(type=="image_generation")`).Exists() {
++	if ojson.GetBytes(out, `tools.#(type=="image_generation")`).Exists() {
 +		t.Fatalf("image_generation injected despite an additional_tools image function: %s", out)
 +	}
 +}
@@ -53,40 +69,37 @@ index 0000000000000000000000000000000000000000..86a31ecfbf4766ecb97522f315a8a494
 +func TestNormalizeCodexParallelToolCallsKeepsFieldForAdditionalTools(t *testing.T) {
 +	body := []byte(`{"parallel_tool_calls":false,"tools":[],"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"function","name":"Lookup","parameters":{"type":"object","properties":{}}}]}]}`)
 +	out := normalizeCodexParallelToolCallsForTools(body)
-+	if got := gjson.GetBytes(out, "parallel_tool_calls"); !got.Exists() || got.Bool() {
++	if got := ojson.GetBytes(out, "parallel_tool_calls"); !got.Exists() || got.Bool() {
 +		t.Fatalf("parallel_tool_calls = %s, want false", got.Raw)
 +	}
 +	bare := normalizeCodexParallelToolCallsForTools([]byte(`{"parallel_tool_calls":false,"tools":[],"input":[]}`))
-+	if gjson.GetBytes(bare, "parallel_tool_calls").Exists() {
++	if ojson.GetBytes(bare, "parallel_tool_calls").Exists() {
 +		t.Fatalf("parallel_tool_calls kept without any tools: %s", bare)
 +	}
 +}
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index b03948d7ec215493a3a9194cef1d24335af8522c..c9fa7ebcedf0abc84a4ae76b19fb5a160203e13a 100644
+index 6b711816de7a66d7ee70c44f294b206ee46ea84f..1f1909dbf776aaea5003e63527e8aa479fecb4b1 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
-@@ -688,6 +688,11 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
- 		return body
+@@ -797,6 +797,11 @@ func ensureImageGenerationToolDoc(doc *ojson.Doc, baseModel string, auth *clipro
+ 		return false
  	}
  
-+	for _, t := range codexAdditionalToolDeclarations(body) {
++	for _, t := range codexAdditionalToolDeclarations(doc) {
 +		if t.Get("type").String() == "image_generation" || isImageGenerationFunctionTool(t) {
-+			return body
++			return false
 +		}
 +	}
- 	tools := gjson.GetBytes(body, "tools")
+ 	tools := doc.Get("tools")
  	if !tools.Exists() || !tools.IsArray() {
- 		body, _ = sjson.SetRawBytes(body, "tools", imageGenToolArrayJSON)
-@@ -702,6 +707,20 @@ func ensureImageGenerationTool(body []byte, baseModel string, auth *cliproxyauth
- 	return body
+ 		return doc.SetRawBytes("tools", imageGenToolArrayJSON) == nil
+@@ -809,6 +814,17 @@ func ensureImageGenerationToolDoc(doc *ojson.Doc, baseModel string, auth *clipro
+ 	return doc.SetRawBytes("tools.-1", imageGenToolJSON) == nil
  }
  
-+func codexAdditionalToolDeclarations(body []byte) []gjson.Result {
-+	if !bytes.Contains(body, []byte(`"additional_tools"`)) {
-+		return nil
-+	}
-+	var tools []gjson.Result
-+	gjson.GetBytes(body, "input").ForEach(func(_, item gjson.Result) bool {
++func codexAdditionalToolDeclarations(doc *ojson.Doc) []ojson.Result {
++	var tools []ojson.Result
++	doc.Get("input").ForEach(func(_, item ojson.Result) bool {
 +		if item.Get("type").String() == "additional_tools" {
 +			tools = append(tools, item.Get("tools").Array()...)
 +		}
@@ -96,22 +109,22 @@ index b03948d7ec215493a3a9194cef1d24335af8522c..c9fa7ebcedf0abc84a4ae76b19fb5a16
 +}
 +
  func normalizeCodexParallelToolCalls(body []byte, headers http.Header) []byte {
- 	if util.IsCodexResponsesLiteRequest(body, headers) {
- 		body = helps.SetBoolIfDifferent(body, "parallel_tool_calls", false)
-@@ -717,7 +736,7 @@ func normalizeCodexParallelToolCallsForTools(body []byte) []byte {
+ 	doc := ojson.NewDoc(body)
+ 	if !normalizeCodexParallelToolCallsDoc(doc, headers) {
+@@ -842,7 +858,7 @@ func normalizeCodexParallelToolCallsForToolsDoc(doc *ojson.Doc) bool {
  
- 	tools := gjson.GetBytes(body, "tools")
+ 	tools := doc.Get("tools")
  	hasTools := tools.Exists() && tools.IsArray() && len(tools.Array()) > 0
 -	if hasTools {
-+	if hasTools || len(codexAdditionalToolDeclarations(body)) > 0 {
- 		return body
++	if hasTools || len(codexAdditionalToolDeclarations(doc)) > 0 {
+ 		return false
  	}
  
 diff --git a/internal/runtime/executor/codex_executor_tokens.go b/internal/runtime/executor/codex_executor_tokens.go
-index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..1730e7fcf2d9a7d4e304b7414c6dd3349e47da9e 100644
+index 22c73eb72af0860588f2ea050ca6549a5048f2f0..5b9518c5de085b20dfa2d3a46419ef5eb42f46b5 100644
 --- a/internal/runtime/executor/codex_executor_tokens.go
 +++ b/internal/runtime/executor/codex_executor_tokens.go
-@@ -123,6 +123,8 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+@@ -130,6 +130,8 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
  				if out := strings.TrimSpace(item.Get("output").String()); out != "" {
  					segments = append(segments, out)
  				}
@@ -120,7 +133,7 @@ index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..1730e7fcf2d9a7d4e304b7414c6dd334
  			default:
  				if text := strings.TrimSpace(item.Get("text").String()); text != "" {
  					segments = append(segments, text)
-@@ -131,28 +133,7 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+@@ -138,28 +140,7 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
  		}
  	}
  
@@ -137,7 +150,7 @@ index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..1730e7fcf2d9a7d4e304b7414c6dd334
 -			}
 -			if params := tool.Get("parameters"); params.Exists() {
 -				val := params.Raw
--				if params.Type == gjson.String {
+-				if params.Type == ojson.String {
 -					val = params.String()
 -				}
 -				if trimmed := strings.TrimSpace(val); trimmed != "" {
@@ -150,12 +163,12 @@ index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..1730e7fcf2d9a7d4e304b7414c6dd334
  
  	textFormat := root.Get("text.format")
  	if textFormat.Exists() {
-@@ -181,3 +162,29 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
+@@ -188,3 +169,29 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
  	}
  	return int64(count), nil
  }
 +
-+func appendCodexToolSegments(segments []string, tools gjson.Result) []string {
++func appendCodexToolSegments(segments []string, tools ojson.Result) []string {
 +	if !tools.IsArray() {
 +		return segments
 +	}
@@ -170,7 +183,7 @@ index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..1730e7fcf2d9a7d4e304b7414c6dd334
 +		}
 +		if params := tool.Get("parameters"); params.Exists() {
 +			val := params.Raw
-+			if params.Type == gjson.String {
++			if params.Type == ojson.String {
 +				val = params.String()
 +			}
 +			if trimmed := strings.TrimSpace(val); trimmed != "" {
@@ -181,13 +194,13 @@ index 5d8f70be68b42bce0a0ccf04e6322041ac6469b9..1730e7fcf2d9a7d4e304b7414c6dd334
 +	return segments
 +}
 diff --git a/internal/runtime/executor/codex_executor_tokens_test.go b/internal/runtime/executor/codex_executor_tokens_test.go
-index a73f8674bacf4a8ec2214cded4083b0398c8f861..7dd917dd8688303c68e9e37dfaacacfe4d57cad2 100644
+index cba44dd1c77cae519b1cb806d2c0e89cb3d2cb41..d251e23aca4a36c9eb4e6a51c6e9e109ea92be77 100644
 --- a/internal/runtime/executor/codex_executor_tokens_test.go
 +++ b/internal/runtime/executor/codex_executor_tokens_test.go
 @@ -12,6 +12,7 @@ import (
+ 	"github.com/router-for-me/CLIProxyAPI/v8/internal/registry"
  	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v8/sdk/cliproxy/executor"
  	sdktranslator "github.com/router-for-me/CLIProxyAPI/v8/sdk/translator"
- 	"github.com/tidwall/gjson"
 +	"github.com/tiktoken-go/tokenizer"
  )
  
@@ -222,46 +235,8 @@ index a73f8674bacf4a8ec2214cded4083b0398c8f861..7dd917dd8688303c68e9e37dfaacacfe
 +		t.Fatalf("additional_tools tools were not counted")
 +	}
 +}
-diff --git a/internal/runtime/executor/helps/codex_tool_schema.go b/internal/runtime/executor/helps/codex_tool_schema.go
-index d97e5e516097a822a57bf9012f527682afdf183e..34fba85cba52e810009c49d7974cc605aa67812c 100644
---- a/internal/runtime/executor/helps/codex_tool_schema.go
-+++ b/internal/runtime/executor/helps/codex_tool_schema.go
-@@ -54,12 +54,28 @@ func NormalizeCodexToolSchemas(body []byte) []byte {
- 	if len(body) == 0 {
- 		return body
- 	}
--	updatedTools, changed := normalizeCodexToolList(gjson.GetBytes(body, "tools"))
--	if !changed {
--		return body
-+	out, changedAny := body, false
-+	if updatedTools, changed := normalizeCodexToolList(gjson.GetBytes(body, "tools")); changed {
-+		if updated, errSet := sjson.SetRawBytes(out, "tools", updatedTools); errSet == nil {
-+			out, changedAny = updated, true
-+		}
- 	}
--	out, errSet := sjson.SetRawBytes(body, "tools", updatedTools)
--	if errSet != nil {
-+	// additional_tools items declare tools mid-input → same backend validation.
-+	if bytes.Contains(body, []byte(`"additional_tools"`)) {
-+		gjson.GetBytes(body, "input").ForEach(func(index, item gjson.Result) bool {
-+			if item.Get("type").String() != "additional_tools" {
-+				return true
-+			}
-+			if updatedTools, changed := normalizeCodexToolList(item.Get("tools")); changed {
-+				path := "input." + strconv.FormatInt(index.Int(), 10) + ".tools"
-+				if updated, errSet := sjson.SetRawBytes(out, path, updatedTools); errSet == nil {
-+					out, changedAny = updated, true
-+				}
-+			}
-+			return true
-+		})
-+	}
-+	if !changedAny {
- 		return body
- 	}
- 	log.Debugf("codex: normalized tool schemas to prevent upstream failure")
 diff --git a/internal/runtime/executor/helps/codex_tool_schema_test.go b/internal/runtime/executor/helps/codex_tool_schema_test.go
-index cc6da6af257d1115dfb1e70b3577efba454e9caa..4a5a0264e01c30cfe3b741b776df809fa2fd3585 100644
+index 2beb8be5139ba2aac286c8219a18750022403ce7..a183164c339b9b42c5c9a574d079466e73f6fb1e 100644
 --- a/internal/runtime/executor/helps/codex_tool_schema_test.go
 +++ b/internal/runtime/executor/helps/codex_tool_schema_test.go
 @@ -1422,3 +1422,19 @@ func TestNormalizeCodexToolSchemas_StripsOutOfRangeInt64Bounds(t *testing.T) {
@@ -273,20 +248,20 @@ index cc6da6af257d1115dfb1e70b3577efba454e9caa..4a5a0264e01c30cfe3b741b776df809f
 +	tool := `{"type":"function","name":"Lookup","parameters":{"type":"object","properties":{"n":{"type":"integer","maximum":18446744073709551615}}}}`
 +	body := []byte(`{"tools":[` + tool + `],"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]},{"type":"additional_tools","role":"developer","tools":[` + tool + `]}]}`)
 +
-+	out := gjson.ParseBytes(NormalizeCodexToolSchemas(body))
++	out := ojson.ParseBytes(NormalizeCodexToolSchemas(body))
 +	if out.Get("tools.0.parameters.properties.n.maximum").Exists() {
 +		t.Fatalf("top-level maximum kept: %s", out.Get("tools").Raw)
 +	}
 +	if out.Get("input.1.tools.0.parameters.properties.n.maximum").Exists() {
 +		t.Fatalf("additional_tools maximum kept: %s", out.Get("input.1").Raw)
 +	}
-+	if out.Get("input.0").Raw != gjson.GetBytes(body, "input.0").Raw {
++	if out.Get("input.0").Raw != ojson.GetBytes(body, "input.0").Raw {
 +		t.Fatalf("message item changed: %s", out.Get("input.0").Raw)
 +	}
 +}
 diff --git a/internal/translator/codex/claude/codex_claude_deferred_tools_test.go b/internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd2cb297e5
+index 0000000000000000000000000000000000000000..8c50b36ae697eb9dd29ef12e2f2a90c7ae797ecd
 --- /dev/null
 +++ b/internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 @@ -0,0 +1,208 @@
@@ -296,7 +271,7 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +	"strings"
 +	"testing"
 +
-+	"github.com/tidwall/gjson"
++	"github.com/MoeForge/moego/ojson"
 +)
 +
 +const deferredToolsBase = `{
@@ -333,7 +308,7 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +	return []byte(strings.Replace(strings.Replace(deferredToolsBase, "%s", tools, 1), "%s", history, 1))
 +}
 +
-+func translatedToolNames(t *testing.T, body gjson.Result) []string {
++func translatedToolNames(t *testing.T, body ojson.Result) []string {
 +	t.Helper()
 +	var names []string
 +	for _, tool := range body.Get("tools").Array() {
@@ -347,7 +322,7 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
-+	body := gjson.ParseBytes(result)
++	body := ojson.ParseBytes(result)
 +
 +	if got := strings.Join(translatedToolNames(t, body), ","); got != "Read,ToolSearch" {
 +		t.Fatalf("top-level tools = %s, want Read,ToolSearch", got)
@@ -369,7 +344,7 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +		t.Fatalf("additional_tools tools = %s", added.Get("tools").Raw)
 +	}
 +	lsp := tools[0]
-+	if lsp.Get("type").String() != "function" || lsp.Get("name").String() != "LSP" || lsp.Get("strict").Type != gjson.False {
++	if lsp.Get("type").String() != "function" || lsp.Get("name").String() != "LSP" || lsp.Get("strict").Type != ojson.False {
 +		t.Fatalf("declared tool = %s", lsp.Raw)
 +	}
 +	if lsp.Get("defer_loading").Exists() || lsp.Get("input_schema").Exists() || lsp.Get("parameters.$schema").Exists() {
@@ -386,13 +361,13 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +		deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult),
 +		deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult, lspToolUse, lspResult),
 +	}
-+	var previous gjson.Result
++	var previous ojson.Result
 +	for i, step := range steps {
 +		result, err := ConvertClaudeRequestToCodex("gpt-6-luna", step, true)
 +		if err != nil {
 +			t.Fatalf("step %d: translate: %v", i, err)
 +		}
-+		body := gjson.ParseBytes(result)
++		body := ojson.ParseBytes(result)
 +		if i > 0 {
 +			if body.Get("tools").Raw != previous.Get("tools").Raw {
 +				t.Fatalf("step %d: tools changed:\n%s\n%s", i, previous.Get("tools").Raw, body.Get("tools").Raw)
@@ -416,7 +391,7 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
-+	body := gjson.ParseBytes(result)
++	body := ojson.ParseBytes(result)
 +	if got := strings.Join(translatedToolNames(t, body), ","); got != "Read,ToolSearch,LSP" {
 +		t.Fatalf("top-level tools = %s, want Read,ToolSearch,LSP", got)
 +	}
@@ -432,7 +407,7 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
-+	input := gjson.ParseBytes(result).Get("input").Array()
++	input := ojson.ParseBytes(result).Get("input").Array()
 +	count := 0
 +	for i, item := range input {
 +		if item.Get("type").String() == "additional_tools" {
@@ -452,7 +427,7 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
-+	body := gjson.ParseBytes(result)
++	body := ojson.ParseBytes(result)
 +	if got := strings.Join(translatedToolNames(t, body), ","); got != "Read,ToolSearch,LSP" {
 +		t.Fatalf("top-level tools = %s, want Read,ToolSearch,LSP", got)
 +	}
@@ -470,7 +445,7 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
-+	body := gjson.ParseBytes(result)
++	body := ojson.ParseBytes(result)
 +	declared := body.Get(`input.#(type=="additional_tools").tools.0.name`).String()
 +	called := body.Get(`input.#(call_id=="toolu_lsp").name`).String()
 +	if declared == "" || len(declared) > 64 || declared != called {
@@ -488,33 +463,33 @@ index 0000000000000000000000000000000000000000..6cd99e8c821e96ab8234f9f4d263e6fd
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
-+	if got := strings.Join(translatedToolNames(t, gjson.ParseBytes(after)), ","); got != "Read,ToolSearch,LSP" {
++	if got := strings.Join(translatedToolNames(t, ojson.ParseBytes(after)), ","); got != "Read,ToolSearch,LSP" {
 +		t.Fatalf("top-level tools = %s, want Read,ToolSearch,LSP", got)
 +	}
-+	if gjson.GetBytes(before, "tools").Raw != gjson.GetBytes(after, "tools").Raw {
++	if ojson.GetBytes(before, "tools").Raw != ojson.GetBytes(after, "tools").Raw {
 +		t.Fatalf("tools changed on rediscovery")
 +	}
-+	if gjson.GetBytes(after, `input.#(type=="additional_tools")`).Exists() {
-+		t.Fatalf("rediscovered tool declared again: %s", gjson.GetBytes(after, "input").Raw)
++	if ojson.GetBytes(after, `input.#(type=="additional_tools")`).Exists() {
++		t.Fatalf("rediscovered tool declared again: %s", ojson.GetBytes(after, "input").Raw)
 +	}
 +}
 diff --git a/internal/translator/codex/claude/codex_claude_request.go b/internal/translator/codex/claude/codex_claude_request.go
-index 504a5b11617a4cce9c280f5d96250e5209ee5145..cc65551d61627c5f7dc97be258da49bccae9f436 100644
+index 00fee4af765afd08ad404c61d6607c6473e6c387..07fc8d9f6918c7882460d54aa5cc47596c1a651a 100644
 --- a/internal/translator/codex/claude/codex_claude_request.go
 +++ b/internal/translator/codex/claude/codex_claude_request.go
-@@ -64,6 +64,46 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
- 	template, _ = sjson.SetBytes(template, "model", modelName)
- 	inputItems := translatorcommon.NewRawArrayItems(rootResult.Get("messages.#").Int())
+@@ -85,6 +85,46 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+ 	declaredToolsIndexed := false
+ 	hasAdditionalTools := false
  
 +	// Claude Code tool search: discovered tool → tools[] (defer_loading) + tool_reference in the
 +	// search tool_result. Codex renders top-level tools ahead of the input ⇒ a top-level declaration
 +	// resets the cached prefix per discovery → declare it in an additional_tools item after the
 +	// referencing tool_result (Anthropic's render position). Compat endpoints → top-level
 +	// (additional_tools support unknown).
-+	deferredTools := map[string]gjson.Result{}
++	deferredTools := map[string]ojson.Result{}
 +	placedTools := map[string]bool{}
 +	if !preserveEmptyThinkingBlocks {
-+		rootResult.Get("tools").ForEach(func(_, tool gjson.Result) bool {
++		rootResult.Get("tools").ForEach(func(_, tool ojson.Result) bool {
 +			if tool.Get("defer_loading").Bool() && !isClaudeWebSearchToolType(tool.Get("type").String()) {
 +				if name := tool.Get("name").String(); name != "" {
 +					deferredTools[name] = tool
@@ -525,15 +500,15 @@ index 504a5b11617a4cce9c280f5d96250e5209ee5145..cc65551d61627c5f7dc97be258da49bc
 +		// Called before its first retained reference (reference compacted away) ⇒ already
 +		// top-level; moving it rewrites that prefix.
 +		referenced := map[string]bool{}
-+		rootResult.Get("messages.#.content").ForEach(func(_, content gjson.Result) bool {
-+			content.ForEach(func(_, part gjson.Result) bool {
++		rootResult.Get("messages.#.content").ForEach(func(_, content ojson.Result) bool {
++			content.ForEach(func(_, part ojson.Result) bool {
 +				switch part.Get("type").String() {
 +				case "tool_use":
 +					if name := part.Get("name").String(); !referenced[name] {
 +						delete(deferredTools, name)
 +					}
 +				case "tool_result":
-+					part.Get("content").ForEach(func(_, block gjson.Result) bool {
++					part.Get("content").ForEach(func(_, block ojson.Result) bool {
 +						if block.Get("type").String() == "tool_reference" {
 +							referenced[block.Get("tool_name").String()] = true
 +						}
@@ -549,95 +524,38 @@ index 504a5b11617a4cce9c280f5d96250e5209ee5145..cc65551d61627c5f7dc97be258da49bc
  	// Process system messages and convert them to input content format.
  	systemsResult := rootResult.Get("system")
  	if systemsResult.Exists() {
-@@ -322,6 +362,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -373,6 +413,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  						}
  
- 						inputItems = append(inputItems, functionCallOutputMessage)
+ 						inputItems = append(inputItems, functionCallOutputMessageDoc.Bytes())
 +						if referenced := referencedDeferredTools(contentResult, deferredTools, placedTools, toolNameMap); len(referenced) > 0 {
 +							additionalTools := []byte(`{"type":"additional_tools","role":"developer"}`)
-+							additionalTools, _ = sjson.SetRawBytes(additionalTools, "tools", translatorcommon.JoinRawArray(referenced))
++							additionalTools, _ = ojson.SetRawBytes(additionalTools, "tools", translatorcommon.JoinRawArray(referenced))
 +							inputItems = append(inputItems, additionalTools)
 +						}
  						turnSendable++
  					}
  				}
-@@ -365,33 +410,10 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+@@ -417,6 +462,9 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
  				toolItems = append(toolItems, convertClaudeWebSearchToolToCodex(toolResult))
  				continue
  			}
--			tool := []byte(toolResult.Raw)
--			if toolResult.Get("type").Type != gjson.String || toolResult.Get("type").String() != "function" {
--				tool, _ = sjson.SetBytes(tool, "type", "function")
--			}
--			// Apply shortened name if needed
--			if v := toolResult.Get("name"); v.Exists() {
--				originalName := v.String()
--				name := originalName
--				if short, ok := toolNameMap[name]; ok {
--					name = short
--				} else {
--					name = shortenNameIfNeeded(name)
--				}
--				if v.Type != gjson.String || name != originalName {
--					tool, _ = sjson.SetBytes(tool, "name", name)
--				}
--			}
--			tool, _ = sjson.SetRawBytes(tool, "parameters", []byte(normalizeToolParameters(toolResult.Get("input_schema").Raw)))
--			for _, path := range []string{"input_schema", "parameters.$schema", "cache_control", "defer_loading"} {
--				if gjson.GetBytes(tool, path).Exists() {
--					tool, _ = sjson.DeleteBytes(tool, path)
--				}
--			}
--			if gjson.GetBytes(tool, "strict").Type != gjson.False {
--				tool, _ = sjson.SetBytes(tool, "strict", false)
 +			if placedTools[toolResult.Get("name").String()] {
 +				continue
- 			}
--			toolItems = append(toolItems, tool)
-+			toolItems = append(toolItems, convertClaudeFunctionToolToCodex(toolResult, toolNameMap))
++			}
+ 			toolItems = append(toolItems, convertClaudeFunctionToolToCodex(toolResult, toolNameMap))
  		}
  	}
- 
-@@ -485,6 +507,55 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
- 	return template, drops.Err()
+@@ -511,6 +559,25 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
+ 	return templateDoc.Bytes(), drops.Err()
  }
  
-+func convertClaudeFunctionToolToCodex(toolResult gjson.Result, toolNameMap map[string]string) []byte {
-+	tool := []byte(toolResult.Raw)
-+	if toolResult.Get("type").Type != gjson.String || toolResult.Get("type").String() != "function" {
-+		tool, _ = sjson.SetBytes(tool, "type", "function")
-+	}
-+	// Apply shortened name if needed
-+	if v := toolResult.Get("name"); v.Exists() {
-+		originalName := v.String()
-+		name := originalName
-+		if short, ok := toolNameMap[name]; ok {
-+			name = short
-+		} else {
-+			name = shortenNameIfNeeded(name)
-+		}
-+		if v.Type != gjson.String || name != originalName {
-+			tool, _ = sjson.SetBytes(tool, "name", name)
-+		}
-+	}
-+	tool, _ = sjson.SetRawBytes(tool, "parameters", []byte(normalizeToolParameters(toolResult.Get("input_schema").Raw)))
-+	for _, path := range []string{"input_schema", "parameters.$schema", "cache_control", "defer_loading"} {
-+		if gjson.GetBytes(tool, path).Exists() {
-+			tool, _ = sjson.DeleteBytes(tool, path)
-+		}
-+	}
-+	if gjson.GetBytes(tool, "strict").Type != gjson.False {
-+		tool, _ = sjson.SetBytes(tool, "strict", false)
-+	}
-+	return tool
-+}
-+
-+func referencedDeferredTools(content gjson.Result, deferredTools map[string]gjson.Result, placedTools map[string]bool, toolNameMap map[string]string) [][]byte {
++func referencedDeferredTools(content ojson.Result, deferredTools map[string]ojson.Result, placedTools map[string]bool, toolNameMap map[string]string) [][]byte {
 +	if len(deferredTools) == 0 || !content.IsArray() {
 +		return nil
 +	}
 +	var tools [][]byte
-+	content.ForEach(func(_, part gjson.Result) bool {
++	content.ForEach(func(_, part ojson.Result) bool {
 +		if part.Get("type").String() != "tool_reference" {
 +			return true
 +		}
@@ -651,9 +569,9 @@ index 504a5b11617a4cce9c280f5d96250e5209ee5145..cc65551d61627c5f7dc97be258da49bc
 +	return tools
 +}
 +
- func normalizeCodexServiceTier(result gjson.Result) string {
- 	if !result.Exists() || result.Type != gjson.String {
+ func normalizeCodexServiceTier(result ojson.Result) string {
+ 	if !result.Exists() || result.Type != ojson.String {
  		return ""
 -- 
-2.56.0
+2.47.3
 
