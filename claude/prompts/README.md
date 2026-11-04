@@ -55,7 +55,7 @@ The `agent-lanes` mod chooses the GPT model for each teammate. GPT-6.1 Sol is th
 
 ## Template files
 
-Each project carries its own copy of the template files. Machine-specific facts, such as tools, accounts and model settings, stay in your user-level `CLAUDE.md`. A fact that applies to one project on one machine goes into `CLAUDE.local.md` at the project root. Git ignores that file.
+Each project carries its own copy of the template files. Machine-specific facts, such as tools, accounts and model settings, stay in your user-level `CLAUDE.md`.
 
 | File in the project | Source in this repository |
 | --- | --- |
