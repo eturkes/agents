@@ -525,6 +525,7 @@ def small_quiet_session_lapses_untouched():
     entry = entries(server)["sm"]
     assert len(Up.seen) == 2 and entry["state"] == "armed" and entry["mark"] == "lapse", ("small session touched", entry)
     backdate(server, "sm", 100)
+    server.keeper.entries["sm"].polled_at -= ka.POLL_FRESH  # a suspend: the keeper's tick beats the mod's poll
     tick(server)
     entry = entries(server)["sm"]
     assert entry["state"] == "lapsed" and entry["mark"] is None, entry

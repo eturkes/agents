@@ -148,7 +148,8 @@ class Keeper:
                 if entry.busy or entry.state not in ("armed", "compacting"):
                     continue
                 if now - entry.renewed_at >= self.cfg.ttl:
-                    if entry.state == "armed" and self.lapses(entry, now):
+                    # Finishing either way ⇒ the last report decides, however old (a suspend outruns the mod's poll).
+                    if entry.state == "armed" and entry.quiet and self.small(entry):
                         self.finish(entry, f"cache lapsed at {entry.tokens} < {self.cfg.min_tokens} tokens", "lapsed")
                     else:
                         self.finish(entry, "cache lapsed")
