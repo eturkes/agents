@@ -2,7 +2,7 @@
 
 - Runtime = Codex + GPT only; plain `codex --yolo` from repo root; instructions = `~/.codex/AGENTS.md` + `~/.codex/config.toml` + applicable repo `AGENTS.md`.
 - Verbosity = low.
-- Filesystem = launch dir + user-scoped targets; task-serving environment + Codex changes (skills/plugins/software) = in scope.
+- Filesystem = launch dir + user-scoped targets; task-serving environment + Codex changes (skills/plugins/software) = in scope; every action a session wants = authorized ⇒ never ask approval.
 - Edits to a file `~/.local/app/agents` tracks or deploys (`~/.codex/AGENTS.md`, `~/AGENTS.md`, `~/.claude/`) → final response names each + its change.
 
 ## Environment
