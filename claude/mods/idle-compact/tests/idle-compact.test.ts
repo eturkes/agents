@@ -6,11 +6,11 @@ type Poll = { session: string; quiet: boolean; working: boolean; tokens?: number
 type World = {
   polls: Poll[]; reports: unknown[]; notices: { tool_use_id: string; text: string | undefined }[]
   compact: boolean; compactions: number; skip?: string; down: boolean; entry: object; gate?: Promise<void>; agents: AgentInfo[]
-  tokens?: number; output: number
+  tokens?: number; output: number; tools: unknown[]; instructions: (string | undefined)[]; reject?: string; hold?: Promise<void>
 }
 
 function world(on: On): World & { advance: (ms: number) => Promise<void> } {
-  const w: World = { polls: [], reports: [], notices: [], compact: false, compactions: 0, down: false, entry: { touches: 0, limit: 19, state: 'armed' }, agents: [], output: 1 }
+  const w: World = { polls: [], reports: [], notices: [], compact: false, compactions: 0, down: false, entry: { touches: 0, limit: 19, state: 'armed' }, agents: [], output: 1, tools: [], instructions: [] }
   const clock = mock.clock(on, { now: Date.UTC(2026, 9, 11, 9, 0) })
   mock.env(on, { CACHE_KEEPALIVE_URL: 'http://keeper' })
   on('session.id', () => ({ value: 's1' }))
@@ -35,8 +35,12 @@ function world(on: On): World & { advance: (ms: number) => Promise<void> } {
     } else w.reports.push({ url: e.url, ...body })
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(reply) } }
   })
-  on('session.compact', () => {
+  on('tool.register', (_$, e) => (w.tools.push(e), { value: { tool: `mcp__idle-compact__${e.name}` } }))
+  on('session.compact', async (_$, e) => {
+    await w.hold
+    if (w.reject) throw new Error(w.reject)
     w.compactions++
+    w.instructions.push(e.instructions)
     const usage = { input_tokens: 5, cache_creation_input_tokens: 40, cache_read_input_tokens: 900, output_tokens: 300, model: 'claude-opus-5-5' }
     return (w.skip ? { skip: w.skip } : { messages: [{ role: 'user', text: 'summary', toolUses: [] }], usage }) as never
   })
@@ -51,8 +55,14 @@ function world(on: On): World & { advance: (ms: number) => Promise<void> } {
 const start = ($: Engine, isInteractive = true) => $.session.start({ cwd: '/w', surface: null, isInteractive })
 const stop = ($: Engine, background_tasks: unknown[] = [], session_crons: unknown[] = []) =>
   $.classic.Stop({ stop_hook_active: false, cwd: '/w', transcript_path: '/t', background_tasks, session_crons } as never)
-const complete = ($: Engine, turnId: string) =>
-  $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId, reason: 'answer' } as never)
+const complete = ($: Engine, turnId: string, more: object = {}) =>
+  $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId, reason: 'answer', ...more } as never)
+const KEEP = 'pool run p1 (task b7, log .scratch/p1.log); its verdict decides the merge; next: read the log'
+const TOOL = 'mcp__idle-compact__compact_before_wait'
+const wait = ($: Engine, keep: unknown = KEEP, agentId?: string) =>
+  $.tool.call({ tool: TOOL, tool_use_id: 'w1', keep, agentId } as never) as Promise<{ result?: unknown; deny?: string }>
+const MESSAGES = [{ role: 'user', text: 'hi', toolUses: [] }] as never
+const told = (w: World) => w.reports.map(r => (r as { url: string }).url.split('/').at(-1))
 const step = async ($: Engine, turnId: string, agentId?: string) => {
   for await (const c of $.turn.step({ turnId, index: 1, model: 'claude-opus-5-5', messageCount: 3, agentId } as never)) void c
 }
@@ -218,4 +228,135 @@ test('a headless session never polls', async ($, on) => {
   await w.advance(60_000)
   expect(w.polls).toHaveLength(0)
   expect(w.notices).toHaveLength(0)
+})
+
+test('an interactive session lists compact_before_wait in front, keep required; a headless one has no tool', async ($, on) => {
+  const w = world(on)
+  await start($, false)
+  expect(w.tools).toHaveLength(0)
+  await start($)
+  expect(w.tools).toMatchObject([{ name: 'compact_before_wait', isDeferred: false, inputSchema: { required: ['keep'] } }])
+})
+
+test('the call compacts at its main turn end with keep in the instructions, the keeper told before + after', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  w.tokens = 896_000
+  w.output = 0
+  const r = await wait($)
+  expect(r.result).toBe("Compaction set for this turn's end (context now 896K). End your turn now: a further tool call holds it until the turn ends. The work you started wakes the session.")
+  await w.advance(1)
+  expect(w.compactions).toBe(0)
+  await step($, 'a1', 'teammate-1')
+  await complete($, 'a1', { agentId: 'teammate-1' }) // a teammate's turn end is not the call's
+  await w.advance(1)
+  expect(w.compactions).toBe(0)
+  await complete($, 't1')
+  await w.advance(1)
+  expect(w.compactions).toBe(1)
+  expect(w.instructions[0]).toContain(`Keep verbatim: ${KEEP}`)
+  expect(told(w)).toEqual(['compacting', 'compacted'])
+  expect(w.reports[1]).toMatchObject({ session: 's1', ok: true, reason: '', usage: { cache_read_input_tokens: 900 } })
+  await $.turn.start({ text: '<task-notification>', turnId: 't2' })
+  await complete($, 't2')
+  await w.advance(1)
+  expect(w.compactions).toBe(1) // one call, one compaction
+})
+
+test('during its own compaction the session reports busy', async ($, on) => {
+  const w = world(on)
+  let release = () => {}
+  w.hold = new Promise<void>(resolve => (release = resolve))
+  await start($)
+  await stop($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await wait($)
+  await complete($, 't1')
+  await w.advance(30_000)
+  release()
+  await w.advance(30_000)
+  expect(w.compactions).toBe(1)
+  // turn start, turn end (before the compaction), 30-s poll mid-compaction, its end, the next 30-s poll
+  expect(flags(w)).toEqual(['busy+working', 'quiet', 'busy', 'quiet', 'quiet'])
+})
+
+test('a teammate call or an empty keep is refused + leaves nothing pending', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  expect((await wait($, KEEP, 'teammate-1')).deny).toContain('main session only')
+  expect((await wait($, '  ')).deny).toContain('keep =')
+  expect((await wait($, 7)).deny).toContain('keep =')
+  await complete($, 't1')
+  await w.advance(1)
+  expect(w.compactions).toBe(0)
+})
+
+test('an interrupted or failed turn drops the call: no compaction then or at the next turn end', async ($, on) => {
+  const w = world(on)
+  await start($)
+  for (const [turnId, reason] of [['t1', 'aborted'], ['t2', 'error']] as const) {
+    await $.turn.start({ text: 'go', turnId })
+    await wait($)
+    await complete($, turnId, { reason, isAborted: reason === 'aborted' })
+  }
+  await $.turn.start({ text: 'again', turnId: 't3' })
+  await complete($, 't3')
+  await w.advance(1)
+  expect(w.compactions).toBe(0)
+  expect(w.reports).toHaveLength(0)
+})
+
+test('an unreachable keeper never holds the compaction up', async ($, on) => {
+  const w = world(on)
+  w.down = true
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await wait($)
+  await complete($, 't1')
+  await w.advance(1)
+  expect(w.compactions).toBe(1)
+})
+
+test('a failed compaction reports failure, the keeper told before + after', async ($, on) => {
+  const w = world(on)
+  w.reject = 'a turn is running' // a throwing test hook is skipped ⇒ the harness core fails the call
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await wait($)
+  await complete($, 't1')
+  await w.advance(1)
+  expect(told(w)).toEqual(['compacting', 'compacted'])
+  expect(w.reports[1]).toMatchObject({ session: 's1', ok: false, reason: expect.stringContaining('Error') })
+})
+
+test("a typed /compact or CC's threshold tells the keeper; a precompute, a subagent's own or a headless one does not", async ($, on) => {
+  const w = world(on)
+  await start($)
+  for (const trigger of ['manual', 'auto'] as const) await $.session.compact({ trigger, messages: MESSAGES })
+  await w.advance(1)
+  expect(told(w)).toEqual(['compacting', 'compacted', 'compacting', 'compacted'])
+  expect(w.reports[1]).toMatchObject({ session: 's1', ok: true, usage: { cache_read_input_tokens: 900 } })
+  await $.session.compact({ trigger: 'precompute', messages: MESSAGES })
+  await $.session.compact({ trigger: 'auto', agentId: 'a1', messages: MESSAGES })
+  w.skip = 'vetoed'
+  await $.session.compact({ trigger: 'manual', messages: MESSAGES })
+  await w.advance(1)
+  expect(told(w).slice(4)).toEqual(['compacting', 'compacted'])
+  expect(w.reports[5]).toMatchObject({ ok: false, reason: 'vetoed' })
+  w.reject = 'engine failure' // the harness core fails the call ⇒ the hook passes the failure on + reports it
+  await expect($.session.compact({ trigger: 'manual', messages: MESSAGES })).rejects.toThrow()
+  await w.advance(1)
+  expect(told(w).slice(6)).toEqual(['compacting', 'compacted'])
+  expect(w.reports[7]).toMatchObject({ ok: false, reason: expect.stringContaining('Error') })
+})
+
+test('a headless session reports no compaction', async ($, on) => {
+  const w = world(on)
+  await start($, false)
+  await $.session.compact({ trigger: 'manual', messages: MESSAGES })
+  await w.advance(1)
+  expect(w.compactions).toBe(1)
+  expect(w.reports).toHaveLength(0)
 })

@@ -1,5 +1,5 @@
 {
   "name": "idle-compact",
   "version": "1.0.0",
-  "description": "Compacts a quiet session when cache-keepalive reaches its 55-minute mark"
+  "description": "Compacts a quiet session when cache-keepalive reaches its 55-minute mark, and a session at its turn end when it calls compact_before_wait ahead of a wait"
 }
