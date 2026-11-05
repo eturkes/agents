@@ -23,24 +23,24 @@ let interactive = false
 // Context size = the engine's input side + the last main step's output = the statusline gauge (context-alert's rule);
 // host state ⇒ a reload keeps the output.
 const output = atom({ plugin: 'idle-compact', key: 'output' } as const, 0)
-// The model's own call ahead of a wait: a poll or foreground wait re-reads the whole context per check. Compaction
-// rejects while a turn runs ⇒ the call's turn end compacts; the notice of the work it started wakes the session.
-// What the summary keeps, '' = none; host state ⇒ a reload between the call + its turn end keeps it.
+// The model's call ahead of a wait (a poll or foreground wait re-reads the whole context per check). Compaction
+// rejects mid-turn ⇒ it runs at the call's turn end. Value = what the summary keeps, '' = none; host state ⇒ a reload
+// between the call + its turn end keeps it.
 const pending = atom({ plugin: 'idle-compact', key: 'pending' } as const, '')
-// A compacted session returns at ~57K (median) ⇒ under the floor a summary barely shrinks it; = cache-keepalive's
-// --min-tokens default. Unreported size compacts, the keeper's rule.
+// A compacted session returns at ~57K (median) ⇒ under the floor a summary barely shrinks it. = cache-keepalive's
+// --min-tokens default → change both together. Unreported size compacts, the keeper's rule.
 const FLOOR = 200_000
 const TOOL = 'compact_before_wait'
 const SPEC = {
   name: TOOL,
   description:
-    'Compacts this session the moment your current turn ends. Call it whenever you expect to wait a while: a long build, test, benchmark or mutation run, a pool or CI job, a teammate\'s report. First start that work so its end notifies you (Bash run_in_background, Monitor, a background agent or teammate), then call this, then end your turn: the notification wakes the compacted session. Polling or a foreground wait instead re-reads the whole context on every check. Under 200K tokens of context the call skips the compaction, since a summary would barely shrink it; end your turn all the same. Main session only.',
+    "Compacts this session at your turn's end. Call it whenever you expect a wait (long build, test, benchmark or mutation run; pool or CI job; teammate report): start that work so its end notifies you (Bash run_in_background, Monitor, background agent or teammate) → call this → end your turn; the notification wakes the compacted session. A poll or foreground wait re-reads the whole context per check. Context under 200K → no compaction (a summary barely shrinks it); end your turn all the same. Main session only.",
   inputSchema: {
     type: 'object',
     properties: {
       keep: {
         type: 'string',
-        description: 'What the summary must keep verbatim: the work in flight (task or agent ids, log + output paths), what its result decides, your next action once it arrives.',
+        description: 'What the summary keeps verbatim: the work in flight (task or agent ids, log + output paths), what its result decides, your next action once it arrives.',
       },
     },
     required: ['keep'],
@@ -95,8 +95,8 @@ async function poll($: EngineInterface): Promise<void> {
 }
 
 // A compaction the keeper did not ask for leaves its stored request = the pre-compaction prefix ⇒ a touch would re-read
-// a dead cache. `compacting` first ⇒ the keeper drops it once `compacted` reports success; a newer stored request
-// in between stays armed. Reports ride beside the compaction: an unreachable keeper never holds it up.
+// a dead cache → `compacting` before, `compacted` after: the keeper drops it on success. Reports ride beside the
+// compaction ⇒ an unreachable keeper never holds it up.
 async function tell($: EngineInterface, run: () => Promise<{ reason: string; usage?: ModelUsage }>): Promise<void> {
   const session = await $.session.id()
   const told = report($, 'compacting', { session }).catch(() => undefined)
@@ -128,11 +128,11 @@ export const register: Register = on => {
     if (typeof keep !== 'string' || !keep.trim()) return { deny: 'keep = what the summary must hold: the work in flight, what its result decides, your next action.' }
     const tokens = await size($)
     if (tokens !== undefined && tokens < FLOOR) {
-      return { result: `No compaction: context now ${Math.trunc(tokens / 1000)}K, under the ${FLOOR / 1000}K floor, where a summary barely shrinks it. End your turn now all the same: the work you started wakes the session.` }
+      return { result: `No compaction: context ${Math.trunc(tokens / 1000)}K, under the ${FLOOR / 1000}K floor (a summary barely shrinks it). End your turn now; the work you started wakes the session.` }
     }
     await update($, pending, () => keep.trim())
-    const now = tokens === undefined ? '' : ` (context now ${Math.trunc(tokens / 1000)}K)`
-    return { result: `Compaction set for this turn's end${now}. End your turn now: a further tool call holds it until the turn ends. The work you started wakes the session.` }
+    const now = tokens === undefined ? '' : ` (context ${Math.trunc(tokens / 1000)}K)`
+    return { result: `Compaction set for this turn's end${now}. End your turn now; the work you started wakes the compacted session.` }
   })
 
   // Typed /compact, CC's threshold, another plugin's call; this mod's own calls skip its own hook.

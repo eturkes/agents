@@ -11,8 +11,8 @@ const agents = atom({ plugin: 'agent-flow', key: 'agents' } as const, {})
 // The agent line redraws on each record write; a finish or kill writes none ⇒ a poll of the running set redraws on change.
 const LIST_EVERY_MS = 5_000
 let listKey: string | undefined
-// CC (2.1.317) wakes an idle teammate for its inbox, a typed message, the task list + its crons; its own background shell's
-// or monitor's notice waits for its next turn, which only a message starts ⇒ a check per 30 s sends the notice to the inbox.
+// CC wakes an idle teammate for its inbox, a typed message, the task list + its crons alone ⇒ its own background shell's
+// or monitor's notice waits for a turn only a message starts → a 30-s check relays the notice to its inbox.
 const WAKE_EVERY_MS = 30_000
 // The notice is queued as the closing line lands ⇒ a request this soon after may predate it.
 const NOTICE_MS = 5_000

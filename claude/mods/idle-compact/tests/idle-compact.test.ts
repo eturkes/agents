@@ -245,7 +245,7 @@ test('the call compacts at its main turn end with keep in the instructions, the 
   w.tokens = 896_000
   w.output = 0
   const r = await wait($)
-  expect(r.result).toBe("Compaction set for this turn's end (context now 896K). End your turn now: a further tool call holds it until the turn ends. The work you started wakes the session.")
+  expect(r.result).toBe("Compaction set for this turn's end (context 896K). End your turn now; the work you started wakes the compacted session.")
   await w.advance(1)
   expect(w.compactions).toBe(0)
   await step($, 'a1', 'teammate-1')
@@ -270,7 +270,7 @@ test('a call under the 200K floor compacts nothing + still sends the session to 
   await $.turn.start({ text: 'go', turnId: 't1' })
   w.tokens = 199_000
   const r = await wait($)
-  expect(r.result).toBe('No compaction: context now 199K, under the 200K floor, where a summary barely shrinks it. End your turn now all the same: the work you started wakes the session.')
+  expect(r.result).toBe('No compaction: context 199K, under the 200K floor (a summary barely shrinks it). End your turn now; the work you started wakes the session.')
   await complete($, 't1')
   await w.advance(1)
   expect(w.compactions).toBe(0)

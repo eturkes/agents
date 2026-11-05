@@ -25,10 +25,10 @@ export function stopHold(name: string, marker: string | undefined, targets: read
 /** CC's closing line on a background shell's or monitor's output file: exit code, kill or stop. */
 export const CLOSING = /\[(?:exited with code [^\]\n]*|killed|stopped[^\]\n]*)\]\s*$/
 
-/** The notice an idle teammate's own ended tasks never deliver, one message for all of them. */
+/** One message carrying the notice of each ended task, which CC holds back from an idle teammate. */
 export function wakeText(ended: readonly { id: string; what: string; file: string }[]): string {
-  const list = ended.map(t => `${t.id} (${t.what}), output ${t.file}`).join('; ')
-  return `Background ${ended.length > 1 ? 'tasks' : 'task'} you started ended while you were idle: ${list}. Claude Code wakes an idle teammate for messages alone, so this message carries the notice. The output's last line gives the exit status; continue the work the task was for.`
+  const list = ended.map(t => `${t.id} (${t.what}) → ${t.file}`).join('; ')
+  return `Your background ${ended.length > 1 ? 'tasks' : 'task'} ended while you were idle: ${list}. Relayed as a message: CC wakes an idle teammate for messages alone. Last output line = exit status → continue the work the task was for.`
 }
 
 /** A short lookup answers in its message; a run this long without a write likely lost its findings. */
