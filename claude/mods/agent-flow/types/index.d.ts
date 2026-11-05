@@ -18,10 +18,24 @@ export type AgentFlowAgent = {
   model?: string
   /** Last request's effort: a level, or a thinking budget. */
   effort?: string
+  /** Start of its last model request: a request after a task's end read that task's notice. */
+  stepAt?: number
+  /** Background shells + monitors it started, awaiting their end. */
+  tasks?: AgentFlowTask[]
 }
+
+/** A teammate's background task, by CC's task id. */
+export type AgentFlowTask = {
+  id: string
+  /** The call's description, else its command or tool name. */
+  what: string
+}
+
+/** The session's temp folder holding `tasks/<id>.output`; '' = not found yet. */
+export type AgentFlowSessionDir = string
 
 declare module 'claude-code' {
   interface PluginState {
-    'agent-flow': { agents: Record<string, AgentFlowAgent> }
+    'agent-flow': { agents: Record<string, AgentFlowAgent>; sessionDir: AgentFlowSessionDir }
   }
 }

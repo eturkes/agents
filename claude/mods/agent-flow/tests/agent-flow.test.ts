@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, MockClock, Mounted } from 'claude-code/testing'
 import type { AgentInfo, ApiContentBlock, On, RenderPropsOf, ToolCallResult } from 'claude-code'
 
-import { COMPACT_NOTE, SPAWN_NOTE, stopHold, wroteNothing } from '../hooks/text'
+import { COMPACT_NOTE, SPAWN_NOTE, stopHold, wakeText, wroteNothing } from '../hooks/text'
 
 const REJECTION = '<tool_use_error>Subagents should return findings as text, not write report files. Include this content in your final response instead.</tool_use_error>'
 
@@ -18,6 +18,11 @@ type World = {
   used: number
   model: string
   answer: (e: { tool: string }) => ToolCallResult
+  /** Task output files: text + the closing line's write time. */
+  outputs: Map<string, { text: string; mtimeMs: number }>
+  sent: { to: unknown; text: string }[]
+  finds: string[][]
+  tails: number
 }
 
 function world(on: On): World {
@@ -33,8 +38,22 @@ function world(on: On): World {
     used: 136_000,
     model: 'gpt-6-luna',
     answer: () => ({ result: 'ok', text: 'ok' }),
+    outputs: new Map(),
+    sent: [],
+    finds: [],
+    tails: 0,
   }
   mock.env(on, { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '305000' })
+  on('session.id', () => ({ value: 's1' }))
+  on('session.send', (_$, e) => {
+    w.sent.push({ to: e.to, text: e.text })
+    return { isDelivered: true as const }
+  })
+  on('fs.stat', (_$, e) => {
+    const o = w.outputs.get(e.path)
+    if (!o) throw new Error('ENOENT')
+    return { value: { kind: 'file', size: o.text.length, mtimeMs: o.mtimeMs, isLink: false } }
+  })
   on('agent.spawn', (_$, e) => {
     w.prompts.push(e.prompt)
     return { model: 'm', agentId: `id-${e.name ?? 'anon'}` }
@@ -58,8 +77,18 @@ function world(on: On): World {
     return { value: undefined }
   })
   on('process.run', (_$, e) => {
+    const ran = (exitCode: number, stdout: string) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+    if (e.argv[0] === 'find') {
+      w.finds.push([...e.argv])
+      return ran(0, `${SESSION_DIR}\n`)
+    }
+    if (e.argv[0] === 'tail') {
+      w.tails++
+      const o = w.outputs.get(e.argv.at(-1) ?? '')
+      return o ? ran(0, o.text.slice(-Number(e.argv[2]))) : ran(1, '')
+    }
     w.mkdirs.push(e.argv.join(' '))
-    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    return ran(0, '')
   })
   on('agent.list', () => {
     w.lists++
@@ -298,4 +327,104 @@ test('agent line drops a finished agent on the next list poll with no record wri
   await w.clock.advance(5_000)
   expect(await entries(ui)).toEqual([])
   expect(await shown(ui)).toBe('engine')
+})
+
+const SESSION_DIR = '/tmp/claude-1000/-w/s1'
+const TASKS = `${SESSION_DIR}/tasks`
+const idle = (id: string, name?: string): AgentInfo => ({ ...running(id, name), status: 'idle' })
+const background = (id: string, more: object = {}) => ({ result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: id, ...more } }) as never
+const BENCH = { tool: 'Bash', command: 'make bench', description: 'Run the bench', run_in_background: true }
+const live = ($: Engine) => $.session.start({ cwd: '/w', surface: null, isInteractive: true })
+/** CC's closing line lands on the task's output file now. */
+function end(w: World, id: string, closing: string): void {
+  w.outputs.set(`${TASKS}/${id}.output`, { text: `last log line\n\n${closing}\n`, mtimeMs: w.clock.now() })
+}
+
+test('an idle teammate whose background shell ended gets the notice through its inbox, once', async ($, on) => {
+  const w = world(on)
+  await live($)
+  w.answer = e => (e.tool === 'Bash' ? background('b1') : { result: 'ok', text: 'ok' })
+  await step($, 'tm-1')
+  await call($, 'tm-1', BENCH)
+  await done($, 'tm-1')
+  w.agents = [idle('tm-1', 'rev-1')]
+  await w.clock.advance(30_000)
+  expect(w.sent).toEqual([])
+  end(w, 'b1', '[exited with code 0]')
+  await w.clock.advance(30_000)
+  expect(w.sent).toEqual([{ to: 'tm-1', text: wakeText([{ id: 'b1', what: 'Run the bench', file: `${TASKS}/b1.output` }]) }])
+  await w.clock.advance(60_000)
+  expect(w.sent).toHaveLength(1)
+  expect(w.finds).toEqual([['find', '/tmp', '-mindepth', '3', '-maxdepth', '3', '-type', 'd', '-path', '/tmp/claude-*/*/s1']])
+})
+
+test('a request begun 5 s or more after the end read the notice: no message, the task drops', async ($, on) => {
+  const w = world(on)
+  await live($)
+  w.answer = () => background('b2')
+  await step($, 'tm-1')
+  await call($, 'tm-1', BENCH)
+  w.agents = [running('tm-1', 'rev-1')]
+  end(w, 'b2', '[exited with code 1]')
+  await w.clock.advance(30_000)
+  expect(w.tails).toBe(0) // a running owner is left to its next request
+  await step($, 'tm-1')
+  await done($, 'tm-1')
+  w.agents = [idle('tm-1', 'rev-1')]
+  await w.clock.advance(60_000)
+  expect(w.sent).toEqual([])
+  expect(w.tails).toBe(1)
+})
+
+test('an ended monitor wakes its idle owner too; a request under 5 s after the end does not count as read', async ($, on) => {
+  const w = world(on)
+  await live($)
+  w.answer = () => ({ result: { taskId: 'b3', timeoutMs: 1_800_000 } }) as never
+  await step($, 'tm-1')
+  await call($, 'tm-1', { tool: 'Monitor', description: 'M2 progress', timeout_ms: 1_800_000, command: 'tail -f log' })
+  end(w, 'b3', '[killed]')
+  await w.clock.advance(2_000)
+  await step($, 'tm-1')
+  await done($, 'tm-1')
+  w.agents = [idle('tm-1', 'rev-1')]
+  await w.clock.advance(30_000)
+  expect(w.sent).toEqual([{ to: 'tm-1', text: wakeText([{ id: 'b3', what: 'M2 progress', file: `${TASKS}/b3.output` }]) }])
+})
+
+test('tasks ended by one check share one message; a task still running waits for its own end', async ($, on) => {
+  const w = world(on)
+  await live($)
+  const ids = ['b4', 'b5', 'b6']
+  w.answer = () => background(ids.shift()!)
+  await step($, 'tm-1')
+  for (const description of ['first', 'second', 'third']) await call($, 'tm-1', { ...BENCH, description })
+  await done($, 'tm-1')
+  end(w, 'b4', '[exited with code 0]')
+  end(w, 'b5', '[exited with code 2]')
+  w.agents = [idle('tm-1', 'rev-1')]
+  await w.clock.advance(30_000)
+  const file = (id: string) => `${TASKS}/${id}.output`
+  expect(w.sent.map(s => s.text)).toEqual([wakeText([{ id: 'b4', what: 'first', file: file('b4') }, { id: 'b5', what: 'second', file: file('b5') }])])
+  end(w, 'b6', '[stopped by the user]')
+  await w.clock.advance(30_000)
+  expect(w.sent.map(s => s.text)).toHaveLength(2)
+  expect(w.sent[1]?.text).toBe(wakeText([{ id: 'b6', what: 'third', file: file('b6') }]))
+})
+
+test('untracked: a main-loop shell, one CC ends with its caller or wakes its owner for; a gone owner drops its tasks unread', async ($, on) => {
+  const w = world(on)
+  await live($)
+  w.answer = () => background('m1')
+  await $.tool.call(BENCH as never)
+  w.answer = () => background('c1', { backgroundEndsWithFinalResponse: true })
+  await call($, 'sub-1', BENCH)
+  w.answer = () => background('c2', { backgroundWakesOwner: true })
+  await call($, 'sub-1', BENCH)
+  w.answer = () => background('c3')
+  await call($, 'tm-gone', BENCH)
+  for (const id of ['m1', 'c1', 'c2', 'c3']) end(w, id, '[exited with code 0]')
+  w.agents = [idle('sub-1'), { ...running('tm-gone'), status: 'completed' }]
+  await w.clock.advance(60_000)
+  expect(w.sent).toEqual([])
+  expect(w.tails).toBe(0)
 })
