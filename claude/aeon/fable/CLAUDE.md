@@ -17,7 +17,7 @@
 - Search → `rg <pattern> <path>`; explicit dot-dirs or `--hidden`; include ignored paths → `-uu`; `-r` = replacement.
 - Process cleanup → separate calls: list with one bracketed `pgrep -af` pattern → kill the observed PIDs → relaunch. Keep the pattern's target spelling out of other tokens in the listing call.
 - Deferred tools → copy names verbatim from the session list or `ToolSearch` results; fetch schema after `InputValidationError`.
-- Background waits → `run_in_background: true`; its completion notification gives an output-file path. Redirect streaming output to a log + read it; a wait on a condition → `Monitor` with an `until` loop.
+- Background waits → `run_in_background: true`; its completion notification gives an output-file path. Redirect streaming output to a log + read it; a wait on a condition → `Monitor` with an `until` loop. MAIN expecting a wait (long run, pool/CI job, teammate report) → start it so its end notifies + call `compact_before_wait` + end the turn; a poll re-reads the whole context.
 - Bash cwd belongs to MAIN; teammates inherit it per call, except worktree-isolated teammates. Park MAIN at project root during parallel work; briefs use absolute paths; other working dirs → `(cd <dir> && …)`; writing teammates → worktree isolation.
 - Code intelligence → built-in `LSP` + passive edit diagnostics; confirm language coverage with an `LSP` call on a real file. Extra language plugins → `~/.local/app/agents/claude/marketplace/README.md`.
 - Runtime extension/maintenance details → `~/.local/app/agents/claude/mods/README.md` + `~/.local/app/agents/claude/cache-keepalive/README.md`.

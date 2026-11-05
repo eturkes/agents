@@ -38,7 +38,8 @@ EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
      ("MAIN = `claude-fable-5-1` via launch `--model claude-fable-5-1`; config home `~/.claude/fable` (repo"
       " `claude/{host}/fable/`) = own `CLAUDE.md`, every other entry (`settings.json` included) → symlink"
       " into `~/.claude` (`claude/link-profile`). Teammates")),
-    ((" A message without a tool call ends the turn + halts work until I reply ⇒ status notes +"
+    ((" A message without a tool call ends the turn + halts work until I reply or work in flight notifies"
+      " (background shell, `Monitor`, teammate) ⇒ status notes +"
       " recommendations ride with the next tool call, and a next step you name runs in that same message."),
      (" Before ending a turn, check the last paragraph: a plan, an analysis, a list of next steps or a promise"
       " about undone work → do that work now with tool calls, retries after errors + gathering missing"
