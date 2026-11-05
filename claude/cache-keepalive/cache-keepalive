@@ -4,7 +4,8 @@
 Relay Claude Code → CLIProxyAPI; stores each session's last main-thread request. --interval s without one →
 quiet session (idle-compact mod report: no turn, no background work) → ≥ --min-tokens context: the mod compacts
 it; smaller: the cache lapses at --ttl; touches end either way; else ≤ --touches touches: re-send the request as
-a stream, cut at message_start ⇒ the cache read renews the 1h entry. CC's own keepalive needs a direct
+a stream, cut at message_start ⇒ the cache read renews the 1h entry. A compaction the session runs on its own (mod
+report) drops the stored request: its prefix is dead. CC's own keepalive needs a direct
 api.anthropic.com connection → off behind these proxies.
 
 Stdlib only: starts without a package cache.
@@ -52,6 +53,7 @@ class Entry:
     tokens: int | None = None  # same report: main context size; None = unreported → compacts
     polled_at: float = 0.0
     compact_at: float = 0.0  # when the mod was told to compact: one attempt per entry
+    own: bool = False  # compact_at = the session's own compaction (mod report), not the keeper's ask
     state: str = "armed"  # ready (mod report, no stored request) | armed | compacting | compacted | lapsed | done
     last: str = "armed"
 
@@ -214,6 +216,16 @@ class Keeper:
         log(f"compact {session[:8]} after {entry.touches} touches")
         return reply | {"compact": True, "state": "compacting"}
 
+    def compacting(self, session, now):
+        """The session compacts on its own (the model's call, a typed /compact, CC's threshold): a later touch would
+        re-read the dead pre-compaction prefix ⇒ the stored request drops once `compacted` reports success."""
+        with self.lock:
+            entry = self.entries.get(session)
+            if entry is None or entry.state != "armed":
+                return
+            entry.state, entry.last, entry.compact_at, entry.own = "compacting", "compacting (own)", now, True
+        log(f"compacting {session[:8]} on its own after {entry.touches} touches")
+
     def compacted(self, session, ok, reason, usage):
         tokens = ""
         if isinstance(usage, dict):
@@ -226,6 +238,9 @@ class Keeper:
                 entry.state, entry.last, entry.body = "compacted", "compacted" + tokens, b""
             elif entry.state == "compacting":
                 entry.state, entry.last = "armed", f"compaction failed: {reason}"
+                if entry.own:  # the keeper's own attempt stays unspent
+                    entry.compact_at = 0.0
+            entry.own = False
         log(f"compacted {session[:8]}{tokens}" if ok else f"compaction failed {session[:8]}: {reason}")
 
     def touch(self, entry):
@@ -338,7 +353,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 entry.stopped_at = time.time()
 
     def control(self):
-        """GET status; POST /poll {session, quiet, working, tokens} → poll(); POST /compacted {session, ok, reason, usage}."""
+        """GET status; POST /poll {session, quiet, working, tokens} → poll(); POST /compacting {session} → compacting();
+        POST /compacted {session, ok, reason, usage}."""
         keeper = self.server.keeper
         if self.command == "GET" and self.path == STATUS_PATH:
             cfg = self.server.cfg
@@ -351,6 +367,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 tokens = tokens if type(tokens) is int and tokens >= 0 else None  # absent | malformed → unknown
                 return self.reply(200, keeper.poll(report["session"], report["quiet"] is True,
                                                    report.get("working") is True, tokens, time.time()))
+            if self.path == STATUS_PATH + "/compacting":
+                keeper.compacting(str(report["session"]), time.time())
+                return self.reply(200, {})
             if self.path == STATUS_PATH + "/compacted":
                 keeper.compacted(report["session"], report["ok"] is True, str(report.get("reason"))[:200], report.get("usage"))
                 return self.reply(200, {})

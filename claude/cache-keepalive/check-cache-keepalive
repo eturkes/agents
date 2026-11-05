@@ -603,9 +603,62 @@ def failed_compaction_or_silent_mod_falls_back_to_touch():
 
 
 @check
+def own_compaction_drops_stored_request():
+    Up.reset()
+    live("own")
+    server = proxy("--interval", "100")
+    post(server, session="own")
+    assert control(server, "compacting", {"session": "own"}) == (200, {})
+    entry = entries(server)["own"]
+    assert entry["state"] == "compacting" and entry["mark"] is None, entry
+    backdate(server, "own", 101)
+    poll(server, "own", False)  # the mod polls throughout its compaction
+    tick(server)
+    assert not Up.seen[1:], "compacting session touched"
+    usage = {"cache_read_input_tokens": 900, "cache_creation_input_tokens": 40}
+    assert control(server, "compacted", {"session": "own", "ok": True, "usage": usage}) == (200, {})
+    entry = entries(server)["own"]
+    assert entry["state"] == "compacted" and entry["last"] == "compacted read=900 write=40", entry
+    assert any(line.startswith("compacting own on its own") for line in LOG), LOG
+    tick(server, ahead=1e4)
+    assert len(Up.seen) == 1, "compacted session touched its dead request"
+    post(server, session="own")
+    assert entries(server)["own"]["state"] == "armed", "new request did not re-arm"
+
+
+@check
+def own_compaction_failure_or_newer_request_keeps_touching():
+    Up.reset()
+    live("of")
+    live("race")
+    server = proxy("--interval", "100")
+    post(server, session="of")
+    control(server, "compacting", {"session": "of"})
+    control(server, "compacted", {"session": "of", "ok": False, "reason": "vetoed"})
+    entry = entries(server)["of"]
+    assert entry["state"] == "armed" and entry["last"] == "compaction failed: vetoed", entry
+    backdate(server, "of", 101)
+    assert poll(server, "of", True) is True, "a failed own compaction spent the keeper's attempt"
+    post(server, session="race")
+    control(server, "compacting", {"session": "race"})
+    post(server, session="race")  # a turn's request lands between the reports
+    control(server, "compacted", {"session": "race", "ok": True})
+    assert entries(server)["race"]["state"] == "armed", "newer request dropped"
+    Up.reset()
+    tick(server, ahead=101)
+    assert Up.seen, "newer request not touched"
+    for state in ("compacted", "done", "lapsed"):  # nothing stored to drop: the report changes nothing
+        server.keeper.entries["race"].state = state
+        control(server, "compacting", {"session": "race"})
+        assert entries(server)["race"]["state"] == state, state
+    assert control(server, "compacting", {"session": "unknown"}) == (200, {}) and "unknown" not in entries(server)
+
+
+@check
 def control_rejects_malformed_reports():
     server = proxy()
-    for path, payload in (("poll", {"quiet": True}), ("compacted", ["x"]), ("other", {"session": "x"})):
+    for path, payload in (("poll", {"quiet": True}), ("compacted", ["x"]), ("compacting", {}), ("compacting", ["x"]),
+                          ("other", {"session": "x"})):
         status, reply = control(server, path, payload)
         assert status == 400 and reply["type"] == "error", (path, status, reply)
 
