@@ -264,6 +264,26 @@ test('the call compacts at its main turn end with keep in the instructions, the 
   expect(w.compactions).toBe(1) // one call, one compaction
 })
 
+test('a call under the 200K floor compacts nothing + still sends the session to its turn end', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  w.tokens = 199_000
+  const r = await wait($)
+  expect(r.result).toBe('No compaction: context now 199K, under the 200K floor, where a summary barely shrinks it. End your turn now all the same: the work you started wakes the session.')
+  await complete($, 't1')
+  await w.advance(1)
+  expect(w.compactions).toBe(0)
+  expect(w.reports).toHaveLength(0)
+  await $.turn.start({ text: 'go', turnId: 't2' })
+  w.output = 1_000 // 199K input side + 1K output = the floor
+  await step($, 't2')
+  expect((await wait($)).result).toContain('Compaction set')
+  await complete($, 't2')
+  await w.advance(1)
+  expect(w.compactions).toBe(1)
+})
+
 test('during its own compaction the session reports busy', async ($, on) => {
   const w = world(on)
   let release = () => {}
