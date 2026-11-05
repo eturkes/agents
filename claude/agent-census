@@ -32,8 +32,8 @@ CONTEXT_ERR = re.compile(r"prompt is too long|context (?:window|limit)|prompt_to
 NOTE = re.compile(r"Context \d+K/\S+ — \d+K left\. ")
 ASSESS = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mods/context-alert/hooks/assess.ts")
 FAMILY = {"main": "claude-opus", "agent": "gpt-"}   # models now running each loop
-# Tier response = main: next commit; agent: notice → turn end (hand-off), final → next durable write.
-RESPONSE = {("main", "notice"): "G", ("main", "final"): "G", ("agent", "notice"): "E", ("agent", "final"): "W"}
+# Tier response = main: next durable write (checklist); agent: notice → turn end (hand-off), final → next durable write.
+RESPONSE = {("main", "notice"): "W", ("agent", "notice"): "E", ("agent", "final"): "W"}
 INPUT_CAP = 921_310       # largest GPT input upstream accepts (1.05M window − 128K max output)
 COMPACT_PROMPT = 2_900    # CC's compaction instructions, sent on top of the full context
 RESERVE = 33_000          # CC compaction trigger = window − 33K
