@@ -1,0 +1,5 @@
+{
+  "name": "away",
+  "version": "1.0.0",
+  "description": "Lets sessions continue while the user is away. Each session decides its open questions, logs each decision, and reports to the user when the user returns."
+}

@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Checks bin/away against a scratch CLAUDE_AWAY_DIR: phrases, period start/extend/end, status, digest, prune.
+
+  check-away [-q]
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+
+AWAY = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "bin", "away")
+QUIET = "-q" in sys.argv[1:]
+failures = []
+
+
+def run(d, *args, tz="Asia/Tokyo"):
+    env = {**os.environ, "CLAUDE_AWAY_DIR": d, "TZ": tz}
+    r = subprocess.run([AWAY, *args], check=False, capture_output=True, text=True, env=env)
+    return r.returncode, r.stdout + r.stderr
+
+
+def state(d):
+    with open(os.path.join(d, "state.json")) as fh:
+        return json.load(fh)
+
+
+def check(name, ok, detail=""):
+    if not ok:
+        failures.append(f"{name}: {detail}")
+    elif not QUIET:
+        print(f"ok  {name}")
+
+
+def main():
+    year = time.localtime().tm_year + 1
+    with tempfile.TemporaryDirectory() as d:
+        rc, out = run(d)
+        check("status before any period", rc == 0 and out.startswith("You are not away. To start"), out)
+
+        rc, out = run(d, "until", "17:30", f"{year}/11/07", "JST")
+        s = state(d)
+        want = int(subprocess.check_output(["date", "-d", f"{year}-11-07 17:30 JST", "+%s"], text=True)) * 1000
+        check("the user's own phrase parses", rc == 0 and s["until"] == want, f"{rc} {out} {s}")
+        check("state = the mod's fields", set(s) == {"id", "since", "until", "label"} and isinstance(s["label"], str), str(s))
+        label = subprocess.check_output(["date", "-d", f"{year}-11-07 17:30 JST", "+%H:%M %a %-d %b %Z"], text=True, env={**os.environ, "TZ": "Asia/Tokyo", "LC_ALL": "C"}).strip()
+        check("label in the zone", s["label"] == label, f"{s['label']} != {label}")
+        first = s["id"]
+
+        rc, out = run(d, "for", "3h")
+        s = state(d)
+        check("a running period keeps its id", rc == 0 and s["id"] == first and out.startswith("The away period now ends at"), out)
+        check("for 3h = now + 3 h", abs(s["until"] / 1000 - time.time() - 3 * 3600) < 60, str(s))
+
+        rc, out = run(d, "for", "2 hours")
+        check("for <date phrase>", rc == 0 and abs(state(d)["until"] / 1000 - time.time() - 7200) < 60, out)
+
+        rc, out = run(d, "until", "yesterday")
+        check("a past time is refused", rc != 0 and "is in the past. Give a time in the future." in out and state(d)["until"] / 1000 > time.time(), out)
+        rc, out = run(d, "until", "gibberish", "zz")
+        check("nonsense is refused", rc != 0 and "is not a time. Give a time such as" in out, out)
+
+        rc, out = run(d, "status")
+        check("status while away", rc == 0 and out.startswith("You are away until ") and "No session logged an item." in out, out)
+
+        os.makedirs(os.path.join(d, first), exist_ok=True)
+        with open(os.path.join(d, first, "s1.md"), "w") as fh:
+            fh.write("# /w · session s1\n\n- decided: q → a, why\n- open: login\n")
+        with open(os.path.join(d, first, "s2.md"), "w") as fh:
+            fh.write("# /x · session s2\n\n")
+        rc, out = run(d, "digest")
+        check("digest prints logs with entries alone", rc == 0 and "session s1" in out and "session s2" not in out, out)
+
+        rc, out = run(d, "off")
+        s = state(d)
+        check("off ends the period now", rc == 0 and out.startswith("The away period ended. Logged: 2 items from 1 session.") and "away digest" in out and s["until"] / 1000 <= time.time() + 1, out)
+        rc, out = run(d, "back")
+        check("off when not away", rc == 0 and out.startswith("You are not away."), out)
+        rc, out = run(d)
+        check("status after", rc == 0 and out.startswith("You are not away. The last away period was "), out)
+
+        old = os.path.join(d, "20200101-000000")
+        os.makedirs(old)
+        os.utime(old, (0, 0))
+        rc, out = run(d, "+1 hour")
+        check("a new period after the last ended gets a new id", rc == 0 and state(d)["id"] != first, out)
+        check("periods older than 30 days are pruned", not os.path.exists(old) and os.path.exists(os.path.join(d, first)))
+
+        rc, out = run(d, "off")
+        check("off with nothing logged promises no summary", rc == 0 and "No session logged an item." in out and "summary" not in out, out)
+
+        rc, out = run(d, "--help")
+        check("help", rc == 0 and "away for <duration>" in out, out)
+
+    for f in failures:
+        print(f"FAIL {f}")
+    if not QUIET or failures:
+        print(f"{'FAILED' if failures else 'passed'}: {len(failures)} failure(s)")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

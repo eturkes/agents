@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Tell all Claude Code sessions on this computer that you are away.
+
+Usage:
+  away until <time>    Start an away period, or change the end time of the current period.
+                       <time> is a phrase that GNU date reads, for example
+                       "17:30 2026/11/07 JST", "tomorrow 09:00" or "+3 hours".
+                       The word "until" is optional.
+  away for <duration>  Start an away period that ends after <duration>,
+                       for example 3h, 90m, 2d or "2 hours".
+  away off             End the away period now. "away back" does the same.
+  away status          Show the current or the last away period.
+                       "away" without arguments does the same.
+  away digest          Show the log of each session for the current or the last away period.
+
+While you are away, each session decides the questions that it would ask you.
+Each session writes its decisions and its open questions to a log file in ~/.claude/away/<period>/.
+When the away period ends, each session that logged an item writes a summary for you.
+If you type a prompt in a session during the away period, that session stops its away mode.
+Running sessions read a change in 30 seconds or less.
+To use a different folder than ~/.claude/away, set CLAUDE_AWAY_DIR.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+DIR = os.environ.get("CLAUDE_AWAY_DIR") or os.path.expanduser("~/.claude/away")
+STATE = os.path.join(DIR, "state.json")
+KEEP_DAYS = 30
+UNITS = {"m": "minutes", "h": "hours", "d": "days"}
+START = "To start an away period, type: away until <time>"
+READ = "Running sessions read this in 30 seconds or less."
+
+
+def label(sec):
+    return time.strftime("%H:%M %a %-d %b %Z", time.localtime(sec))
+
+
+def parse(phrase):
+    r = subprocess.run(["date", "-d", phrase, "+%s"], check=False, capture_output=True, text=True, env={**os.environ, "LC_ALL": "C"})
+    if r.returncode != 0 or not r.stdout.strip():
+        sys.exit(f"away: {phrase!r} is not a time. Give a time such as '17:30 2026/11/07 JST', 'tomorrow 09:00' or '+3 hours'.")
+    return int(r.stdout.strip())
+
+
+def load():
+    try:
+        with open(STATE) as fh:
+            s = json.load(fh)
+        return s if all(k in s for k in ("id", "since", "until", "label")) else None
+    except (OSError, ValueError):
+        return None
+
+
+def save(s):
+    os.makedirs(DIR, exist_ok=True)
+    tmp = f"{STATE}.{os.getpid()}"
+    with open(tmp, "w") as fh:
+        json.dump(s, fh)
+    os.replace(tmp, STATE)
+
+
+def ledgers(s):
+    d = os.path.join(DIR, s["id"])
+    try:
+        names = [os.path.join(d, n) for n in os.listdir(d) if n.endswith(".md")]
+    except OSError:
+        return []
+    out = []
+    for p in sorted(names, key=os.path.getmtime):
+        with open(p) as fh:
+            text = fh.read()
+        out.append((p, text, sum(1 for line in text.splitlines() if line.startswith("- "))))
+    return out
+
+
+def tally(s):
+    found = [n for _, _, n in ledgers(s) if n]
+    if not found:
+        return "No session logged an item."
+    items = sum(found)
+    return f"Logged: {items} item{'s' * (items > 1)} from {len(found)} session{'s' * (len(found) > 1)}."
+
+
+def prune():
+    cutoff = time.time() - KEEP_DAYS * 86400
+    for n in os.listdir(DIR):
+        p = os.path.join(DIR, n)
+        if os.path.isdir(p) and os.path.getmtime(p) < cutoff:
+            shutil.rmtree(p, ignore_errors=True)
+
+
+def start(until):
+    now = time.time()
+    if until <= now:
+        sys.exit(f"away: {label(until)} is in the past. Give a time in the future.")
+    s = load()
+    if s and s["until"] > now * 1000:
+        s.update(until=until * 1000, label=label(until))
+        news = f"The away period now ends at {s['label']}. {READ}"
+    else:
+        # ms in the id: an `off` + new period within one second must not reuse the last id (the mod keys onset on it).
+        s = {"id": time.strftime("%Y%m%d-%H%M%S", time.localtime(now)) + f"-{int(now * 1000) % 1000:03d}", "since": int(now * 1000), "until": until * 1000, "label": label(until)}
+        news = f"You are away until {s['label']}. {READ} Logs: {os.path.join(DIR, s['id'])}/"
+    save(s)
+    prune()
+    print(news)
+
+
+def off():
+    s = load()
+    now = time.time()
+    if not s or s["until"] <= now * 1000:
+        print(f"You are not away. {START}")
+        return
+    s.update(until=int(now * 1000), label=label(now))
+    save(s)
+    news = f"The away period ended. {tally(s)}"
+    if any(n for _, _, n in ledgers(s)):
+        news += " Each session that logged an item, and that you did not type in during the away period, writes a summary in 30 seconds or less. To see all logs, type: away digest"
+    print(news)
+
+
+def status():
+    s = load()
+    if not s:
+        print(f"You are not away. {START}")
+    elif s["until"] > time.time() * 1000:
+        print(f"You are away until {s['label']} (since {label(s['since'] / 1000)}). {tally(s)}")
+    else:
+        print(f"You are not away. The last away period was {label(s['since'] / 1000)} – {s['label']}. {tally(s)}")
+
+
+def digest():
+    s = load()
+    if not s:
+        print(f"There is no away period yet. {START}")
+        return
+    found = [text for _, text, n in ledgers(s) if n]
+    if not found:
+        print(f"No session logged an item for the away period {label(s['since'] / 1000)} – {s['label']}.")
+    for text in found:
+        print(text.rstrip() + "\n")
+
+
+def main(argv):
+    words = " ".join(argv).strip()
+    if words in ("", "status"):
+        return status()
+    if words in ("-h", "--help", "help"):
+        return print(__doc__.strip())
+    if words in ("off", "back"):
+        return off()
+    if words == "digest":
+        return digest()
+    m = re.fullmatch(r"for\s+(\d+)\s*([mhd])", words)
+    if m:
+        return start(parse(f"+{m[1]} {UNITS[m[2]]}"))
+    if words.startswith("for "):
+        return start(parse(f"+{words[4:].strip()}"))
+    return start(parse(re.sub(r"^until\s+", "", words)))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

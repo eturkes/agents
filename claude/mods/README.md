@@ -8,23 +8,27 @@ Folder = one CC mod = a plugin of function hooks running inside the CC process o
 | `agent-flow` | cachyos, aeon | Appends the deliverable note to every subagent brief; performs a subagent `Write` CC rejects for a report filename; adds the deliverable line to compaction instructions; asks a long run that wrote nothing at stop; holds the first `TaskStop` on a mid-turn teammate; wakes an idle teammate whose own background `Bash` or `Monitor` task ended (CC wakes an idle teammate for messages, the task list + its crons alone ⇒ that notice waits for a turn only a message starts): a 30-s check for CC's closing line on `<session temp folder>/tasks/<id>.output` → one inbox message naming each ended task + its output file; a monitor's mid-stream events still wait for its end; line under the prompt hint = each running agent's model + effort + context use against its compaction trigger, idle teammates included, wrapping onto more lines when full. |
 | `agent-lanes` | cachyos, aeon | Routes every subagent but a fork to a GPT lane (`hooks/lanes.ts`): the Agent tool's `model` alias, else the role's default, else sol (launch env `CLAUDE_CODE_SUBAGENT_MODEL` in its place); fills a call naming no effort with MAIN's (from MAIN's own requests) + the lane's shift, within low…max + the lane's floor, + pins each agent's call effort onto every request it makes (teammates otherwise run the session's teammate default; listed before `agent-flow` in `CLAUDE_CODE_PLUGIN_DIRS`, so the agent line shows the pinned level); PROTOTYPE + ITERATE (`.agent/spec.md` `Phase`) → a `lateOnly` lane (astra) takes the default; refuses `fable` + non-GPT models; appends the mapping to the Agent tool description; sends each terra agent back once at its first stop. Requires `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` unset in settings `env` (set, it drops per-call + hook models). |
 | `idle-compact` | cachyos, aeon | Every 30 s + at each turn start/end + question open/close tells [`cache-keepalive`](../cache-keepalive/README.md) whether the session is quiet (no running turn, open question or agent at work, idle teammates = quiet; last main Stop left no shell, subagent, workflow, cloud session or scheduled wakeup = `turn-email`'s rule) + working (a turn running, no question open) + its context size (input side + last main output = the statusline gauge); compacts the session when the keeper asks at its 55-min mark (≥ 200K tokens; a smaller quiet session's cache lapses); under an open main-thread question (the dialog hides the statusline) = the keeper's touch count. Tool `compact_before_wait` (main loop, never deferred; `keep` = what the summary holds): a session expecting a wait starts the work so its end notifies, calls it + ends the turn → compaction at that turn's end (`answer` alone; an interrupt or error drops the call) at ≥ 200K tokens or size unreported, else the result says no compaction (a compacted session returns at ~57K; floor = the keeper's `--min-tokens` default → change both); the notification wakes the session. A compaction the keeper did not ask for (that tool, typed `/compact`, CC's threshold, another plugin) → `compacting` + `compacted` reports ⇒ the keeper drops its dead pre-compaction request. A reload lands between main turns ⇒ a teammate turn in flight returns at its next step; Stop verdict = host state ⇒ survives reloads; before a process's first main Stop = in flight. Interactive sessions alone. |
+| `away` | cachyos | Away mode for my absences: state = `~/.claude/away/state.json`, written by `bin/away` (`away` on PATH) + `/away` (mod command running it, outside the model's context). While away, each interactive session's main loop decides alone + logs `- decided:` / `- open:` lines to `~/.claude/away/<period>/<session>.md`: note on each turn's first tool result; `AskUserQuestion` answered by the mod (one open at onset withdrawn); a Stop held once per stretch of work. Onset → wakes an idle session whose last message asks something; return (period end, `off`) → wakes each session that logged → it posts decisions + open questions; a prompt typed at a session's terminal = I'm there → that session leaves away mode for the period, its log riding along. Listed last in `CLAUDE_CODE_PLUGIN_DIRS` (innermost) ⇒ its answer to an open question resolves `idle-compact`'s + `turn-email`'s question tracking. |
 | `turn-email` | cachyos | One email per completed main turn leaving no work in flight (CC's `busy`/`shell` status = emachine's Working: background shell or `Monitor`, running subagent, workflow or teammate turn; + a scheduled wakeup), one per dialog waiting on me. Relay setup = `../cachyos/turn-email/README.md`. |
 
 ## Load
 
 - CC loads each folder named in settings `env` `CLAUDE_CODE_PLUGIN_DIRS`; `../cachyos/settings.json` + `../aeon/settings.json` name the deployed copies under `~/.claude/mods/`. Needs CC ≥ 2.1.288.
+- That list is read at session start ⇒ a folder newly added to it loads in sessions started after.
 - Interactive sessions watch these folders ⇒ a deployed change reloads the mod in running sessions.
 
 ## Deploy
 
-From the repo root; aeon omits `turn-email`.
+From the repo root; aeon omits `turn-email` + `away`.
 
 ```sh
 mkdir -p ~/.claude/mods
-for m in context-alert agent-flow agent-lanes idle-compact turn-email; do
+for m in context-alert agent-flow agent-lanes idle-compact turn-email away; do
   rsync -a --delete --exclude .claude-plugin/types/ --exclude tsconfig.json "claude/mods/$m/" "$HOME/.claude/mods/$m/"
 done
 ```
+
+- `away` on PATH, once per host: `ln -s ~/.local/app/agents/claude/mods/away/bin/away ~/.local/bin/away`.
 
 ## Check
 
@@ -38,5 +42,6 @@ claude plugin test claude/mods/<name>
 tsc -p claude/mods/<name>
 ```
 
+- Extra per-mod checks → `.claude/rules/<mod>.md` (`away`).
 - Mod undeployed on this host → copy another deployed mod's types (identical across mods, MCP tool types aside); none deployed → type-check with the `tsconfig.json` from the header of the plugin-authoring skill's `types/claude-code.d.ts`.
 - Each mod's `tsconfig.json` sets `noEmit` ⇒ types missing → `tsc` fails + writes nothing.
