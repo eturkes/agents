@@ -1,20 +1,23 @@
-From 2a3d75784e98f2805328deb77bb98321dc4259a4 Mon Sep 17 00:00:00 2001
+From e58dde61a3ac4a82476e705635ed919a02794296 Mon Sep 17 00:00:00 2001
 From: Emir Turkes <eturkes@bu.edu>
 Date: Sat, 31 Oct 2026 09:49:09 +0900
 Subject: [PATCH] codex/claude: keep ToolSearch discoveries at reference
  position
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
-Declare referenced deferred tools via additional_tools to preserve the cached prompt prefix. Keep upstream system-message tool additions and compatibility endpoints intact.
+ToolSearch-discovered deferred tool → additional_tools item after its referencing tool_result, not top-level tools ⇒ Codex prompt-cache prefix kept. Upstream system-message additional_tools + compat endpoints unchanged.
 ---
  .../client/codex/tool-schema/tool_schema.go   |  12 +-
  .../codex_executor_additional_tools_test.go   |  29 +++
- .../executor/codex_executor_request.go        |  18 +-
+ .../executor/codex_executor_request.go        |  14 +-
  .../runtime/executor/codex_executor_tokens.go |  51 +++--
  .../executor/codex_executor_tokens_test.go    |  27 +++
  .../executor/helps/codex_tool_schema_test.go  |  16 ++
  .../codex_claude_deferred_tools_test.go       | 208 ++++++++++++++++++
  .../codex/claude/codex_claude_request.go      |  67 ++++++
- 8 files changed, 401 insertions(+), 27 deletions(-)
+ 8 files changed, 390 insertions(+), 34 deletions(-)
  create mode 100644 internal/runtime/executor/codex_executor_additional_tools_test.go
  create mode 100644 internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 
@@ -44,7 +47,7 @@ index ccdc404bc5d5253f3ac6015b891e627f75de8654..705c9c63cb7960ca3e911ec591d309ff
  	}
 diff --git a/internal/runtime/executor/codex_executor_additional_tools_test.go b/internal/runtime/executor/codex_executor_additional_tools_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..c3ff1b99002ea18b7d2f08584631883e1b0875e7
+index 0000000000000000000000000000000000000000..91795b2110583a2527c0df0822ad685b06c33d50
 --- /dev/null
 +++ b/internal/runtime/executor/codex_executor_additional_tools_test.go
 @@ -0,0 +1,29 @@
@@ -60,7 +63,7 @@ index 0000000000000000000000000000000000000000..c3ff1b99002ea18b7d2f08584631883e
 +
 +func TestEnsureImageGenerationToolSeesAdditionalToolsDeclaration(t *testing.T) {
 +	body := []byte(`{"tools":[{"type":"function","name":"Read","parameters":{"type":"object","properties":{}}}],"input":[{"type":"additional_tools","role":"developer","tools":[` + codexAdditionalImageFunction + `]}]}`)
-+	out := ensureImageGenerationTool(body, "gpt-6-luna", nil, nil)
++	out := ensureImageGenerationTool(body, "gpt-5.4", nil, nil)
 +	if ojson.GetBytes(out, `tools.#(type=="image_generation")`).Exists() {
 +		t.Fatalf("image_generation injected despite an additional_tools image function: %s", out)
 +	}
@@ -78,45 +81,38 @@ index 0000000000000000000000000000000000000000..c3ff1b99002ea18b7d2f08584631883e
 +	}
 +}
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index 6b711816de7a66d7ee70c44f294b206ee46ea84f..1f1909dbf776aaea5003e63527e8aa479fecb4b1 100644
+index de2d8376eed72b8716d30ebd6d2f739bb446b600..1e4b71b0488d318aa6bcb02fb8d16072ce08a399 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
-@@ -797,6 +797,11 @@ func ensureImageGenerationToolDoc(doc *ojson.Doc, baseModel string, auth *clipro
+@@ -815,15 +815,15 @@ func ensureImageGenerationToolDoc(doc *ojson.Doc, baseModel string, auth *clipro
  		return false
  	}
  
-+	for _, t := range codexAdditionalToolDeclarations(doc) {
-+		if t.Get("type").String() == "image_generation" || isImageGenerationFunctionTool(t) {
-+			return false
-+		}
+-	tools := doc.Get("tools")
+-	if !tools.Exists() || !tools.IsArray() {
+-		return doc.SetRawBytes("tools", imageGenToolArrayJSON) == nil
+-	}
+-	for _, t := range tools.Array() {
++	for _, t := range codexCollectDeclaredToolsDoc(doc) {
+ 		if t.Get("type").String() == "image_generation" || isImageGenerationFunctionTool(t) {
+ 			return false
+ 		}
+ 	}
++	tools := doc.Get("tools")
++	if !tools.Exists() || !tools.IsArray() {
++		return doc.SetRawBytes("tools", imageGenToolArrayJSON) == nil
 +	}
- 	tools := doc.Get("tools")
- 	if !tools.Exists() || !tools.IsArray() {
- 		return doc.SetRawBytes("tools", imageGenToolArrayJSON) == nil
-@@ -809,6 +814,17 @@ func ensureImageGenerationToolDoc(doc *ojson.Doc, baseModel string, auth *clipro
  	return doc.SetRawBytes("tools.-1", imageGenToolJSON) == nil
  }
  
-+func codexAdditionalToolDeclarations(doc *ojson.Doc) []ojson.Result {
-+	var tools []ojson.Result
-+	doc.Get("input").ForEach(func(_, item ojson.Result) bool {
-+		if item.Get("type").String() == "additional_tools" {
-+			tools = append(tools, item.Get("tools").Array()...)
-+		}
-+		return true
-+	})
-+	return tools
-+}
-+
- func normalizeCodexParallelToolCalls(body []byte, headers http.Header) []byte {
- 	doc := ojson.NewDoc(body)
- 	if !normalizeCodexParallelToolCallsDoc(doc, headers) {
-@@ -842,7 +858,7 @@ func normalizeCodexParallelToolCallsForToolsDoc(doc *ojson.Doc) bool {
+@@ -1055,9 +1055,7 @@ func normalizeCodexParallelToolCallsForToolsDoc(doc *ojson.Doc) bool {
+ 		return false
+ 	}
  
- 	tools := doc.Get("tools")
- 	hasTools := tools.Exists() && tools.IsArray() && len(tools.Array()) > 0
+-	tools := doc.Get("tools")
+-	hasTools := tools.Exists() && tools.IsArray() && len(tools.Array()) > 0
 -	if hasTools {
-+	if hasTools || len(codexAdditionalToolDeclarations(doc)) > 0 {
++	if len(codexCollectDeclaredToolsDoc(doc)) > 0 {
  		return false
  	}
  
