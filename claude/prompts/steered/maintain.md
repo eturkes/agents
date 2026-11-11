@@ -1,6 +1,6 @@
 # Maintain
 
-Use: `Phase` = `MAINTAIN`. Fresh session at the project root + advisor on (README `Advisor`); `<request>` → your request (`Code review`: a bug report or a review scope), or `<rows>` → `.agent/deferred.md` row names → paste one body = the text between its two rules. Every row, or the sequence after an IMPLEMENT close → `auto/maintain.md`.
+Use: `Phase` = `MAINTAIN`. Fresh session at the project root + advisor on (README `Advisor`); `<request>` → your request (`Code review`: a bug report or a review scope), or `<rows>` → `.agent/deferred.md` row names → paste one body = the text between its two rules. Every row, a request a route left under `Phase`, or the sequence after an IMPLEMENT close → `auto/maintain.md`.
 
 ## Request
 
@@ -8,9 +8,9 @@ Use: `Phase` = `MAINTAIN`. Fresh session at the project root + advisor on (READM
 
 <request>
 
-Finish line = my request addressed: the work it names, else this body's whole work under its steering. State it in your first message; stop once it holds — finds past it → `.agent/deferred.md` rows. Scope = the implementation; `.agent/spec.md` `Intent` + `Decisions` bind; global + project `CLAUDE.md` law applies as written. A request needing a session or more of another phase → route it (`Session flow` Routing). Decide, execute; ask me whenever direction is unclear. Units on the shortest path, planned in `Tasks`, contract + tests per tier, gate green at every scoped commit; `Artifacts`/`Decisions`/`Tasks`, `.claude/rules/` + README move with the change.
+Finish line = my request addressed: the work it names, else this body's whole work under its steering. State it in your first message; stop once it holds — finds past it → `.agent/deferred.md` rows. Scope = the implementation; `.agent/spec.md` `Intent` + `Decisions` bind; global + project `CLAUDE.md` law applies as written. A request needing a session or more of another phase → route it (`Session flow` Routing). Decide, execute; ask me whenever direction is unclear. Units on the shortest path, planned in `Tasks`, contract + tests per tier, gate green at every scoped commit; `Artifacts`/`Decisions`/`Tasks`, `.claude/rules/` + README move with the change. A routed request quoted under `Phase` leaves it at close → `MAINTAIN` with its scope folded into the whole product, or the routed state where a `Suspended:` scope waits (`Session flow` Routed state).
 
-Met when: the request is delivered end to end, and the full gate command passes on a clean working tree at the closing commit — or its route is committed (`route.md` `Met when`).
+Met when: the request is delivered end to end, `Phase` quotes no delivered request, and the full gate command passes on a clean working tree at the closing commit — or its route is committed (`route.md` `Met when`).
 
 ---
 
