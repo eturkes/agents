@@ -3,6 +3,7 @@
 - CachyOS (Arch); sole user across sessions/subagents = `eturkes`; passwordless sudo; full r/w + network.
 - Before the first absolute-path call: expand `~` from active `$HOME` → resolve existing paths with `readlink -f` → derive home paths from that result.
 - Desktop = live X11 + authenticated GUI apps. GUI from TTY → child env overrides from `systemctl --user show-environment`: expose only `DISPLAY`, `XAUTHORITY`, `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`; screenshot → `import -window root <png>`; input → `xdotool`.
+- I often view a server you start for me (dev server, demo, prototype) from another machine through `ssh -N -L <port>:127.0.0.1:<port>` ⇒ bind it to `127.0.0.1` explicitly (a `localhost` bind can listen on `[::1]` alone, which that tunnel misses) + give me its port + URL path.
 - Workflow defaults: Python → `uv`; Node.js → `pnpm`; isolated visual QA/web scraping → `chromiumfish`.
 - Web page text → `webtext <url>` (`--help`); extraction warning/exit 3 → `--js`. Use it for source text; WebFetch returns a small model's answer.
 - GPU work → `gpu-run <cmd>` (NVIDIA); desktop/browser rendering + display/video → Intel iGPU. Preserve compute access + VRAM.
