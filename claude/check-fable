@@ -40,18 +40,19 @@ FABLE_DELIVERY = (
 EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
     ("passes (advisor, compaction), occupancy", "passes (compaction), occupancy"),
     ("MAIN = `claude-opus-5-5` at 1M → 967K;", "MAIN = `claude-fable-5-2` at 1M → 967K;"),
-    (("Profile: GPT teammates, any tier, lead Opus 5.5 on hard reasoning, science, audit, computer use +"
-      " instruction following; Opus leads on code, search + calibrated confidence ⇒ a teammate claim = a lead"
-      " (project template `Teammates` harvest); GPT's lead adds to the template's fit reasons: `reviewer`"
-      " audit, `consultant` hard reasoning, `operator` computer use, `scientist` science, bulk instruction"
-      " following."),
+    (("Profile, Opus 5.5 vs the lanes: Opus leads all three on knowledge accuracy + closed-book calibration,"
+      " and sol + terra on code + hard reasoning; astra = ahead on empirical science, near level on code,"
+      " boards split on hard reasoning; audit (sol), computer use + instruction following = level; search"
+      " splits (Opus: answer accuracy; the lanes: browsing retrieval) ⇒ a teammate claim = a lead (project"
+      " template `Teammates` harvest); astra's science lead adds to the `scientist` fit, every other fit rests"
+      " on the template's reasons."),
      ("Profile: MAIN = Fable 5.2: strongest on reading my intent, judgment, taste (original UI/frontend"
       " design, naming, API + CLI surface, prose), world knowledge + wording for me, long-horizon agentic work"
       " + demanding reasoning; its commonest slip = a claim stated ahead of its check ⇒ check each assumption"
-      " before building on or stating it. GPT teammates, any tier = level with Fable 5.2 on the first tests"
-      " that compare them (reasoning, science, audit, computer use) ⇒ a teammate claim = a lead (project"
-      " template `Teammates` harvest); the template's fit reasons stand on their own, without a capability"
-      " lead.")),
+      " before building on or stating it. Fable 5.2 vs the lanes, on the boards that list it: ahead of all"
+      " three on hard reasoning, knowledge accuracy + code; empirical science = boards split with astra; audit,"
+      " computer use + instruction following = unranked (no paired tests) ⇒ a teammate claim = a lead (project"
+      " template `Teammates` harvest); every fit rests on the template's reasons.")),
     ("MAIN = CC's default `claude-opus-5-5` (1M window). Teammates",
      ("MAIN = `claude-fable-5-2` via `fable` (repo `claude/fable`) = `--model claude-fable-5-2` + config"
       " home `~/.claude/fable` (repo `claude/{host}/fable/`: own `CLAUDE.md`, every other entry,"

@@ -32,7 +32,7 @@
 
 ## Subagents
 
-- Teammates = GPT models by lane (`Model lanes`) behind CLIProxyAPI. Profile: GPT teammates, any tier, lead Opus 5.5 on hard reasoning, science, audit, computer use + instruction following; Opus leads on code, search + calibrated confidence ⇒ a teammate claim = a lead (project template `Teammates` harvest); GPT's lead adds to the template's fit reasons: `reviewer` audit, `consultant` hard reasoning, `operator` computer use, `scientist` science, bulk instruction following.
+- Teammates = GPT models by lane (`Model lanes`) behind CLIProxyAPI. Profile, Opus 5.5 vs the lanes: Opus leads all three on knowledge accuracy + closed-book calibration, and sol + terra on code + hard reasoning; astra = ahead on empirical science, near level on code, boards split on hard reasoning; audit (sol), computer use + instruction following = level; search splits (Opus: answer accuracy; the lanes: browsing retrieval) ⇒ a teammate claim = a lead (project template `Teammates` harvest); astra's science lead adds to the `scientist` fit, every other fit rests on the template's reasons.
 - Security-vocabulary work (hardening audits, trust-gate reviews, vulnerability triage) → MAIN.
 - Teammate prompt cache = unlimited lifetime (ChatGPT subscription), unlike Claude's TTL cache ⇒ an idle teammate's next request reads its whole context from cache after any gap ⇒ reuse idle teammates for related follow-ups at any gap; fresh successor = context-window headroom or a clean slate, never cache expiry.
 - Teammates inherit MAIN's global/project instructions as of session start; `paths:` rules load at first matching touch. Relay later instruction changes in the brief.
