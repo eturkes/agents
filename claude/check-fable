@@ -41,12 +41,17 @@ EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
     ("passes (advisor, compaction), occupancy", "passes (compaction), occupancy"),
     ("MAIN = `claude-opus-5-5` at 1M → 967K;", "MAIN = `claude-fable-5-2` at 1M → 967K;"),
     (("Profile: GPT teammates, any tier, lead Opus 5.5 on hard reasoning, science, audit, computer use +"
-      " instruction following; Opus leads on code, search + calibrated confidence ⇒"),
-     ("Profile: MAIN = Fable 5.2, leading on reading my intent, judgment, taste (original UI/frontend"
-      " design, naming, API + CLI surface, prose), world knowledge + wording for me; Opus 5.5 leads it on most"
-      " work, code above all; it runs less thorough + occasionally asserts an unchecked assumption ⇒ check"
-      " each assumption before building on or stating it. GPT teammates, any tier, lead Opus 5.5, and by"
-      " inference Fable, on hard reasoning, science, audit, computer use + instruction following ⇒")),
+      " instruction following; Opus leads on code, search + calibrated confidence ⇒ a teammate claim = a lead"
+      " (project template `Teammates` harvest); GPT's lead adds to the template's fit reasons: `reviewer`"
+      " audit, `consultant` hard reasoning, `operator` computer use, `scientist` science, bulk instruction"
+      " following."),
+     ("Profile: MAIN = Fable 5.2: strongest on reading my intent, judgment, taste (original UI/frontend"
+      " design, naming, API + CLI surface, prose), world knowledge + wording for me, long-horizon agentic work"
+      " + demanding reasoning; its commonest slip = a claim stated ahead of its check ⇒ check each assumption"
+      " before building on or stating it. GPT teammates, any tier = level with Fable 5.2 on the first tests"
+      " that compare them (reasoning, science, audit, computer use) ⇒ a teammate claim = a lead (project"
+      " template `Teammates` harvest); the template's fit reasons stand on their own, without a capability"
+      " lead.")),
     ("MAIN = CC's default `claude-opus-5-5` (1M window). Teammates",
      ("MAIN = `claude-fable-5-2` via `fable` (repo `claude/fable`) = `--model claude-fable-5-2` + config"
       " home `~/.claude/fable` (repo `claude/{host}/fable/`: own `CLAUDE.md`, every other entry,"
