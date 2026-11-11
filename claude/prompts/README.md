@@ -85,22 +85,22 @@ Run `copy-template` before you paste `refresh.md`. The refresh session compares 
 
 ## Advisor
 
-The advisor lets the agent consult Fable 5.1 while it works. Each consultation uses part of your Fable usage limit. To turn on the advisor, start the session with this command. The footer then shows `◆ adv`.
+The advisor lets the agent consult Fable 5.2 while it works. Each consultation uses part of your Fable usage limit. To turn on the advisor, start the session with this command. The footer then shows `◆ adv`.
 
 ```sh
-CLAUDE_CODE_FOOTER_INDICATOR=adv claude --advisor claude-fable-5-1 --effort <level>
+CLAUDE_CODE_FOOTER_INDICATOR=adv claude --advisor claude-fable-5-2 --effort <level>
 ```
 
-When you resume a session, put `--advisor claude-fable-5-1` on that command too. To add the advisor to a running session, end the session and resume it with the flag.
+When you resume a session, put `--advisor claude-fable-5-2` on that command too. To add the advisor to a running session, end the session and resume it with the flag.
 
 In IMPLEMENT and MAINTAIN, the agent consults the advisor whenever Fable can improve the result: your intent, design and taste, naming and wording, its plan before it starts, a problem after a failed attempt, and its work before it finishes. For deep work, it also consults the advisor on the contract of each unit and before each commit. In IMPLEMENT, it also consults the advisor on decisions that are costly to reverse, after the teammates report.
 
 ## Fable as MAIN
 
-To run Fable 5.1 as the main agent, start the session with the Fable profile and the `--model` flag. Replace `<level>` as for an Opus session.
+To run Fable 5.2 as the main agent, start the session with the Fable profile and the `--model` flag. Replace `<level>` as for an Opus session.
 
 ```sh
-CLAUDE_CONFIG_DIR=$HOME/.claude/fable claude --model claude-fable-5-1 --effort <level>
+CLAUDE_CONFIG_DIR=$HOME/.claude/fable claude --model claude-fable-5-2 --effort <level>
 ```
 
 With `CLAUDE_CONFIG_DIR`, Claude Code reads its global `CLAUDE.md` from `~/.claude/fable`. The other entries in that folder link into `~/.claude`, so Fable and Opus sessions share settings, transcripts, history, MCP servers, plugins and mods. The Fable `CLAUDE.md` is the Opus `CLAUDE.md` with model-specific changes. It replaces the prompts from the Opus 5.5 prompting guide with prompts from the Fable 5.1 prompting guide, and it compares the teammates with Fable instead of Opus.
