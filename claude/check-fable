@@ -13,21 +13,29 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent
 # Host Delivery carries Opus 5.5 guide prompts (turn-end clause, explore-broadly bullet); the Fable copy
-# swaps in Fable 5.1 guide prompts, minus the guide's "Finish the whole task" autonomy paragraph: the
-# user answers questions mid-task.
+# swaps in the Fable guide prompts a 5.2 session otherwise lacks: the 5.1 guide's last-paragraph check
+# (the ending CC's own "Finishing work" text leaves: remaining work listed, then a stop), batching,
+# scope + test size, targeted edits; the 5.2 guide's ownership findings (project law outranks the scope
+# rule; unrequested changes named in the report; existing behavior kept).
+# Out: the 5.2 guide's "Finishing work" (CC's Fable 5.2 system text carries it) + "Communicating clearly"
+# (host Delivery `Messages to me`); the 5.1 guide's autonomy paragraph (the user answers questions
+# mid-task) + mannered-prose rule (5.2 guide: a per-sentence style rule makes its prose choppy).
 FABLE_DELIVERY = (
     "- Per response: private list of what's needed next → one batch of every item whose inputs are in"
     " hand; items awaiting another's result → the next response.\n"
-    "- Scope = every requested behavior, complete, and that alone. Mid-task find (pre-existing bug, perf"
-    " concern, unmentioned behavior) → follow-up in the summary; it enters this change only where the"
-    " requested behavior depends on it. Ambiguous task → the one reading its wording + surrounding code most"
+    "- Scope = every requested behavior, complete. What else a change takes in + how it is tested = the"
+    " project's `CLAUDE.md` where one rules it (project template: `Collaboration` ownership, `Engineering`"
+    " units + tests). Elsewhere: mid-task find (pre-existing bug, perf concern, unmentioned behavior) →"
+    " follow-up in the summary; it enters this change only where the requested behavior depends on it."
+    " Verify freely; scratch scripts + quick checks = disposable; committed tests = where the task asks or"
+    " the repo already keeps tests for that kind of change, sized like neighboring test files (~one focused"
+    " test per stated behavior). Everywhere: an existing feature's behavior changes for the request, a"
+    " ruling or a bug fix alone; ambiguous task → the one reading its wording + surrounding code most"
     " directly support, assumption stated in the summary; ask only where my intent alone decides between"
-    " materially different readings. Verify freely; scratch scripts + quick checks = disposable. Committed tests = where the"
-    " task asks or the repo already keeps tests for that kind of change, sized like neighboring test files"
-    " (~one focused test per stated behavior); scratch checks stay scratch.\n"
+    " materially different readings; the final message names each change past the request, small ones"
+    " included, read off the diff.\n"
     "- Edit tokens scale with bytes emitted → surgical edit over whole-file rewrite wherever both yield the"
     " same bytes.\n"
-    "- Plain prose in messages to me + human-facing text: each sentence states a fact, an action, or a result.\n"
 )
 EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
     ("passes (advisor, compaction), occupancy", "passes (compaction), occupancy"),
@@ -51,8 +59,9 @@ EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
       " recommendations ride with the next tool call, and a next step you name runs in that same message."),
      (" Before ending a turn, check the last paragraph: a plan, an analysis, a list of next steps or a promise"
       " about undone work → do that work now with tool calls, retries after errors + gathering missing"
-      " information included; a question → `AskUserQuestion` where my input decides, else the work it asks"
-      " about. A long context or session → keep working. Before a command that changes system state"
+      " information included; steps that wait on work in flight (background shell, `Monitor`, teammate) stay"
+      " named + the turn ends on that wait (`Background waits`); a question → `AskUserQuestion` where my"
+      " input decides, else the work it asks about. A long context or session → keep working. Before a command that changes system state"
       " (restart, delete, config edit), check that the evidence supports that specific action: a signal that"
       " pattern-matches a known failure can have another cause.")),
     ("design calls → MAIN + the advisor where present.", "design calls → MAIN."),

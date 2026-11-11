@@ -109,7 +109,9 @@ fable --effort <level>
 - The model is `claude-fable-5-2`.
 - The Opus `CLAUDE.md` stays out of the session. Claude Code also loads `.claude/CLAUDE.md` from each directory above the working directory. Thus, without this setting, a session below your home directory loads `~/.claude/CLAUDE.md` in addition, the file that the profile replaces.
 
-The other entries in the profile folder link into `~/.claude`, so Fable and Opus sessions share settings, transcripts, history, MCP servers, plugins and mods. The Fable `CLAUDE.md` is the Opus `CLAUDE.md` with model-specific changes. It replaces the prompts from the Opus 5.5 prompting guide with prompts from the Fable 5.1 prompting guide, and it compares the teammates with Fable instead of Opus.
+The other entries in the profile folder link into `~/.claude`, so Fable and Opus sessions share settings, transcripts, history, MCP servers, plugins and mods. The Fable `CLAUDE.md` is the Opus `CLAUDE.md` with model-specific changes. It replaces the prompts from the Opus 5.5 prompting guide with prompts from the Fable prompting guides, and it compares the teammates with Fable instead of Opus.
+
+The Anthropic guide for Fable 5.2 names `high` as the level to start from for hard coding and long runs. Anthropic reports that Fable 5.2 at `high` scored about level with Opus 5.5 at `max` on the FrontierCode 2.0 coding test, at about half the cost for each task. The guide reports that `xhigh` raised the scores on its coding tests only slightly and used many more tokens. Teammates take their effort level from the session, so a lower level also lowers the level of the teammates.
 
 A Fable session has no advisor, so its command leaves out `--advisor`.
 
