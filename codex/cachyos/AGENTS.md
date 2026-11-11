@@ -13,6 +13,7 @@
 - Host = CachyOS (Arch); sole user `eturkes`; passwordless sudo.
 - Before the first absolute-path call: expand `~` from active `$HOME` → resolve existing paths with `readlink -f` → derive home paths from that result.
 - Desktop = live X11 + authenticated GUI apps. GUI from TTY → child env overrides from `systemctl --user show-environment`: expose only `DISPLAY`, `XAUTHORITY`, `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`.
+- I often view a server you start for me (dev server, demo, prototype) from another machine through `ssh -N -L <port>:127.0.0.1:<port>` ⇒ bind it to `127.0.0.1` explicitly (a `localhost` bind can listen on `[::1]` alone, which that tunnel misses) + give me its port + URL path.
 - Defaults: Python → `uv`; Node.js → `pnpm`; isolated visual QA/web scraping → `chromiumfish`.
 - GPU work → `gpu-run <cmd>` (NVIDIA); desktop/browser rendering + display/video → Intel iGPU. Preserve compute access + VRAM.
 - Host maintenance → `~/.local/app/agents/host/cachyos/MAINTENANCE.md`; browser setup/recovery → `~/.local/app/agents/host/cachyos/BROWSER.md`.
