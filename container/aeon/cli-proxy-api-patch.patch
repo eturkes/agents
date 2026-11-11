@@ -257,7 +257,7 @@ index 2beb8be5139ba2aac286c8219a18750022403ce7..a183164c339b9b42c5c9a574d079466e
 +}
 diff --git a/internal/translator/codex/claude/codex_claude_deferred_tools_test.go b/internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 new file mode 100644
-index 0000000000000000000000000000000000000000..8c50b36ae697eb9dd29ef12e2f2a90c7ae797ecd
+index 0000000000000000000000000000000000000000..a7f8d8ca92269ffa3468ba39e0a0f13fb4727b0a
 --- /dev/null
 +++ b/internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 @@ -0,0 +1,208 @@
@@ -382,14 +382,14 @@ index 0000000000000000000000000000000000000000..8c50b36ae697eb9dd29ef12e2f2a90c7
 +	}
 +}
 +
-+func TestConvertClaudeRequestToCodex_UnreferencedDeferredToolStaysTopLevel(t *testing.T) {
++func TestConvertClaudeRequestToCodex_UnreferencedDeferredToolStaysDeferred(t *testing.T) {
 +	result, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
 +	body := ojson.ParseBytes(result)
-+	if got := strings.Join(translatedToolNames(t, body), ","); got != "Read,ToolSearch,LSP" {
-+		t.Fatalf("top-level tools = %s, want Read,ToolSearch,LSP", got)
++	if got := strings.Join(translatedToolNames(t, body), ","); got != "Read,ToolSearch" {
++		t.Fatalf("top-level tools = %s, want Read,ToolSearch", got)
 +	}
 +	if body.Get(`input.#(type=="additional_tools")`).Exists() {
 +		t.Fatalf("unexpected additional_tools item: %s", body.Get("input").Raw)
@@ -418,17 +418,17 @@ index 0000000000000000000000000000000000000000..8c50b36ae697eb9dd29ef12e2f2a90c7
 +	}
 +}
 +
-+func TestConvertClaudeRequestToCodexWithCompat_KeepsDeferredToolTopLevel(t *testing.T) {
++func TestConvertClaudeRequestToCodexWithCompat_DeclaresDeferredToolAtReference(t *testing.T) {
 +	result, err := ConvertClaudeRequestToCodexWithCompat("gpt-6-luna", deferredToolsRequest(deferredLSPTool, searchToolUse, searchResult), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
 +	body := ojson.ParseBytes(result)
-+	if got := strings.Join(translatedToolNames(t, body), ","); got != "Read,ToolSearch,LSP" {
-+		t.Fatalf("top-level tools = %s, want Read,ToolSearch,LSP", got)
++	if got := strings.Join(translatedToolNames(t, body), ","); got != "Read,ToolSearch" {
++		t.Fatalf("top-level tools = %s, want Read,ToolSearch", got)
 +	}
-+	if body.Get(`input.#(type=="additional_tools")`).Exists() {
-+		t.Fatalf("compat request has additional_tools: %s", body.Get("input").Raw)
++	if !body.Get(`input.#(type=="additional_tools")`).Exists() {
++		t.Fatalf("compat discovery missing: %s", body.Get("input").Raw)
 +	}
 +}
 +
@@ -449,8 +449,8 @@ index 0000000000000000000000000000000000000000..8c50b36ae697eb9dd29ef12e2f2a90c7
 +	}
 +}
 +
-+func TestConvertClaudeRequestToCodex_ToolUsedBeforeReferenceStaysTopLevel(t *testing.T) {
-+	// Post-compaction: discovered tool stays in tools[], reference summarized away → a repeat search keeps it top-level.
++func TestConvertClaudeRequestToCodex_ToolUsedBeforeReferenceDeclaresOnRediscovery(t *testing.T) {
++	// Retained reference absent → deferred; rediscovery → one declaration at the retained reference.
 +	before, err := ConvertClaudeRequestToCodex("gpt-6-luna", deferredToolsRequest(deferredLSPTool, lspToolUse, lspResult), true)
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
@@ -459,14 +459,14 @@ index 0000000000000000000000000000000000000000..8c50b36ae697eb9dd29ef12e2f2a90c7
 +	if err != nil {
 +		t.Fatalf("translate: %v", err)
 +	}
-+	if got := strings.Join(translatedToolNames(t, ojson.ParseBytes(after)), ","); got != "Read,ToolSearch,LSP" {
-+		t.Fatalf("top-level tools = %s, want Read,ToolSearch,LSP", got)
++	if got := strings.Join(translatedToolNames(t, ojson.ParseBytes(after)), ","); got != "Read,ToolSearch" {
++		t.Fatalf("top-level tools = %s, want Read,ToolSearch", got)
 +	}
 +	if ojson.GetBytes(before, "tools").Raw != ojson.GetBytes(after, "tools").Raw {
 +		t.Fatalf("tools changed on rediscovery")
 +	}
-+	if ojson.GetBytes(after, `input.#(type=="additional_tools")`).Exists() {
-+		t.Fatalf("rediscovered tool declared again: %s", ojson.GetBytes(after, "input").Raw)
++	if !ojson.GetBytes(after, `input.#(type=="additional_tools")`).Exists() {
++		t.Fatalf("rediscovered tool declaration missing: %s", ojson.GetBytes(after, "input").Raw)
 +	}
 +}
 diff --git a/internal/translator/codex/claude/codex_claude_request.go b/internal/translator/codex/claude/codex_claude_request.go
