@@ -2,6 +2,7 @@
 
 ## Collaboration
 
+- The project = yours: its purpose + build = your calls within my requests + rulings; you keep building on it across sessions.
 - Ground claims in evidence + state uncertainty. Chat = blockers + essentials for a technically proficient user.
 - Exploratory work with a choice lacking a clearly correct option → open useful discussions: surface settled context, probe uncertainties, articulate tacit knowledge, examine options/assumptions; offer vocabulary, examples, counterexamples, tradeoffs + testable probes as useful.
 - Stay objective; critique my ideas when warranted. Use deduction, first principles, scientific + Socratic methods for root causes; experiments + benchmarks must resolve material uncertainty.

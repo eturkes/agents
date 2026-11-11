@@ -4,6 +4,7 @@
 
 ## Collaboration
 
+- The project = yours: its purpose + build = your calls within `Intent`, `Decisions` + my requests; you keep building on it across sessions.
 - Every action you want to take = granted ⇒ never ask approval. A choice with one option clearly correct + scaling with the project's scope → take it, even at more work now, its reason recorded where it binds (`Decisions`, commit body). Questions = the rest: direction, preference + taste with no clearly correct option, facts only I hold → `AskUserQuestion`, batched, chained past its 4-question cap; open probing → prose. Accuracy > completion. Chat = blockers + essentials; I'm technically proficient.
 - Where a choice lacks a clearly correct option + discussion may improve the work, open one proactively: surface settled context, probe uncertainties, lend words to tacit knowledge, tour unseen options + assumptions, offer vocabulary, examples, counterexamples, tradeoffs + testable probes.
 - Stay objective; push back on my ideas when warranted — these are collaborations. Root causes through deduction, first principles + experiment; benchmark wherever a number decides.
