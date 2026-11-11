@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Fable drift gate: claude/<host>/fable/CLAUDE.md = host CLAUDE.md + EDITS − advisor bullets.
-Mismatch → diff, exit 1. `--write` → regenerate each mismatched copy instead."""
+Mismatch → diff, exit 1. `--write` → regenerate each mismatched copy instead.
+Launcher gate: claude/fable execs `claude` with the profile, the model id + the Opus host file excluded."""
 import difflib
+import json
+import os
 import pathlib
 import re
+import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent
 # Host Delivery carries Opus 5.5 guide prompts (turn-end clause, explore-broadly bullet); the Fable copy
@@ -35,9 +40,12 @@ EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
       " each assumption before building on or stating it. GPT teammates, any tier, lead Opus 5.5, and by"
       " inference Fable, on hard reasoning, science, audit, computer use + instruction following ⇒")),
     ("MAIN = CC's default `claude-opus-5-5` (1M window). Teammates",
-     ("MAIN = `claude-fable-5-2` via launch `--model claude-fable-5-2`; config home `~/.claude/fable` (repo"
-      " `claude/{host}/fable/`) = own `CLAUDE.md`, every other entry (`settings.json` included) → symlink"
-      " into `~/.claude` (`claude/link-profile`). Teammates")),
+     ("MAIN = `claude-fable-5-2` via `fable` (repo `claude/fable`) = `--model claude-fable-5-2` + config"
+      " home `~/.claude/fable` (repo `claude/{host}/fable/`: own `CLAUDE.md`, every other entry,"
+      " `settings.json` included → symlink into `~/.claude`, `claude/link-profile`) + `claudeMdExcludes` on"
+      " `~/.claude/CLAUDE.md` = the Opus host file, which CC loads as a project file for a launch dir under"
+      " `$HOME`; that file in your context ⇒ the launch bypassed `fable`: this file governs wherever the"
+      " two differ + tell me. Teammates")),
     ((" A message without a tool call ends the turn + halts work until I reply or work in flight notifies"
       " (background shell, `Monitor`, teammate) ⇒ status notes +"
       " recommendations ride with the next tool call, and a next step you name runs in that same message."),
@@ -67,6 +75,34 @@ def claude_md(text, host):
     return text
 
 
+def launcher():
+    """Stub `claude` on PATH prints its config home + arguments; the launcher's own lines precede the caller's."""
+    with tempfile.TemporaryDirectory() as t:
+        home, stub = pathlib.Path(t, "home"), pathlib.Path(t, "bin")
+        (home / ".claude" / "fable").mkdir(parents=True)
+        stub.mkdir()
+        (stub / "claude").write_text('#!/bin/sh\nprintf "%s\\n" "$CLAUDE_CONFIG_DIR" "$@"\n', encoding="utf-8")
+        (stub / "claude").chmod(0o755)
+        env = {"HOME": str(home), "PATH": f"{stub}{os.pathsep}{os.environ['PATH']}"}
+
+        def run():
+            return subprocess.run([ROOT / "fable", "--effort", "low", "-p", "a b"], env=env,
+                                  capture_output=True, text=True, check=False)
+
+        r = run()
+        if r.returncode != 2 or "is missing" not in r.stderr or r.stdout:
+            return f"profile absent: rc={r.returncode} stdout={r.stdout!r} stderr={r.stderr!r}"
+        (home / ".claude" / "fable" / "CLAUDE.md").write_text("x", encoding="utf-8")
+        r = run()
+        got = r.stdout.split("\n")[:-1]
+        want = [f"{home}/.claude/fable", "--model", "claude-fable-5-2", "--settings", None, "--effort", "low", "-p", "a b"]
+        if r.returncode != 0 or len(got) != len(want) or any(w not in (None, g) for g, w in zip(got, want)):
+            return f"arguments: rc={r.returncode} {got}"
+        if json.loads(got[4]) != {"claudeMdExcludes": [f"{home}/.claude/CLAUDE.md"]}:
+            return f"settings: {got[4]}"
+    return ""
+
+
 write = sys.argv[1:] == ["--write"]
 n = fail = 0
 for host in ("cachyos", "aeon"):
@@ -88,5 +124,8 @@ for host in ("cachyos", "aeon"):
         print(f"FAIL {rel}")
         sys.stdout.writelines(difflib.unified_diff(want.splitlines(True), have.splitlines(True),
                                                    "expected", rel, n=0))
-print(f"check-fable: {n - fail}/{n} files match")
-sys.exit(fail > 0)
+bad = launcher()
+if bad:
+    print(f"FAIL claude/fable: {bad}")
+print(f"check-fable: {n - fail}/{n} files match, launcher {'FAIL' if bad else 'ok'}")
+sys.exit(fail > 0 or bool(bad))

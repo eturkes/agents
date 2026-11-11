@@ -97,13 +97,19 @@ In IMPLEMENT and MAINTAIN, the agent consults the advisor whenever Fable can imp
 
 ## Fable as MAIN
 
-To run Fable 5.2 as the main agent, start the session with the Fable profile and the `--model` flag. Replace `<level>` as for an Opus session.
+To run Fable 5.2 as the main agent, start the session with the `fable` command. It accepts the same arguments as `claude`. Replace `<level>` as for an Opus session.
 
 ```sh
-CLAUDE_CONFIG_DIR=$HOME/.claude/fable claude --model claude-fable-5-2 --effort <level>
+fable --effort <level>
 ```
 
-With `CLAUDE_CONFIG_DIR`, Claude Code reads its global `CLAUDE.md` from `~/.claude/fable`. The other entries in that folder link into `~/.claude`, so Fable and Opus sessions share settings, transcripts, history, MCP servers, plugins and mods. The Fable `CLAUDE.md` is the Opus `CLAUDE.md` with model-specific changes. It replaces the prompts from the Opus 5.5 prompting guide with prompts from the Fable 5.1 prompting guide, and it compares the teammates with Fable instead of Opus.
+`fable` is a link from `~/.local/bin` to `claude/fable`. It starts Claude Code with three settings:
+
+- The configuration folder is the Fable profile, `~/.claude/fable` (`CLAUDE_CONFIG_DIR`). Claude Code reads its global `CLAUDE.md` from that folder.
+- The model is `claude-fable-5-2`.
+- The Opus `CLAUDE.md` stays out of the session. Claude Code also loads `.claude/CLAUDE.md` from each directory above the working directory. Thus, without this setting, a session below your home directory loads `~/.claude/CLAUDE.md` in addition, the file that the profile replaces.
+
+The other entries in the profile folder link into `~/.claude`, so Fable and Opus sessions share settings, transcripts, history, MCP servers, plugins and mods. The Fable `CLAUDE.md` is the Opus `CLAUDE.md` with model-specific changes. It replaces the prompts from the Opus 5.5 prompting guide with prompts from the Fable 5.1 prompting guide, and it compares the teammates with Fable instead of Opus.
 
 A Fable session has no advisor, so its command leaves out `--advisor`.
 
@@ -114,5 +120,7 @@ mkdir -p ~/.claude/fable
 cp claude/<host>/fable/CLAUDE.md ~/.claude/fable/
 claude/link-profile fable
 ```
+
+On a new machine, also add the link for the command: `ln -s ~/.local/app/agents/claude/fable ~/.local/bin/fable`.
 
 If `~/.claude/fable/settings.json` is a copy of `~/.claude/settings.json`, `link-profile` replaces the copy with a link. After a Claude Code update or a new entry in `~/.claude`, run `claude/link-profile fable` again. `claude/link-profile --check fable` lists the changes that the profile needs and leaves the files as they are.
