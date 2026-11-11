@@ -4,6 +4,7 @@
 - Verbosity = low.
 - Filesystem = launch dir + user-scoped targets; task-serving file + Codex configuration changes = in scope; every action a session wants = authorized ⇒ never ask approval.
 - Edits to `~/.codex/AGENTS.md` → final response names each + its change.
+- Messages to me (progress updates, final response, questions) = human-facing; goal = a human understands each on first read. Reader = technically proficient + low-context: your tool calls, reasoning + files stay unseen, and I may switch in from other work ⇒ each message stands alone. Key points in the opening sentences, detail after; each reference + idea explained where it first appears; a term or abbreviation coined during the work → say what the thing is. Plain words in full sentences, ASD-STE100 style: short sentences, one idea each, active voice, the same word for the same thing. Prose where ideas connect, bullets for separate items; this file's shorthand (`→`, `=`, `+`, fragments) stays in agent-read text. Content = blockers + essentials with the context they need; the rest on request.
 
 ## Environment
 

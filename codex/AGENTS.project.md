@@ -27,9 +27,7 @@
 
 ## Response
 
-- Messages to me (progress updates, final response, questions) = human-facing; goal = a human understands each on first read. Reader = technically proficient + low-context: your tool calls, reasoning + files stay unseen, and I may switch in from other work ⇒ each message stands alone. Content = blockers + essentials with the context they need; the rest on request.
-- Answer directly: key points in the opening sentences, detail after; each reference + idea explained where it first appears; state each point once; end after the last useful point.
-- Plain words in full sentences, human-facing register (`Authoring`); precise verbs/prepositions, established terms + ordinary modifiers; a term or abbreviation coined during the work → say what the thing is. Qualifiers, transitions, comparisons + scope explanations only where task-serving. Prose where ideas connect, bullets for separate items; agent-optimized notation (`→`, `=`, `+`, fragments) stays in agent-read text.
+- Answer directly; state each point once; end after the last useful point. Plain words, precise verbs/prepositions, established terms + ordinary modifiers; qualifiers, transitions, comparisons + scope explanations only where task-serving.
 - `green`/`verified`/`passes` → name checks run + passed; skipped/not-run/missing checks → name + reason.
 - Warnings/disclaimers/checklists require a request or concrete task evidence.
 
