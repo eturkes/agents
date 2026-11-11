@@ -1,23 +1,23 @@
-From e58dde61a3ac4a82476e705635ed919a02794296 Mon Sep 17 00:00:00 2001
+From c5549a89a0196d21149068d5dda964004669801a Mon Sep 17 00:00:00 2001
 From: Emir Turkes <eturkes@bu.edu>
-Date: Sat, 31 Oct 2026 09:49:09 +0900
-Subject: [PATCH] codex/claude: keep ToolSearch discoveries at reference
- position
+Date: Wed, 11 Nov 2026 09:23:51 -0500
+Subject: [PATCH] codex: propagate discovered declarations through request
+ helpers
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-ToolSearch-discovered deferred tool → additional_tools item after its referencing tool_result, not top-level tools ⇒ Codex prompt-cache prefix kept. Upstream system-message additional_tools + compat endpoints unchanged.
+Upstream translator owns discovery placement. Shared declared-tool collector → executor image detection + parallel calls; input declarations → schema normalization + token count.
 ---
  .../client/codex/tool-schema/tool_schema.go   |  12 +-
  .../codex_executor_additional_tools_test.go   |  29 +++
- .../executor/codex_executor_request.go        |  14 +-
+ .../executor/codex_executor_request.go        |  10 +-
  .../runtime/executor/codex_executor_tokens.go |  51 +++--
  .../executor/codex_executor_tokens_test.go    |  27 +++
+ .../executor/helps/codex_hosted_images.go     |   4 +-
  .../executor/helps/codex_tool_schema_test.go  |  16 ++
  .../codex_claude_deferred_tools_test.go       | 208 ++++++++++++++++++
- .../codex/claude/codex_claude_request.go      |  67 ++++++
- 8 files changed, 390 insertions(+), 34 deletions(-)
+ 8 files changed, 321 insertions(+), 36 deletions(-)
  create mode 100644 internal/runtime/executor/codex_executor_additional_tools_test.go
  create mode 100644 internal/translator/codex/claude/codex_claude_deferred_tools_test.go
 
@@ -81,43 +81,35 @@ index 0000000000000000000000000000000000000000..91795b2110583a2527c0df0822ad685b
 +	}
 +}
 diff --git a/internal/runtime/executor/codex_executor_request.go b/internal/runtime/executor/codex_executor_request.go
-index de2d8376eed72b8716d30ebd6d2f739bb446b600..1e4b71b0488d318aa6bcb02fb8d16072ce08a399 100644
+index 1acd7d7949554ed76278846e8dc7814a8d4009a8..215879f72c09028c4cf0855bcd8e5e923bd9b991 100644
 --- a/internal/runtime/executor/codex_executor_request.go
 +++ b/internal/runtime/executor/codex_executor_request.go
-@@ -815,15 +815,15 @@ func ensureImageGenerationToolDoc(doc *ojson.Doc, baseModel string, auth *clipro
+@@ -820,11 +820,7 @@ func codexToolsAlreadyContainImageGenDoc(doc *ojson.Doc) bool {
+ 	if doc == nil {
  		return false
  	}
- 
 -	tools := doc.Get("tools")
 -	if !tools.Exists() || !tools.IsArray() {
--		return doc.SetRawBytes("tools", imageGenToolArrayJSON) == nil
+-		return false
 -	}
 -	for _, t := range tools.Array() {
-+	for _, t := range codexCollectDeclaredToolsDoc(doc) {
++	for _, t := range helps.CodexCollectDeclaredToolsDoc(doc) {
  		if t.Get("type").String() == "image_generation" || isImageGenerationFunctionTool(t) {
- 			return false
+ 			return true
  		}
- 	}
-+	tools := doc.Get("tools")
-+	if !tools.Exists() || !tools.IsArray() {
-+		return doc.SetRawBytes("tools", imageGenToolArrayJSON) == nil
-+	}
- 	return doc.SetRawBytes("tools.-1", imageGenToolJSON) == nil
- }
- 
-@@ -1055,9 +1055,7 @@ func normalizeCodexParallelToolCallsForToolsDoc(doc *ojson.Doc) bool {
+@@ -945,9 +941,7 @@ func normalizeCodexParallelToolCallsForToolsDoc(doc *ojson.Doc) bool {
  		return false
  	}
  
 -	tools := doc.Get("tools")
 -	hasTools := tools.Exists() && tools.IsArray() && len(tools.Array()) > 0
 -	if hasTools {
-+	if len(codexCollectDeclaredToolsDoc(doc)) > 0 {
++	if len(helps.CodexCollectDeclaredToolsDoc(doc)) > 0 {
  		return false
  	}
  
 diff --git a/internal/runtime/executor/codex_executor_tokens.go b/internal/runtime/executor/codex_executor_tokens.go
-index 22c73eb72af0860588f2ea050ca6549a5048f2f0..5b9518c5de085b20dfa2d3a46419ef5eb42f46b5 100644
+index e65d9a18f58b1d3fcfc6548387c6131274638f93..66085f0afe05879f63552f3a20d2543b83817267 100644
 --- a/internal/runtime/executor/codex_executor_tokens.go
 +++ b/internal/runtime/executor/codex_executor_tokens.go
 @@ -130,6 +130,8 @@ func countCodexInputTokens(enc tokenizer.Codec, body []byte) (int64, error) {
@@ -231,6 +223,28 @@ index cba44dd1c77cae519b1cb806d2c0e89cb3d2cb41..d251e23aca4a36c9eb4e6a51c6e9e109
 +		t.Fatalf("additional_tools tools were not counted")
 +	}
 +}
+diff --git a/internal/runtime/executor/helps/codex_hosted_images.go b/internal/runtime/executor/helps/codex_hosted_images.go
+index 1e9f924276ffe13a4344f73dee7f4193cdba2f61..40547d26b09f9a87f15ee8f2a5bb673fae7425b3 100644
+--- a/internal/runtime/executor/helps/codex_hosted_images.go
++++ b/internal/runtime/executor/helps/codex_hosted_images.go
+@@ -120,7 +120,7 @@ func ValidateCodexHostedImageGenerationDoc(doc *ojson.Doc, upstreamHeaders http.
+ 	return cliproxyauth.NewRequestScopedError("Hosted image_generation cannot be forced on this Codex Responses-Lite route. Use /v1/images/generations or /v1/images/edits instead.", http.StatusBadRequest)
+ }
+ 
+-func codexCollectDeclaredToolsDoc(doc *ojson.Doc) []ojson.Result {
++func CodexCollectDeclaredToolsDoc(doc *ojson.Doc) []ojson.Result {
+ 	var tools []ojson.Result
+ 	if declared := doc.Get("tools"); declared.IsArray() {
+ 		tools = append(tools, declared.Array()...)
+@@ -138,7 +138,7 @@ func codexCollectDeclaredToolsDoc(doc *ojson.Doc) []ojson.Result {
+ }
+ 
+ func codexRequestForcesImageGenerationDoc(doc *ojson.Doc) bool {
+-	tools := codexCollectDeclaredToolsDoc(doc)
++	tools := CodexCollectDeclaredToolsDoc(doc)
+ 	hasImageGen := false
+ 	allImageGen := len(tools) > 0
+ 	for _, tool := range tools {
 diff --git a/internal/runtime/executor/helps/codex_tool_schema_test.go b/internal/runtime/executor/helps/codex_tool_schema_test.go
 index 2beb8be5139ba2aac286c8219a18750022403ce7..a183164c339b9b42c5c9a574d079466e73f6fb1e 100644
 --- a/internal/runtime/executor/helps/codex_tool_schema_test.go
@@ -469,105 +483,6 @@ index 0000000000000000000000000000000000000000..a7f8d8ca92269ffa3468ba39e0a0f13f
 +		t.Fatalf("rediscovered tool declaration missing: %s", ojson.GetBytes(after, "input").Raw)
 +	}
 +}
-diff --git a/internal/translator/codex/claude/codex_claude_request.go b/internal/translator/codex/claude/codex_claude_request.go
-index 00fee4af765afd08ad404c61d6607c6473e6c387..07fc8d9f6918c7882460d54aa5cc47596c1a651a 100644
---- a/internal/translator/codex/claude/codex_claude_request.go
-+++ b/internal/translator/codex/claude/codex_claude_request.go
-@@ -85,6 +85,46 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
- 	declaredToolsIndexed := false
- 	hasAdditionalTools := false
- 
-+	// Claude Code tool search: discovered tool → tools[] (defer_loading) + tool_reference in the
-+	// search tool_result. Codex renders top-level tools ahead of the input ⇒ a top-level declaration
-+	// resets the cached prefix per discovery → declare it in an additional_tools item after the
-+	// referencing tool_result (Anthropic's render position). Compat endpoints → top-level
-+	// (additional_tools support unknown).
-+	deferredTools := map[string]ojson.Result{}
-+	placedTools := map[string]bool{}
-+	if !preserveEmptyThinkingBlocks {
-+		rootResult.Get("tools").ForEach(func(_, tool ojson.Result) bool {
-+			if tool.Get("defer_loading").Bool() && !isClaudeWebSearchToolType(tool.Get("type").String()) {
-+				if name := tool.Get("name").String(); name != "" {
-+					deferredTools[name] = tool
-+				}
-+			}
-+			return true
-+		})
-+		// Called before its first retained reference (reference compacted away) ⇒ already
-+		// top-level; moving it rewrites that prefix.
-+		referenced := map[string]bool{}
-+		rootResult.Get("messages.#.content").ForEach(func(_, content ojson.Result) bool {
-+			content.ForEach(func(_, part ojson.Result) bool {
-+				switch part.Get("type").String() {
-+				case "tool_use":
-+					if name := part.Get("name").String(); !referenced[name] {
-+						delete(deferredTools, name)
-+					}
-+				case "tool_result":
-+					part.Get("content").ForEach(func(_, block ojson.Result) bool {
-+						if block.Get("type").String() == "tool_reference" {
-+							referenced[block.Get("tool_name").String()] = true
-+						}
-+						return true
-+					})
-+				}
-+				return true
-+			})
-+			return len(deferredTools) > 0
-+		})
-+	}
-+
- 	// Process system messages and convert them to input content format.
- 	systemsResult := rootResult.Get("system")
- 	if systemsResult.Exists() {
-@@ -373,6 +413,11 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
- 						}
- 
- 						inputItems = append(inputItems, functionCallOutputMessageDoc.Bytes())
-+						if referenced := referencedDeferredTools(contentResult, deferredTools, placedTools, toolNameMap); len(referenced) > 0 {
-+							additionalTools := []byte(`{"type":"additional_tools","role":"developer"}`)
-+							additionalTools, _ = ojson.SetRawBytes(additionalTools, "tools", translatorcommon.JoinRawArray(referenced))
-+							inputItems = append(inputItems, additionalTools)
-+						}
- 						turnSendable++
- 					}
- 				}
-@@ -417,6 +462,9 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
- 				toolItems = append(toolItems, convertClaudeWebSearchToolToCodex(toolResult))
- 				continue
- 			}
-+			if placedTools[toolResult.Get("name").String()] {
-+				continue
-+			}
- 			toolItems = append(toolItems, convertClaudeFunctionToolToCodex(toolResult, toolNameMap))
- 		}
- 	}
-@@ -511,6 +559,25 @@ func convertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool,
- 	return templateDoc.Bytes(), drops.Err()
- }
- 
-+func referencedDeferredTools(content ojson.Result, deferredTools map[string]ojson.Result, placedTools map[string]bool, toolNameMap map[string]string) [][]byte {
-+	if len(deferredTools) == 0 || !content.IsArray() {
-+		return nil
-+	}
-+	var tools [][]byte
-+	content.ForEach(func(_, part ojson.Result) bool {
-+		if part.Get("type").String() != "tool_reference" {
-+			return true
-+		}
-+		name := part.Get("tool_name").String()
-+		if tool, ok := deferredTools[name]; ok && !placedTools[name] {
-+			placedTools[name] = true
-+			tools = append(tools, convertClaudeFunctionToolToCodex(tool, toolNameMap))
-+		}
-+		return true
-+	})
-+	return tools
-+}
-+
- func normalizeCodexServiceTier(result ojson.Result) string {
- 	if !result.Exists() || result.Type != ojson.String {
- 		return ""
 -- 
 2.47.3
 
