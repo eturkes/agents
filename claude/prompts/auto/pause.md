@@ -10,7 +10,7 @@ Pause this session for a fresh one to resume. The open finish line stays open an
 2. Processes you started — servers, watchers, background shells → stopped by PID, their ports free.
 3. Checked, cohesive work → scoped commits with the gates its unit requires. The rest → one snapshot commit on a `wip/<topic>` branch, built through a temporary index (`GIT_INDEX_FILE`) so the main index + working tree stay as they are; gitignored secrets stay out of it.
 4. Rulings from this session that bind later work → their owning files (contract, `Decisions`, `.claude/rules/`).
-5. `.agent/spec.md` `Tasks` gains the resume note: one `- [ ] RESUME: …` row at the head of the open unit, holding the finish line in force, committed vs uncommitted work (paths + snapshot branch), teammate branches + tips + whether their last state was rerun, the next action. Commit it.
-6. Resume inputs outside the repo (`/tmp`) → `.scratch/`; delete task-made scratch that no resume needs.
+5. `.agent/spec.md` `Tasks` gains the resume note: one `- [ ] RESUME: …` row at the head of the open unit, holding the finish line in force + the file holding its body (step 6), committed vs uncommitted work (paths + snapshot branch), teammate branches + tips + whether their last state was rerun, the next action. Commit it.
+6. Resume inputs outside the repo (`/tmp`) → `.scratch/`; the pasted body this session works under → `.scratch/body.md`, verbatim: from the transcript holding it (`context-gauge -p` = this session's, read by a bounded `jq` query), or already there from the pause this session resumed; delete task-made scratch that no resume needs.
 
 Met when: no teammate or started process runs, the resume note is committed, and `git status` shows only the uncommitted work the note names.

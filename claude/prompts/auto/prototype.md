@@ -13,6 +13,6 @@ Reach the prototype for the scope in `.agent/spec.md` `Phase` — in a new repo,
 5. Build each artifact at its `Artifacts` path per `Session flow` PROTOTYPE: own deps, one run command; fixtures, stubbed backends + hard-coded data welcome wherever they shorten the path to something I can see; tests, gates + hardening wait for IMPLEMENT. Taste-graded choices ship as a variant fan-out (`Session flow` Teammates).
 6. Run every artifact by its recorded command and check what I will see — `webcap` for a UI, every state of a multi-state flow included.
 7. Review: the whole diff on lenses fixed before reading — every prototype entry in `Artifacts` runs by its recorded command, each stub, shortcut + hard-coded value reads as one wherever I would take it for real, `spec.md` matches what shipped + passes `.agent/spec-lint`; you adjudicate, accepted fixes land before close.
-8. Off-path findings + every unfixed review row → `.agent/deferred.md`, acceptance check each. Set `Phase: ITERATE — <scope>`. One scoped commit per cohesive piece; clean tree at close.
+8. Off-path findings + every unfixed review row → `.agent/deferred.md`, acceptance check each. Set `Phase: ITERATE — <scope>`; a route I ruled ahead of it → the routed state instead, this scope suspended at ITERATE (`Session flow` Routing). One scoped commit per cohesive piece; clean tree at close.
 
-Met when: every prototype entry in `Artifacts` runs by its recorded command, a shipped repo's existing gates still pass, and `Phase: ITERATE` is committed on a clean working tree.
+Met when: every prototype entry in `Artifacts` runs by its recorded command, a shipped repo's existing gates still pass, and `Phase: ITERATE` (or that routed state) is committed on a clean working tree.
