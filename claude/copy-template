@@ -2,9 +2,11 @@
 # copy-template — template files (claude/prompts/README.md `Template files`) → each project root; the
 # project's refresh session (claude/prompts/*/refresh.md) migrates the rest. Writes only files differing
 # from the template, never deletes (a role file the template lacks = the project's own, refresh.md step 2).
-# Each project planned before any write ⇒ a refusal leaves it untouched. Refusals: not a git root, the
-# template repo itself, no CLAUDE.md without --new (a glob over ~/Projects/* would plant it into Codex
-# repos), a symlink on a target path (cp writes through it), a differing target with uncommitted changes.
+# Each project planned before any write ⇒ a refusal leaves it untouched. Refusals: not a git root (--new
+# runs `git init` in a directory outside every repo; a bare repo or a path inside `.git` stays refused),
+# the template repo itself, no CLAUDE.md without --new
+# (a glob over ~/Projects/* would plant it into Codex repos), a symlink on a target path (cp writes
+# through it), a differing target with uncommitted changes.
 src=$(dirname "$(readlink -f "$0")")
 repo=$(cd "$src/.." && pwd -P)
 usage() {
@@ -21,10 +23,13 @@ If a project has no CLAUDE.md, the script does not change that project.
 
   --check  Show the files that differ from the template. Copy nothing.
   --new    Also copy into a project that has no CLAUDE.md. Use it for a new project.
+           If the directory is not in a git repository, the script runs "git init" there first.
 
 Exit status: 0 = copied or current, 1 = --check found files that differ,
 2 = the script did not change a project because of an error (see the message).
-After a copy, start a fresh session at the project root. Then paste refresh.md.
+After a copy into a project that has commits, start a fresh session at the project root.
+Then paste refresh.md. In a new project, write your Intent in .agent/spec.md.
+Then start a session and paste a phase prompt, usually prototype.md.
 EOF
 }
 check='' new=''
@@ -49,7 +54,7 @@ from() {
     *) echo "$src/agents/${1##*/}" ;;
   esac
 }
-rc=0 copied=
+rc=0 copied='' started=''
 err() { echo "copy-template: $*" >&2; rc=2; }
 # Tracked + equal to HEAD in index and work tree; HEAD absent → uncommitted.
 committed() {
@@ -59,18 +64,31 @@ tracked() {
   git -C "$1" ls-files --error-unmatch -- "$2" >/dev/null 2>&1 || git -C "$1" cat-file -e "HEAD:$2" 2>/dev/null
 }
 for arg do
-  top=$(git -C "$arg" rev-parse --show-toplevel 2>/dev/null) && [ "$top" = "$(cd "$arg" && pwd -P)" ] ||
-    { err "$arg is not the root directory of a git repository. Give the project root."; continue; }
+  init='' fresh=''
+  dir=$(cd "$arg" 2>/dev/null && pwd -P) || { err "$arg is not a directory."; continue; }
+  if top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null); then
+    [ "$top" = "$dir" ] ||
+      { err "$arg is not the root directory of its git repository. Give the project root: $top"; continue; }
+  elif git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+    err "$arg is in a git repository that has no working tree. Give a project directory."; continue
+  elif [ -n "$new" ]; then
+    top=$dir init=1  # outside every repo: `git init` runs with the first write
+  else
+    err "$arg is not in a git repository. For a new project, run copy-template --new there."; continue
+  fi
   [ "$top" != "$repo" ] || { err "$top is the template repository. Give a project directory."; continue; }
-  if [ ! -e "$top/CLAUDE.md" ] && [ ! -L "$top/CLAUDE.md" ] && [ -z "$new" ]; then
-    if [ -n "$check" ]; then
+  if [ ! -e "$top/CLAUDE.md" ] && [ ! -L "$top/CLAUDE.md" ]; then
+    if [ -n "$new" ]; then fresh=1
+    elif [ -n "$check" ]; then
       echo "$top: The project has no CLAUDE.md, so the script skipped it." \
         "To add the template files to a new project, use --new."
+      continue
     else
-      err "$top has no CLAUDE.md. To add the template files to a new project, use --new."
+      err "$top has no CLAUDE.md. To add the template files to a new project, use --new."; continue
     fi
-    continue
   fi
+  # No commit yet = nothing for refresh.md to diff against ⇒ a new project, CLAUDE.md present or not.
+  [ -z "$init" ] && git -C "$top" rev-parse -q --verify HEAD >/dev/null 2>&1 || fresh=1
   todo='' bad=''
   for d in .agent .claude .claude/agents; do
     [ ! -L "$top/$d" ] || { bad=1; err "$top/$d is a symbolic link. Replace it with a directory."; }
@@ -99,10 +117,18 @@ for arg do
     [ "$rc" -eq 2 ] || rc=1
     continue
   fi
+  if [ -n "$init" ]; then
+    git init -q "$top" || { err "Cannot make a git repository in $top."; continue; }
+    echo "$top: Made a git repository (git init)."
+  fi
   mkdir -p "$top/.agent" "$top/.claude/agents" || { err "Cannot make the directories in $top."; continue; }
   for r in $todo; do
-    if cp "$(from "$r")" "$top/$r"; then echo "$top: Copied $r."; copied=1; else err "Cannot copy $r into $top."; fi
+    if cp "$(from "$r")" "$top/$r"; then
+      echo "$top: Copied $r."
+      if [ -n "$fresh" ]; then started=1; else copied=1; fi
+    else err "Cannot copy $r into $top."; fi
   done
+  [ -z "$fresh" ] || continue
   # refresh.md step 1 asks when files besides the template files changed: often a session still running.
   n=$(git -C "$top" status --porcelain -- . ':!CLAUDE.md' ':!.agent/spec-lint' ':!.claude/agents' | wc -l)
   [ "$n" -eq 0 ] || echo "$top: Note: Other paths have uncommitted changes ($n)." \
@@ -110,4 +136,6 @@ for arg do
     "or make sure that no session runs in this project."
 done
 [ -z "$copied" ] || echo "Next: In each project that changed, start a fresh session at the project root. Then paste refresh.md."
+[ -z "$started" ] || echo "Next: In each new project, write your Intent in .agent/spec.md." \
+  "Then start a session at the project root and paste a phase prompt, usually prototype.md."
 exit "$rc"

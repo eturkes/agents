@@ -77,7 +77,7 @@ copy-template
 The script copies only the files that differ from the template. It keeps the role files that the template does not have. The script does not change a project in these cases:
 
 - A template file in the project has uncommitted changes. Commit or discard them first.
-- The project has no `CLAUDE.md`. For a new repository, run `git init` first, then add `--new`.
+- The project has no `CLAUDE.md`. For a new project, add `--new`. If the directory is not in a git repository, `copy-template --new` runs `git init` there first.
 
 To list the projects that are behind the template, run `copy-template --check ~/Projects/*`. This command copies nothing, and it skips repositories that have no `CLAUDE.md`. For all options, run `copy-template --help`.
 

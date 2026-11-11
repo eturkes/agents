@@ -30,11 +30,18 @@ p=$t/p && git init -q "$p" && mkdir "$p/sub" "$t/plain"
 run --bogus; ck bad-flag 2 'has "Usage: copy-template"'
 run --help; ck help 0 'has "Usage: copy-template"'
 run "$p/sub"; ck not-root 2 'has "is not the root directory"' '[ ! -e "$p/sub/CLAUDE.md" ] && [ ! -e "$p/CLAUDE.md" ]'
-run "$t/plain"; ck not-git 2 'has "is not the root directory"' '[ ! -e "$t/plain/CLAUDE.md" ]'
+run "$t/plain"; ck not-git 2 'has "is not in a git repository"' 'has "copy-template --new"' \
+  '[ ! -e "$t/plain/CLAUDE.md" ] && [ ! -e "$t/plain/.git" ]'
+run "$t/nope"; ck not-dir 2 'has "is not a directory"'
+git init -q --bare "$t/bare"
+run --new "$t/bare"; ck bare 2 'has "has no working tree"' '[ ! -e "$t/bare/CLAUDE.md" ] && [ ! -e "$t/bare/.git" ]'
+run --check --new "$t/bare"; ck check-bare 2 'has "has no working tree"'
+run --new "$p/.git"; ck git-dir 2 'has "has no working tree"' '[ ! -e "$p/.git/CLAUDE.md" ] && [ ! -e "$p/CLAUDE.md" ]'
 run "$t/tpl"; ck template-repo 2 'has "is the template repository"' '[ ! -e "$t/tpl/CLAUDE.md" ]'
 run "$p"; ck no-claude-md 2 'has "has no CLAUDE.md"' '[ ! -e "$p/CLAUDE.md" ] && [ ! -e "$p/.agent" ]'
 run --check "$p"; ck check-no-claude-md 0 'has "so the script skipped it."' '[ ! -e "$p/CLAUDE.md" ]'
-run --new "$p"; ck new 0 'same "$p"' '[ -x "$p/.agent/spec-lint" ]' 'has "Copied CLAUDE.md."' 'has "Next:"'
+run --new "$p"; ck new 0 'same "$p"' '[ -x "$p/.agent/spec-lint" ]' 'has "Copied CLAUDE.md."' \
+  'has "Next: In each new project"' 'has "prototype.md"' '! has "refresh.md"' '! has "Made a git repository"'
 run "$p"; ck untracked-equal 0 'has "are current."' '! has Copied' '! has "Next:"'
 commit "$p"
 run --check "$p"; ck check-current 0 'has "are current."'
@@ -43,7 +50,8 @@ run --check "$p"; ck check-behind 1 'has "CLAUDE.md differs"' 'has ".claude/agen
   '! has "a.md differs"' '[ "$(cat "$p/CLAUDE.md")" = v1 ]'
 echo own > "$p/.claude/agents/own.md" && commit "$p"
 run "$p"; ck update 0 'same "$p"' '[ "$(cat "$p/.claude/agents/own.md")" = own ]' \
-  'has "Copied .claude/agents/b.md."' '! has "Copied .claude/agents/a.md."' '! has "Note:"'
+  'has "Copied .claude/agents/b.md."' '! has "Copied .claude/agents/a.md."' '! has "Note:"' \
+  'has "paste refresh.md"' '! has "prototype.md"'
 commit "$p"
 echo v3 > "$tpl/CLAUDE.project.md"; echo b3 > "$tpl/agents/b.md"; echo mine > "$p/CLAUDE.md"
 run "$p"; ck uncommitted 2 'has "has uncommitted changes"' '[ "$(cat "$p/CLAUDE.md")" = mine ]' \
@@ -69,8 +77,22 @@ p6=$t/p6 && git init -q "$p6" && echo v1 > "$p6/CLAUDE.md" && mkdir -p "$p6/.cla
 run "$p6"; ck non-regular 2 'has "is not a regular file"' '[ -z "$(ls -A "$p6/.claude/agents/a.md")" ]' \
   '[ "$(cat "$p6/CLAUDE.md")" = v1 ]'
 p5=$t/p5 && git init -q "$p5" && echo v1 > "$p5/CLAUDE.md" && commit "$p5"
-run "$p5" "$t/plain"; ck mixed 2 'same "$p5"' 'has "is not the root directory"'
+run "$p5" "$t/plain"; ck mixed 2 'same "$p5"' 'has "is not in a git repository"'
 commit "$p5" && echo v4 > "$tpl/CLAUDE.project.md"
 out=$(cd "$p5" && "$tpl/copy-template" 2>&1); rc=$?
 ck cwd-default 0 'same "$p5"' 'has "Copied CLAUDE.md."'
+# --new outside every repo: `git init` with the first write, never on --check or a refusal
+f=$t/fresh && mkdir "$f" && echo mit > "$f/LICENSE"
+run --check --new "$f"; ck check-new-plain 1 'has "CLAUDE.md differs"' '[ ! -e "$f/.git" ] && [ ! -e "$f/CLAUDE.md" ]'
+run --new "$f"; ck new-plain 0 'same "$f"' '[ -d "$f/.git" ]' 'has "Made a git repository"' \
+  'has "Next: In each new project"' '! has "refresh.md"' '! has "Note:"'
+run --new "$f"; ck new-plain-again 0 'has "are current."' '! has "Made a git repository"'
+f2=$t/pre && mkdir "$f2" && echo mine > "$f2/CLAUDE.md"
+run --new "$f2"; ck new-plain-refused 2 'has "has uncommitted changes"' '[ ! -e "$f2/.git" ]' \
+  '[ "$(cat "$f2/CLAUDE.md")" = mine ]' '[ ! -e "$f2/.agent" ]'
+# no commit yet = a new project for the next-step message, CLAUDE.md present or not
+f3=$t/seeded && mkdir "$f3" && cp "$tpl/CLAUDE.project.md" "$f3/CLAUDE.md"
+run --new "$f3"; ck new-seeded 0 'same "$f3"' '[ -d "$f3/.git" ]' 'has "Next: In each new project"' '! has "refresh.md"'
+p7=$t/p7 && git init -q "$p7" && cp "$tpl/CLAUDE.project.md" "$p7/CLAUDE.md"
+run "$p7"; ck unborn 0 'same "$p7"' 'has "Next: In each new project"' '! has "refresh.md"' '! has "Note:"'
 if [ "$fail" -eq 0 ]; then echo "copy-template: $n/$n cases pass"; else echo "copy-template: $fail/$n cases FAIL"; exit 1; fi
