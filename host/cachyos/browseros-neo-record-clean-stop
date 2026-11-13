@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""browseros-neo-record-clean-stop — ExecStopPost of browseros-neo.service: record a clean stop in Neo's profiles.
+
+Chromium sets each loaded profile's `profile.exit_type` = "Crashed" at startup; a SIGTERM stop rewrites it to
+"SessionEnded" (Linux SIGTERM → chrome::SessionEnding()). After a crash, ExitTypeService holds "Crashed" until a
+person closes the "Restore pages?" bubble or opens a window; agents never do ⇒ every later clean stop kept "Crashed" +
+each start showed the bubble. Clean stop (SERVICE_RESULT=success, browser exited 0) → "Crashed" → "SessionEnded", the
+value Chromium itself writes for the stop; crash, kill or timeout → unchanged ⇒ one bubble per real crash.
+"""
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+DATA_DIR = Path.home() / ".config/browser-claw"
+CRASHED = b'"exit_type":"Crashed"'
+ENDED = b'"exit_type":"SessionEnded"'
+
+
+def clean_stop(environ):
+    return (environ.get("SERVICE_RESULT"), environ.get("EXIT_CODE"), environ.get("EXIT_STATUS")) == (
+        "success", "exited", "0")
+
+
+def record_clean_stop(data_dir, environ):
+    """Return the Preferences files rewritten; a non-clean stop or an unexpected file shape rewrites nothing."""
+    if not clean_stop(environ):
+        return []
+    changed = []
+    for prefs in sorted(Path(data_dir).glob("*/Preferences")):
+        data = prefs.read_bytes()
+        # Chromium writes compact JSON ⇒ one exact token; any other shape → leave the file to Chromium.
+        if data.count(CRASHED) != 1 or json.loads(data).get("profile", {}).get("exit_type") != "Crashed":
+            continue
+        updated = data.replace(CRASHED, ENDED)
+        if json.loads(updated)["profile"]["exit_type"] != "SessionEnded":
+            continue
+        fd, tmp = tempfile.mkstemp(dir=prefs.parent, prefix=".Preferences.")
+        try:
+            with os.fdopen(fd, "wb") as out:
+                out.write(updated)
+                out.flush()
+                os.fsync(out.fileno())
+            os.chmod(tmp, prefs.stat().st_mode & 0o7777)
+            os.replace(tmp, prefs)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+        changed.append(prefs)
+    return changed
+
+
+if __name__ == "__main__":
+    data_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else DATA_DIR
+    for path in record_clean_stop(data_dir, os.environ):
+        print(f"clean stop recorded: {path.parent.name} exit_type Crashed → SessionEnded")

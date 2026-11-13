@@ -57,6 +57,7 @@ The checkpoint shares the current root filesystem and user-space packages; revie
 set -euo pipefail
 install -Dm644 host/cachyos/browseros-neo.service "$HOME/.config/systemd/user/browseros-neo.service"
 ln -sfn "$PWD/host/cachyos/browseros-neo-reap-sidecar" "$HOME/.local/bin/browseros-neo-reap-sidecar"
+ln -sfn "$PWD/host/cachyos/browseros-neo-record-clean-stop" "$HOME/.local/bin/browseros-neo-record-clean-stop"
 units=(browseros-neo.service app-chatgpt@autostart.service)
 for unit in "${units[@]}"; do
   install -Dm644 host/cachyos/desktop-recovery.conf "$HOME/.config/systemd/user/$unit.d/recovery.conf"

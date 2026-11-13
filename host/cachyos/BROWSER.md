@@ -15,6 +15,8 @@
 - MCP = `browseros-neo` → `http://127.0.0.1:9200/mcp`; Codex = `~/.codex/config.toml`. `browseros-call` reads that endpoint and supports JSON/SSE + session reuse.
 - `browseros-claw-server` = Neo's sidecar (`browseros-neo-bin`, child of the Neo browser `browserclaw`) = the MCP backend behind the 9200 proxy (its own port = `config.json` `ports.server`, moves between starts) ⇒ exactly one runs, Neo's. Each minute it reconciles harness integrations: the `browseros-neo` MCP URL in `~/.claude.json` + `~/.codex/config.toml` (→ its own proxy port) + the `browseros-neo` skill (`~/.claude/skills/browseros-neo`, marker `.browserclaw-managed.json`) ⇒ a stray server (config outside `~/.config/browser-claw` + `~/.config/browser-os`) flips both URLs off 9200 → stop it by PID (`pgrep -af '[b]rowseros-claw-server'`), then confirm both files read 9200 within a minute; `check-browseros-neo` asserts no stray + exactly one Neo sidecar.
 - The Neo browser moves itself into its own `app-org.chromium.Chromium-<pid>.scope` ⇒ stopping `browseros-neo.service` never reaches the sidecar, which then retries CDP every second without end (a WARN each) → the unit's `ExecStopPost=browseros-neo-reap-sidecar` TERMs it (KILL after 10 s).
+- "Restore pages?" bubble: Chromium marks `profile.exit_type` "Crashed" at startup; a SIGTERM stop writes "SessionEnded" (Linux SIGTERM → `chrome::SessionEnding()`). After a crash it keeps "Crashed" until a person closes the bubble or opens a window ⇒ unattended Neo showed it on every later start → the unit's `ExecStopPost=browseros-neo-record-clean-stop`: clean stop (Result `success`, exit 0) → "SessionEnded" in each `*/Preferences`; crash/kill/timeout → unchanged ⇒ one bubble per real crash.
+- KDE xsettings reload (`kded6: xsettingsd: Reloading configuration`: theme, accent, font change) → Neo SIGSEGV/SIGILL in `libqt6_shim.so` (Chromium 155). Daily trigger until 11-14 = Bing picture-of-the-day wallpaper + `kdeglobals` `accentColorFromWallpaper=true` (00:01) → set false. Manual appearance changes still crash Neo; systemd restarts it.
 - Sidecar log filter = the unit's `CLAW_LOG` (tracing `EnvFilter`; journal + `<profile>/logs/claw-server.log` alike): `claw_server::api::http` + `claw_server::services::extension_updates` at error — Neo polls previews of ended sessions (each 404 = an http WARN, ≈ 40/min) and checks extension updates every 30 s; other targets stay at info.
 - Captures → `screenshot` the target tab directly; background tabs render their live DOM. Neo keeps the visible tab fixed: `Page.bringToFront` = no-op. Signed-in headless capture → `webcap --user-data-dir ~/.config/browser-claw`.
 - After MCP configuration changes, restart `codexify.service`; refresh an attached connector to load its new catalogue. New Codex sessions load the new MCP.
@@ -28,6 +30,7 @@ test -e ~/.config/browser-claw || cp -a --reflink=auto "$(readlink -f ~/.config/
 sudo -n install -m644 host/cachyos/psd-browseros-neo /usr/share/psd/browsers/browseros-neo
 ln -sfn "$PWD/host/cachyos/browseros-neo" ~/.local/bin/browseros-neo
 ln -sfn "$PWD/host/cachyos/browseros-neo-reap-sidecar" ~/.local/bin/browseros-neo-reap-sidecar
+ln -sfn "$PWD/host/cachyos/browseros-neo-record-clean-stop" ~/.local/bin/browseros-neo-record-clean-stop
 ```
 
 Set `~/.config/psd/psd.conf`: `USE_OVERLAYFS="yes"`, `USE_SUSPSYNC="yes"`, `BROWSERS=(browseros-neo)`.
@@ -61,11 +64,12 @@ Verify first sync, distinct identities, bookmarks/passwords + wallet cache value
 python -B bin/check-browseros-call -q
 python -B bin/check-webtext -q
 python -B host/cachyos/check-browseros-neo-launcher -q
+python -B host/cachyos/check-browseros-neo-record-clean-stop -q
 python -B host/cachyos/check-browseros-neo-sync-identity -q
 python -B host/cachyos/check-browseros-neo
 bash -n host/cachyos/browseros-neo host/cachyos/browseros-neo-reap-sidecar
 shellcheck host/cachyos/browseros-neo host/cachyos/browseros-neo-reap-sidecar
-ruff check bin/browseros-call bin/check-browseros-call bin/check-webtext host/cachyos/browseros-neo-signin host/cachyos/browseros-neo-sync-identity host/cachyos/check-browseros-neo-launcher host/cachyos/check-browseros-neo-sync-identity host/cachyos/check-browseros-neo host/cachyos/prune-desktop
+ruff check bin/browseros-call bin/check-browseros-call bin/check-webtext host/cachyos/browseros-neo-record-clean-stop host/cachyos/browseros-neo-signin host/cachyos/browseros-neo-sync-identity host/cachyos/check-browseros-neo-record-clean-stop host/cachyos/check-browseros-neo-launcher host/cachyos/check-browseros-neo-sync-identity host/cachyos/check-browseros-neo host/cachyos/prune-desktop
 codex/cachyos/check-instructions
 codex/cachyos/deploy-instructions
 ```

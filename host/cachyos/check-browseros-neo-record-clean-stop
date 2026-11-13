@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""Check browseros-neo-record-clean-stop on temporary profiles without starting a browser."""
+import json
+import runpy
+import tempfile
+import unittest
+from pathlib import Path
+
+record = runpy.run_path(str(Path(__file__).with_name("browseros-neo-record-clean-stop")))["record_clean_stop"]
+CLEAN = {"SERVICE_RESULT": "success", "EXIT_CODE": "exited", "EXIT_STATUS": "0"}
+
+
+class RecordCleanStop(unittest.TestCase):
+    def profile(self, exit_type, name="Default", text=None):
+        if not hasattr(self, "root"):
+            temporary = tempfile.TemporaryDirectory(prefix="neo-clean-stop-check-")
+            self.addCleanup(temporary.cleanup)
+            self.root = Path(temporary.name)
+        prefs = self.root / name / "Preferences"
+        prefs.parent.mkdir()
+        body = {"a": [1, 2.5, "é<"], "profile": {"exit_type": exit_type, "name": "x"}, "z": 18446744073709551615}
+        prefs.write_text(text if text is not None else json.dumps(body, separators=(",", ":"), ensure_ascii=False))
+        prefs.chmod(0o600)
+        return prefs
+
+    def test_clean_stop_rewrites_only_the_token(self):
+        prefs = self.profile("Crashed")
+        before = prefs.read_bytes()
+        self.assertEqual(record(self.root, CLEAN), [prefs])
+        self.assertEqual(prefs.read_bytes(), before.replace(b'"Crashed"', b'"SessionEnded"'))
+        self.assertEqual(prefs.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(sorted(p.name for p in prefs.parent.iterdir()), ["Preferences"])
+
+    def test_every_profile_is_covered(self):
+        first, second = self.profile("Crashed"), self.profile("Crashed", "Profile 1")
+        self.assertEqual(record(self.root, CLEAN), [first, second])
+
+    def test_crash_kill_and_timeout_keep_crashed(self):
+        prefs = self.profile("Crashed")
+        before = prefs.read_bytes()
+        for environment in (
+            {"SERVICE_RESULT": "core-dump", "EXIT_CODE": "dumped", "EXIT_STATUS": "SEGV"},
+            {"SERVICE_RESULT": "success", "EXIT_CODE": "killed", "EXIT_STATUS": "TERM"},
+            {"SERVICE_RESULT": "timeout", "EXIT_CODE": "killed", "EXIT_STATUS": "KILL"},
+            {"SERVICE_RESULT": "exit-code", "EXIT_CODE": "exited", "EXIT_STATUS": "1"},
+            {},
+        ):
+            self.assertEqual(record(self.root, environment), [], environment)
+        self.assertEqual(prefs.read_bytes(), before)
+
+    def test_recorded_exits_stay(self):
+        for exit_type in ("Normal", "SessionEnded"):
+            with self.subTest(exit_type):
+                prefs = self.profile(exit_type, exit_type)
+                before = prefs.read_bytes()
+                self.assertEqual(record(self.root, CLEAN), [])
+                self.assertEqual(prefs.read_bytes(), before)
+
+    def test_unexpected_shape_stays(self):
+        pretty = self.profile("Crashed", text=json.dumps({"profile": {"exit_type": "Crashed"}}, indent=2))
+        twice = self.profile("Crashed", "Profile 1",
+                             text='{"other":{"exit_type":"Crashed"},"profile":{"exit_type":"Crashed"}}')
+        twice_text = twice.read_text()
+        self.assertEqual(record(self.root, CLEAN), [])
+        self.assertIn('"Crashed"', pretty.read_text())
+        self.assertEqual(twice.read_text(), twice_text)
+
+
+if __name__ == "__main__":
+    unittest.main()
