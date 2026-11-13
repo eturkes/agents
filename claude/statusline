@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude Code context gauge + effort + cache keeper + project phase + rate limits.
+# Claude Code context gauge + model + effort + cache keeper + project phase + rate limits.
 # Mode signal = stdin: JSON ⇒ statusline; TTY/empty ⇒ manual transcript fallback.
 # Live usage = total_input_tokens (incl. cache reads/writes) + total_output_tokens =
 # CC's last-executor-iteration figure; transcript fallback applies the same rule (ctx).
@@ -10,8 +10,8 @@
 j=""
 [ -t 0 ] || j=$(cat)
 # One jq pass over the piped JSON → all fields, newline-delimited into positional reads. Empty u ⇒ manual.
-{ read -r u; read -r w; read -r wp; read -r wr; read -r ef; read -r pd; read -r sid; } <<EOF
-$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .effort.level // "", .workspace.project_dir // .cwd // "", .session_id // ""' 2>/dev/null)
+{ read -r u; read -r w; read -r wp; read -r wr; read -r ef; read -r pd; read -r sid; read -r md; } <<EOF
+$(printf '%s' "$j" | jq -r '(if (.context_window.total_input_tokens? != null or .context_window.total_output_tokens? != null) then ((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0)) else "" end), .context_window.context_window_size // "", .rate_limits.seven_day.used_percentage // "", .rate_limits.seven_day.resets_at // "", .effort.level // "", .workspace.project_dir // .cwd // "", .session_id // "", .model.display_name // .model.id // ""' 2>/dev/null)
 EOF
 # Real API turn = non-sidechain assistant record carrying usage → gauge fallback.
 ctx='def ctx: (.input_tokens//0) as $i | (.cache_creation_input_tokens//0) as $c | (.cache_read_input_tokens//0) as $r | (.output_tokens//0) as $o | ([.iterations[]?|select(type!="object" or (.type!="advisor_message" and .type!="compaction"))]|last) as $x | if $i+$c+$r>0 and (.iterations|type)=="array" and ($x|type)=="object" and ($x.type=="message" or $x.type=="fallback_message") and ([$x.input_tokens,$x.output_tokens,$x.cache_creation_input_tokens,$x.cache_read_input_tokens]|all(type=="number" and (isinfinite or isnan|not) and .>=0)) and $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens>0 then $x.input_tokens+$x.cache_creation_input_tokens+$x.cache_read_input_tokens+$x.output_tokens else $i+$c+$r+$o end;'
@@ -177,6 +177,11 @@ esac
 rl=" | $pt$rl"
 [ -n "$kp" ] && rl=" | $kp$rl"
 [ -n "$ef" ] && rl=" | $ef$rl"
+# MAIN's model varies per launch (`--model`) → shown beside the gauge; Fable ⇒ purple.
+case $md in
+  *[Ff]able*) md=$(printf '\033[35m%s\033[0m' "$md") ;;
+esac
+[ -n "$md" ] && rl=" | $md$rl"
 awk -v u="$u" -v w="$w" -v c="$c" -v r="$rl" '
 function h(n){ if(n>=1000000){s=sprintf("%.1fM",n/1000000);sub(/\.0M$/,"M",s);return s}
               return sprintf("%dK",int(n/1000+0.5)) }
