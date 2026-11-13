@@ -256,9 +256,10 @@ md() {
   got=${out#* | }; got=${got%% | *}
   [ "$got" = "$2" ] || { fail=$((fail + 1)); printf 'FAIL %s: want %s, got %s\n' "$1" "$2" "$got" | cat -v; }
 }
-md model-opus 'Opus 5.5' '{"id":"claude-opus-5-5","display_name":"Opus 5.5"}'
-md model-fable "${E}[35mFable 5.2${E}[0m" '{"id":"claude-fable-5-2","display_name":"Fable 5.2"}'
-md model-id-only "${E}[35mclaude-fable-5-2${E}[0m" '{"id":"claude-fable-5-2"}'
+md model-opus opus '{"id":"claude-opus-5-5","display_name":"Opus 5.5"}'
+md model-fable "${E}[35mfable${E}[0m" '{"id":"claude-fable-5-2","display_name":"Fable 5.2"}'
+md model-id-only "${E}[35mfable${E}[0m" '{"id":"claude-fable-5-2"}'
+md model-1m opus '{"id":"claude-opus-5-5[1m]","display_name":"Opus 5.5 (1M context)"}'
 md model-absent low
 printf '%d/%d passed\n' $((n - fail)) "$n"
 [ "$fail" -eq 0 ]
