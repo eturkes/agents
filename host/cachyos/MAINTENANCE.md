@@ -86,6 +86,12 @@ done
 
 Checks = `bash -n host/cachyos/cli-proxy-api-patch`, `shellcheck host/cachyos/cli-proxy-api-patch`, `ruff check host/cachyos/check-cli-proxy-api-patch`, `python -B host/cachyos/check-cli-proxy-api-patch -q`, `host/cachyos/cli-proxy-api-patch check`.
 
+### CLIProxyAPI model catalog
+
+- The proxy routes a model id only when its catalog lists it: `models.json` of `router-for-me/models`, fetched at start + every 3 h. A release ahead of that repository → `unknown provider for model <id>`, while Codex's own list (`~/.codex/models_cache.json`) already carries the id.
+- Bridge = local catalog: upstream `models.json` + one entry per missing id in each `codex-*` tier that lists its predecessor (the predecessor's entry with `id`, `display_name`, `created` + `description` replaced) → `~/.local/share/cli-proxy-api/models.json` (outside `auth-dir`, whose `*.json` files load as credentials), then `models:` → `catalog: "<that absolute path>"` appended to `~/.cli-proxy-api/config.yaml` (`>>` keeps the watched inode). The proxy reloads without a restart: journal `re-registered models … [codex]`, `/v1/models` lists the id; a file it rejects leaves the last valid catalog in place.
+- A local catalog replaces the upstream sources ⇒ later upstream entries stay out while it stands. Upstream lists every bridged id → delete the `models:` block + the file; `upgrade --check` reports `REVIEW` while the block exists.
+
 ### Agent crash diagnostics
 
 - `host/cachyos/agent-crash-policy apply` masks all installed DrKonqi user units + its system processor template, stops loaded instances and clears their failures.

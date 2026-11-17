@@ -213,6 +213,15 @@ check_cli_proxy_api_patch() {
   esac
   details "$check_output"
 }
+check_cli_proxy_api_catalog() {
+  # A local catalog replaces the upstream model sources (MAINTENANCE.md, CLIProxyAPI model catalog).
+  if grep -Eqs '^[[:space:]]+catalog:[[:space:]]*["'\'']?/' "$HOME/.cli-proxy-api/config.yaml"; then
+    report REVIEW 'CLIProxyAPI model catalog: local catalog in config.yaml'
+    echo '    Next: Upstream lists every bridged model id → remove the models block and its file (MAINTENANCE.md).'
+  else
+    report PASS 'CLIProxyAPI model catalog: upstream sources'
+  fi
+}
 postflight() {
   printf '\n=== System health and snapshot storage ===\n'
   check_packages
@@ -230,6 +239,7 @@ postflight() {
   check 'BrowserOS Neo connection' 'Run browseros-neo. Then run upgrade --check again.' hide \
     browseros-call tabs '{"action":"list"}'
   check_cli_proxy_api_patch
+  check_cli_proxy_api_catalog
   check_configs
   check 'Project snapshot storage' 'Run project-snapshots report. Resolve the reported error.' show \
     "$script_dir/project-snapshots" report

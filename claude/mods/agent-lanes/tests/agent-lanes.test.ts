@@ -48,7 +48,7 @@ test('each alias spawns its lane model; no alias spawns sol', async ($, on) => {
   await spawn($, 'general-purpose', 'sonnet')
   await spawn($, 'researcher', 'haiku')
   await spawn($, 'consultant', 'opus')
-  expect(w.spawned.map(s => s.model)).toEqual([DEFAULT_MODEL, 'gpt-6.1-terra', 'gpt-6.1-terra', 'gpt-6-astra'])
+  expect(w.spawned.map(s => s.model)).toEqual([DEFAULT_MODEL, 'gpt-6.1-terra', 'gpt-6.1-terra', 'gpt-6.2-astra'])
 })
 
 test('roles default to their lane; a named alias outranks the role', async ($, on) => {
@@ -57,7 +57,7 @@ test('roles default to their lane; a named alias outranks the role', async ($, o
   await spawn($, 'scientist')
   await spawn($, 'classifier')
   await spawn($, 'scientist', 'sonnet')
-  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6.1-terra', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra'])
+  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6.1-terra', 'gpt-6.2-astra', 'gpt-6.2-sol', 'gpt-6.1-terra'])
 })
 
 test('the launch pin replaces the default lane alone', async ($, on) => {
@@ -66,7 +66,7 @@ test('the launch pin replaces the default lane alone', async ($, on) => {
   await spawn($, 'operator')
   await spawn($, 'classifier')
   await spawn($, 'general-purpose', 'opus')
-  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-astra'])
+  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.2-sol', 'gpt-6.2-astra'])
 })
 
 test('a GPT id passes; fable, inherit and Claude ids are refused; forks + resumes pass untouched', async ($, on) => {
@@ -117,7 +117,7 @@ test('the Agent tool description carries the lanes', async ($, on) => {
   const r = await $.tool.describe({ tool: 'Agent', description: 'Launch a new agent.' } as never)
   expect(r.description).toBe(`Launch a new agent.\n\n${describeLanes()}`)
   expect(r.description).toContain('`haiku` → gpt-6.1-terra at MAIN effort −1, floor medium')
-  expect(r.description).toContain('classifier → gpt-6.1-sol at MAIN effort −2')
+  expect(r.description).toContain('classifier → gpt-6.2-sol at MAIN effort −2')
 })
 
 test('a terra agent is sent back once at its first stop; others stop freely', async ($, on) => {
@@ -163,7 +163,7 @@ test('IMPLEMENT keeps astra one effort above MAIN', async ($, on) => {
   await step($, undefined, 'high')
   await spawn($, 'scientist')
   await agentCall($, { model: 'opus' })
-  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6-astra'])
+  expect(w.spawned.map(s => s.model)).toEqual(['gpt-6.2-astra'])
   expect(w.calls.map(c => c.effort)).toEqual(['xhigh'])
 })
 

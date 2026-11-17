@@ -217,6 +217,18 @@ class Upgrade(unittest.TestCase):
             self.assertIn(f"[{label}] CLIProxyAPI patch", output)
             self.assertIn("Restart pending", output)
 
+    def test_local_cli_proxy_api_catalog_needs_review(self):
+        config = self.home / ".cli-proxy-api/config.yaml"
+        config.parent.mkdir()
+        config.write_text('port: 8317\n# models:\n#   catalog: "/commented"\nmodels:\n  catalog: ""\n')
+        code, output, _ = self.run_upgrade("--check")
+        self.assertEqual(code, 0, output)
+        self.assertIn("[PASS] CLIProxyAPI model catalog", output)
+        config.write_text('port: 8317\nmodels:\n  catalog: "/home/user/models.json"\n')
+        code, output, _ = self.run_upgrade("--check")
+        self.assertEqual(code, 2, output)
+        self.assertIn("[REVIEW] CLIProxyAPI model catalog", output)
+
     def test_cli_proxy_api_patch_review_does_not_stop_updates(self):
         self.settings["cli-proxy-api-patch apply"] = ["Packaged 8.0.40 binary kept\n", 2]
         code, output, calls = self.run_upgrade(tty=True)
