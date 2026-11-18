@@ -154,6 +154,14 @@ test('a teammate brief carries the note once; the TaskStop hold knows it by name
   expect(await taskStop($, 'rev-3@team')).toEqual({ deny: stopHold('rev-3', 'rev-3-DONE-1', []) })
 })
 
+test('a teammate brief that already holds the note stays as sent', async ($, on) => {
+  const w = world(on)
+  w.agents = [{ id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
+  const brief = `<teammate-message teammate_id="team-lead">\nAudit y.\n\n${SPAWN_NOTE}\n</teammate-message>`
+  await tell($, 'tm-1', brief)
+  expect(w.rows).toEqual([[{ type: 'text', text: brief }]])
+})
+
 test('a teammate already tracked before its row keeps the row as sent', async ($, on) => {
   const w = world(on)
   w.agents = [{ id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]

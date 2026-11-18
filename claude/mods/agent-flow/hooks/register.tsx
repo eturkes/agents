@@ -173,6 +173,8 @@ export const register: Register = on => {
 
   // Agent({ name }) spawns a teammate past agent.spawn ⇒ its brief = its first user row, seen before any other event of its loop.
   // A loop tracked before this hook loaded (hot reload) gains its name on its next row, never the note.
+  // A named agent of the default type passes agent.spawn too ⇒ its row already holds the note; a second copy = a block CC
+  // leaves out of the teammate's next turn ⇒ the first block changes + the provider reads the whole conversation uncached.
   on('session.append', async ($, e, next) => {
     if (e.agentId === undefined || e.message.type !== 'user') return next(e)
     const id = e.agentId
@@ -182,7 +184,7 @@ export const register: Register = on => {
     if (!known?.listed || marker !== undefined) {
       await patch($, id, a => ({ ...a, listed: true, name: teammate?.name ?? a.name, marker: marker ?? a.marker }))
     }
-    if (known !== undefined || teammate === undefined) return next(e)
+    if (known !== undefined || teammate === undefined || textOf(e.message.content).includes(SPAWN_NOTE)) return next(e)
     return next({ ...e, message: { ...e.message, content: [...e.message.content, { type: 'text', text: SPAWN_NOTE }] } })
   })
 
