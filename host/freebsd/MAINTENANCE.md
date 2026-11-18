@@ -40,10 +40,21 @@ helpers remain on the host through forced-command SSH.
 ## Project ownership and recovery
 
 - PromptVM runtime = shared immutable wheel; eturkes.com controller trees =
-  frozen provisioning/receipt/recovery assets. Reapply 0.2.20 → exact artifact
-  `~/pro/promptvm/dist/prompt-recovery-20261102/promptvm-0.2.20-py3-none-any.whl`
-  + adjacent `source-receipt.json`. Live wheel excludes canonical config-pin
+  frozen provisioning/receipt/recovery assets. Reapply 0.2.21 → exact artifact
+  `~/pro/promptvm/dist/model-toolchain-20261118/promptvm-0.2.21-py3-none-any.whl`
+  + adjacent `release-receipt.json`. Live wheel excludes canonical config-pin
   changes. Sandbox = reviewed exact-binary pins + native ownership/mode gates.
+- Fleet Codex pair = pinned 0.166.0 beside the retained 0.162.1. Codex ≥ 0.167.0
+  saves `auth.json` through a temporary file beside the resolved target ⇒ the
+  save fails in the fleet's root-owned 0550 state directory + a refreshed
+  service login is lost; pin a later pair only after the controllers copy +
+  persist the login, as the wedding worker does. Before any new pair runs with
+  a real login: dummy-key `login --with-api-key` in the guest layout.
+- Service logins = one device sign-in each (three VMs + wedding, same account).
+  A copied login dies when the other copy refreshes. Renewal → device sign-in
+  as the worker identity in a disposable home, then root installs the file with
+  the original owner/mode/link count + retains the spent file root-only.
+  Releases verify one real reply per profile; web checks make no model call.
   Rehab job-memory policy →
   `~/pro/promptvm/docs/rehab-job-memory-2026-10-20.md`.
 - Evidence root = `~/.local/state/t70-deployment-20261020/`; index =
@@ -55,7 +66,10 @@ helpers remain on the host through forced-command SSH.
   state; preserve the shared host-root dataset.
 - Prompt/auth recovery → `~/pro/promptvm/docs/prompt-recovery-2026-11-02.md`;
   root-only wedding rollback/evidence →
-  `/var/backups/wedding-prompt-recovery-20261102/`.
+  `/var/backups/wedding-prompt-recovery-20261102/`. 0.2.21 evidence + spent
+  logins → `/var/backups/promptvm-toolchain-20261118/`,
+  `/var/backups/model-toolchain-20261118/`; Nanoha guest
+  `/var/backups/codex-login-20261118/`.
 - Veriformatics production/admin/backups/log handling → `veriformatics-applied.md`
   under the evidence root. Production = T70; T25 development =
   `~/Projects/veriformatics` + linked worktrees, including Naoto research.
@@ -72,9 +86,9 @@ helpers remain on the host through forced-command SSH.
   Current services → live checks. Package/boot + selected-font recovery evidence →
   `~/.local/state/t70-upgrade-20261030/RESULTS.md`; earlier boot evidence →
   `~/.local/state/t70-upgrade-20261021/post-reboot/RESULTS.md`.
-- PromptVM 0.2.20 reapply → verified artifact, omit `--test-rollback`;
-  preimages restore 0.2.19. Historical 0.2.16 → 0.2.15 rollback requires the old
-  Bubblewrap package first.
+- PromptVM 0.2.21 reapply → verified artifact, omit `--test-rollback`;
+  preimages restore 0.2.20, which uses the retained 0.162.1 pair. Historical
+  0.2.16 → 0.2.15 rollback requires the old Bubblewrap package first.
 - Naoto fixed-input quarantine →
   `~/pro/promptvm/docs/input-quarantine-2026-10-23.md`.
   Automatic recovery = five approved private inputs only; verified snapshot
@@ -82,15 +96,19 @@ helpers remain on the host through forced-command SSH.
   8 GiB reserve, 64-event cap, one new event/hour. Unknown/system files → review.
   Preserve `.tau-input-quarantine` receipts/bad bytes + evidence snapshots;
   pending-event recovery → journal resume + native integrity checks.
-- Prompt policy → `~/pro/promptvm/docs/model-policy-2026-10-27.md`.
+- Prompt policy → `~/pro/promptvm/docs/model-toolchain-2026-11-18.md`.
   VM + wedding users = `gpt-6.1-terra`/medium/priority;
-  `eturkes` = `gpt-6.1-sol`/xhigh/default.
+  `eturkes` = `gpt-6.2-sol`/xhigh/default. A newer model can need a newer Codex
+  client: the provider refused `gpt-6.2-sol` from 0.165.0.
 - Preserve accounts/keys/browser credentials; host SSH = TCP 9993 + public keys;
   retain existing public ingress + private VM boundaries.
 - Package work → `zpool status -v` + relevant `/var/log/{daily,weekly,monthly}.log`,
   signed indexes/audits + exact transaction/reverse-dependency review. Stage one
   host/guest at a time with task-scoped rollback points; verify SSH + affected
   ingress/backend health between stages. Local snapshots share the pool.
+  The wedding jail + its worker mount the host's `/usr/local/{bin,lib}` read-only
+  ⇒ a host upgrade of `codex` or `python312` changes the wedding editor at once:
+  run `wedding-manage verify` + `probe` + `ops/check-web.py` in the same stage.
 - Home snapshots = `/usr/local/sbin/home-snapshot` via `/etc/cron.d/home-snapshot`,
   hourly/daily. Selected-file recovery → `~/.zfs/snapshot/`; personal `~/doc/`
   requires explicit user inclusion.
