@@ -40,8 +40,8 @@ helpers remain on the host through forced-command SSH.
 ## Project ownership and recovery
 
 - PromptVM runtime = shared immutable wheel; eturkes.com controller trees =
-  frozen provisioning/receipt/recovery assets. Reapply 0.2.21 → exact artifact
-  `~/pro/promptvm/dist/model-toolchain-20261118/promptvm-0.2.21-py3-none-any.whl`
+  frozen provisioning/receipt/recovery assets. Reapply 0.2.22 → exact artifact
+  `~/pro/promptvm/dist/policy-concision-20261119/promptvm-0.2.22-py3-none-any.whl`
   + adjacent `release-receipt.json`. Live wheel excludes canonical config-pin
   changes. Sandbox = reviewed exact-binary pins + native ownership/mode gates.
 - Fleet Codex pair = pinned 0.166.0 beside the retained 0.162.1. Codex ≥ 0.167.0
@@ -86,9 +86,11 @@ helpers remain on the host through forced-command SSH.
   Current services → live checks. Package/boot + selected-font recovery evidence →
   `~/.local/state/t70-upgrade-20261030/RESULTS.md`; earlier boot evidence →
   `~/.local/state/t70-upgrade-20261021/post-reboot/RESULTS.md`.
-- PromptVM 0.2.21 reapply → verified artifact, omit `--test-rollback`;
-  preimages restore 0.2.20, which uses the retained 0.162.1 pair. Historical
-  0.2.16 → 0.2.15 rollback requires the old Bubblewrap package first.
+- PromptVM 0.2.22 reapply → verified artifact, omit `--test-rollback`; its
+  rollback to 0.2.21 = refused across the instruction-only heads of 2026-11-19
+  ⇒ recover forward. 0.2.21 preimages restore 0.2.20, which uses the retained
+  0.162.1 pair. Historical 0.2.16 → 0.2.15 rollback requires the old Bubblewrap
+  package first.
 - Naoto fixed-input quarantine →
   `~/pro/promptvm/docs/input-quarantine-2026-10-23.md`.
   Automatic recovery = five approved private inputs only; verified snapshot
@@ -115,6 +117,9 @@ helpers remain on the host through forced-command SSH.
 - Corruption/panic cause = unresolved; service recovery = complete. Before repair
   → `/var/log/corruption-events.md`; preserve evidence + append symptoms,
   actions/results, separating observations/hypotheses + recovery/cause resolution.
+  Guest file/input checksum mismatch → compare a direct (`O_DIRECT`) read with
+  the cached read before any restore: Rehab 2026-11-19 = one cached bit differed,
+  stored bytes intact ⇒ dropping that file's cached pages recovered it.
   Host panic evidence =
   `/var/backups/t70-deployment-20261020/host-panic-20261021T000843JST/`;
   guest shutdown evidence + held crash/clean-stop snapshots → rightsize records.
