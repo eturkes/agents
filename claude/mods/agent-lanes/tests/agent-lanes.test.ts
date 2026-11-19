@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { DEFAULT_MODEL, EARLY_PHASE, EFFORTS, LANES, NUDGE, ROLE_LANES, describeLanes, laneEffort, phaseLine, refusal } from '../hooks/lanes'
+import { CLAUDE_MODEL, DEFAULT_MODEL, EARLY_PHASE, EFFORTS, LANES, NUDGE, ROLE_LANES, claudeRefusal, describeLanes, laneEffort, phaseLine, refusal } from '../hooks/lanes'
 import type { Lane } from '../hooks/lanes'
 
 type World = { spawned: { model?: string; subagentType: string; name?: string }[]; calls: Record<string, unknown>[]; steps: unknown[] }
@@ -190,4 +190,42 @@ test('a MAIN effort change reaches agents spawned after it; earlier agents keep 
   await spawn($, 'researcher', 'haiku', 'swarm-2', { tool_use_id: 'c2' })
   for (const id of ['id-swarm-1', 'id-swarm-2']) await step($, id, 'high')
   expect(w.steps).toEqual(['medium', 'max', 'medium', 'xhigh'])
+})
+
+const CLAUDE = { CLAUDE_AGENT_LANES: 'claude' }
+
+test('the Claude table has one lane: omitted, haiku + every role spawn Haiku; the launch pin is ignored', async ($, on) => {
+  const w = world(on, { ...CLAUDE, CLAUDE_CODE_SUBAGENT_MODEL: 'gpt-6-luna' })
+  await spawn($, 'researcher')
+  await spawn($, 'general-purpose', 'haiku')
+  await spawn($, 'operator')
+  await spawn($, 'scientist')
+  expect(w.spawned.map(s => s.model)).toEqual([CLAUDE_MODEL, CLAUDE_MODEL, CLAUDE_MODEL, CLAUDE_MODEL])
+})
+
+test('the Claude table refuses the other aliases + GPT ids; a full Claude id + a fork pass as given', async ($, on) => {
+  const w = world(on, CLAUDE)
+  for (const m of ['sonnet', 'opus', 'fable', 'inherit', 'gpt-6.2-sol']) {
+    expect(await spawn($, 'general-purpose', m)).toEqual({ deny: claudeRefusal(m) })
+    expect(await agentCall($, { model: m })).toEqual({ deny: claudeRefusal(m) })
+  }
+  await spawn($, 'reviewer', 'claude-opus-5-5')
+  await spawn($, 'fork', undefined, undefined, { fork: true })
+  expect(w.spawned.map(s => s.model)).toEqual(['claude-opus-5-5', undefined])
+  expect(w.calls).toHaveLength(0)
+})
+
+test('the Claude table runs agents at MAIN\'s effort, unshifted in every phase + without a stop check', async ($, on) => {
+  const w = world(on, CLAUDE, '## Phase\n\nPROTOTYPE — the editor\n')
+  await step($, undefined, 'xhigh')
+  await agentCall($, {})
+  await agentCall($, { model: 'haiku' })
+  await agentCall($, { subagent_type: 'classifier' })
+  await agentCall($, { model: 'claude-sonnet-5-5', effort: 'low' })
+  expect(w.calls.map(c => c.effort)).toEqual(['xhigh', 'xhigh', 'xhigh', 'low'])
+  await spawn($, 'researcher', 'haiku', 'researcher-1')
+  expect((await stop($, 'id-researcher-1')).block).toBeUndefined()
+  const r = await $.tool.describe({ tool: 'Agent', description: 'Launch a new agent.' } as never)
+  expect(r.description).toBe(`${describeLanes(true)}\n\nLaunch a new agent.`)
+  expect(r.description).toContain('omitted or `haiku` → claude-haiku-5-5 at MAIN\'s effort')
 })

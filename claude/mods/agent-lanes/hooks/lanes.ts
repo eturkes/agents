@@ -80,6 +80,21 @@ export const NUDGED_MODEL = 'gpt-6.1-terra'
 
 export const REFUSED = 'fable'
 
+/** Settings `env` `CLAUDE_AGENT_LANES=claude` (the `fable` profile: direct Anthropic sign-in, no GPT) → the Claude
+ *  table = one lane. No Claude model outranks a Fable MAIN ⇒ a teammate pays through breadth alone, at the lowest
+ *  price: CC 2.1.328's model table, $ per M tokens in / out: Haiku 5.5 0.10 / 0.50 (0.50 / 2.50 past 100K prompt
+ *  tokens), Sonnet 5.5 2 / 10, Opus 5.5 4 / 20, Fable 5.2 8 / 40 (user ruling 2026-11-20: "I really wonder if any
+ *  other teammate other than Haiku makes sense"; untested against a Sonnet lane). Effort = MAIN's, unshifted. */
+export const CLAUDE_MODEL = 'claude-haiku-5-5'
+export const CLAUDE_ALIAS = 'haiku'
+/** The Claude table's verdict on a call's model: the lane, a full Claude id passed as given (the user's explicit
+ *  request), or a refusal. */
+export function claudeLane(model: string | undefined): { model: string } | { deny: string } {
+  if (model === undefined || model === CLAUDE_ALIAS) return { model: CLAUDE_MODEL }
+  if (model.startsWith('claude-')) return { model }
+  return { deny: claudeRefusal(model) }
+}
+
 /** `.agent/spec.md` `Phase` line 1 in spec-lint's form, `Phase: ` prefix allowed. */
 export const EARLY_PHASE = /^(?:Phase: )?(?:PROTOTYPE|ITERATE) — \S/
 
@@ -100,11 +115,16 @@ export function phaseLine(spec: string): string | undefined {
 export const refusal = (model: string) =>
   `model "${model}" → no lane: lanes = omitted (${DEFAULT_MODEL}), sonnet, haiku, opus (Agent tool description).`
 
+export const claudeRefusal = (model: string) =>
+  `model "${model}" → no lane: this session runs without GPT + has one lane, omitted | \`${CLAUDE_ALIAS}\` (${CLAUDE_MODEL}); another Claude model = the user's explicit request alone → its full id (\`claude-…\`); when to dispatch = CLAUDE.md \`Model lanes\`.`
+
 export const NUDGE =
   'Stop check (terra lane, once): reread your task\'s finish line item by item + rerun the validator it names. An item still unmet, or a step the brief asks for left undone (a search not run, a source not opened, a `none-found` row ahead of its searches) → do that work now; a step you tried + could not do → named with its error. Every item met → stop with your final message.'
 
 /** Appended to the Agent tool's description: the mapping beside the enum it reinterprets. */
-export function describeLanes(): string {
+export function describeLanes(claudeOnly = false): string {
+  if (claudeOnly)
+    return `Model lanes (this session, no GPT): one lane — \`model\` omitted or \`${CLAUDE_ALIAS}\` → ${CLAUDE_MODEL} at MAIN's effort; \`sonnet\`, \`opus\`, \`fable\` → refused; a full \`claude-…\` id passes as given (the user's explicit request alone). When to dispatch = CLAUDE.md \`Model lanes\`.`
   const effort = (l: Lane) =>
     l.shift ? ` at MAIN effort ${l.shift > 0 ? '+' : '−'}${Math.abs(l.shift)}${l.floor ? `, floor ${l.floor}` : ''}` : ''
   const lane = (l: Lane) => `${l.model}${effort(l)}`

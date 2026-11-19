@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Effort, Lane } from './lanes'
-import { DEFAULT_MODEL, EARLY_PHASE, LANES, NUDGE, NUDGED_MODEL, REFUSED, ROLE_LANES, describeLanes, laneEffort, phaseLine, refusal } from './lanes'
+import { DEFAULT_MODEL, EARLY_PHASE, LANES, NUDGE, NUDGED_MODEL, REFUSED, ROLE_LANES, claudeLane, describeLanes, laneEffort, phaseLine, refusal } from './lanes'
 
 // Agent ids routed to terra whose first stop has not been sent back; kept across mod reloads + resumes.
 const pending = atom({ plugin: 'agent-lanes', key: 'nudge' } as const, {})
@@ -35,15 +35,24 @@ async function routedLane($: EngineInterface, alias: string | undefined, role: s
 /** A GPT id passes as given (a workflow's or plugin's pick); any other model the lanes don't name is refused. */
 const isGpt = (model: string) => model.startsWith('gpt-')
 
+/** The Claude table rules this session (`lanes.ts` `CLAUDE_MODEL`); read per call ⇒ a settings change reaches a running session. */
+const claudeOnly = async ($: EngineInterface) => ((await $.env.get('CLAUDE_AGENT_LANES')) ?? '').trim() === 'claude'
+
 export const register: Register = on => {
-  on('tool.describe', { tool: 'Agent' }, (_$, e, next) => next({ ...e, description: `${e.description}\n\n${describeLanes()}` }))
+  // Code Mode cuts a tool's description at about 4K characters (`describeTool`, CC 2.1.328) ⇒ the Claude table,
+  // which Code Mode sessions carry, leads the text; the GPT table keeps its place after it.
+  on('tool.describe', { tool: 'Agent' }, async ($, e, next) =>
+    next({ ...e, description: (await claudeOnly($)) ? `${describeLanes(true)}\n\n${e.description}` : `${e.description}\n\n${describeLanes()}` }))
 
   // The Agent schema built with SUBAGENT_MODEL_FORCE off carries `model`; the generated types may predate it.
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     if (e.tool !== 'Agent' || e.subagent_type === 'fork') return next(e)
     const alias = (e as { model?: string }).model
-    if (alias === REFUSED) return { deny: refusal(alias) }
-    const lane = await routedLane($, alias, e.subagent_type)
+    const claude = await claudeOnly($)
+    const ruled = claude ? claudeLane(alias) : undefined
+    if (ruled !== undefined && 'deny' in ruled) return { deny: ruled.deny }
+    if (!claude && alias === REFUSED) return { deny: refusal(alias) }
+    const lane = claude ? undefined : await routedLane($, alias, e.subagent_type)
     const effort = e.effort ?? laneEffort(lane, await read($, main))
     if (effort !== undefined && e.tool_use_id !== undefined) callEfforts.set(e.tool_use_id, effort)
     return effort !== e.effort ? next({ ...e, effort }) : next(e)
@@ -51,9 +60,16 @@ export const register: Register = on => {
 
   on('agent.spawn', async ($, e, next) => {
     if (e.fork || e.resume !== undefined) return next(e)
-    if (e.model !== undefined && LANES[e.model] === undefined && !isGpt(e.model)) return { deny: refusal(e.model) }
-    const pin = (await $.env.get('CLAUDE_CODE_SUBAGENT_MODEL'))?.trim()
-    const model = e.model !== undefined && isGpt(e.model) ? e.model : (await routedLane($, e.model, e.subagentType))?.model ?? (pin || DEFAULT_MODEL)
+    let model: string
+    if (await claudeOnly($)) {
+      const ruled = claudeLane(e.model)
+      if ('deny' in ruled) return { deny: ruled.deny }
+      model = ruled.model
+    } else {
+      if (e.model !== undefined && LANES[e.model] === undefined && !isGpt(e.model)) return { deny: refusal(e.model) }
+      const pin = (await $.env.get('CLAUDE_CODE_SUBAGENT_MODEL'))?.trim()
+      model = e.model !== undefined && isGpt(e.model) ? e.model : (await routedLane($, e.model, e.subagentType))?.model ?? (pin || DEFAULT_MODEL)
+    }
     const r = await next({ ...e, model })
     const id = r.agentId
     const effort = callEfforts.get(e.tool_use_id)
