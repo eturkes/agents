@@ -1,28 +1,44 @@
 #!/bin/sh
-# Usage: link-profile [--check] <name>
+# Usage: link-profile [--check] [--own <entry>]... <name>
 #
 # Share the main Claude configuration with the profile ~/.claude/<name>.
 # First, copy the CLAUDE.md of the profile into ~/.claude/<name>/CLAUDE.md.
 # The command links each other entry of ~/.claude into the profile.
+# A profile can also have its own copy of an entry, for example settings.json.
+# Copy that file into the profile first. Then name it with --own.
+# The command leaves an entry that you name with --own as it is.
 # It moves an entry that exists only in the profile into ~/.claude.
 # An entry that has different contents in both places is a conflict.
 # Resolve each conflict. Then run the command again.
 #
-#   --check  List the changes and the conflicts. Change nothing.
+#   --check        List the changes and the conflicts. Change nothing.
+#   --own <entry>  The profile has its own file for this entry. Do not link it.
 #
 # Exit status: 0 = done or current; 1 = a conflict, a failed change, or a change needed (--check);
 # 2 = an invalid name or a missing CLAUDE.md.
 case $1 in -h|--help) sed -n '2,/^[^#]/s/^# \{0,1\}//p' "$0"; exit 0 ;; esac
-# Profile = a CLAUDE_CONFIG_DIR that owns CLAUDE.md alone. Links are relative (../<entry>,
-# ../../.claude.json) ⇒ valid under any mount path. CC creates state dirs lazily ⇒ a profile-only
-# entry moves into ~/.claude; an empty dir or byte-identical file → link.
-check=
-[ "$1" = --check ] && { check=1; shift; }
+# Profile = a CLAUDE_CONFIG_DIR that owns CLAUDE.md + each --own entry (regular files, deployed before the
+# run: an own entry still a link means its deploy has not happened; `cp` writes through a link ⇒ deploy
+# with `cp --remove-destination`). Links are relative (../<entry>, ../../.claude.json) ⇒ valid under any
+# mount path. CC creates state dirs lazily ⇒ a profile-only entry moves into ~/.claude; an empty dir or
+# byte-identical file → link.
+usage() { echo 'usage: link-profile [--check] [--own <entry>]... <name>' >&2; exit 2; }
+check='' own=''
+while :; do
+  case $1 in
+    --check) check=1; shift ;;
+    --own) case $2 in ''|.*|*/*|*' '*) usage ;; esac; own="$own $2"; shift 2 ;;
+    *) break ;;
+  esac
+done
 name=$1
-case $name in ''|.*|*/*) echo 'usage: link-profile [--check] <name>' >&2; exit 2 ;; esac
+case $name in ''|.*|*/*) usage ;; esac
 b=$HOME/.claude p=$HOME/.claude/$name n=0 c=0 f=0
-[ -f "$p/CLAUDE.md" ] && [ ! -L "$p/CLAUDE.md" ] ||
-  { echo "link-profile: $p/CLAUDE.md missing: deploy it first" >&2; exit 2; }
+for o in CLAUDE.md $own; do
+  [ -f "$p/$o" ] && [ ! -L "$p/$o" ] ||
+    { echo "link-profile: $p/$o missing: deploy it first" >&2; exit 2; }
+done
+kept=" CLAUDE.md $name$own "
 change() { n=$((n + 1)); echo "$1"; shift; [ -n "$check" ] || "$@" || { f=$((f + 1)); echo "link-profile: failed: $*" >&2; }; }
 relink() { rm "$1" && ln -s "$2" "$1"; }
 swap() { rmdir "$p/$1" && ln -s "../$1" "$p/$1"; }
@@ -30,7 +46,7 @@ migrate() { mv "$p/$1" "$b/$1" && ln -s "../$1" "$p/$1"; }
 for e in "$b"/* "$b"/.[!.]* "$b"/..?*; do
   [ -e "$e" ] || [ -L "$e" ] || continue
   x=${e##*/} t=$p/${e##*/}
-  case $x in CLAUDE.md|"$name") continue ;; esac
+  case $kept in *" $x "*) continue ;; esac
   [ -L "$e/.claude.json" ] && continue  # another profile
   if [ -L "$t" ]; then
     [ "$(readlink "$t")" = "../$x" ] || change "relink $x" relink "$t" "../$x"
@@ -47,7 +63,7 @@ done
 for e in "$p"/* "$p"/.[!.]* "$p"/..?*; do
   [ -e "$e" ] || [ -L "$e" ] || continue
   x=${e##*/}
-  case $x in CLAUDE.md|.claude.json) continue ;; esac
+  case " .claude.json$kept" in *" $x "*) continue ;; esac
   if [ -L "$e" ]; then
     [ -e "$e" ] || [ -e "$b/$x" ] || [ -L "$b/$x" ] || change "drop $x (dangling)" rm "$e"
   elif [ ! -e "$b/$x" ] && [ ! -L "$b/$x" ]; then

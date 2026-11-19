@@ -18,8 +18,8 @@ mkdir -p "$b/agents" "$b/other" "$p" && : > "$t/.claude.json"
 : > "$b/CLAUDE.md"; : > "$b/settings.json"; : > "$b/history.jsonl"; : > "$b/.credentials.json"
 ln -s ../../.claude.json "$b/other/.claude.json"
 run fable; ck missing-deploy 2 "link-profile: $p/CLAUDE.md missing: deploy it first"
-run; ck no-name 2 'usage: link-profile [--check] <name>'
-run ../x; ck dotted-name 2 'usage: link-profile [--check] <name>'
+run; ck no-name 2 'usage: link-profile [--check] [--own <entry>]... <name>'
+run ../x; ck dotted-name 2 'usage: link-profile [--check] [--own <entry>]... <name>'
 echo fable > "$p/CLAUDE.md"
 run fable; ck fresh 0 'fable: 5 changes, 0 conflicts' \
   '[ "$(readlink "$p/agents")" = ../agents ]' '[ "$(readlink "$p/history.jsonl")" = ../history.jsonl ]' \
@@ -52,7 +52,11 @@ rm "$p/settings.json" && cp "$b/settings.json" "$p/settings.json"
 run fable; ck identical-copy 0 'fable: 1 changes, 0 conflicts' '[ "$(readlink "$p/settings.json")" = ../settings.json ]'
 rm "$p/settings.json" && echo '{}' > "$p/settings.json"
 run fable; ck differing-copy 1 'fable: 0 changes, 1 conflicts' '[ ! -L "$p/settings.json" ]'
+run --own settings.json fable; ck own-entry 0 'fable: 0 changes, 0 conflicts' '[ "$(cat "$p/settings.json")" = "{}" ]'
+run --check --own settings.json fable; ck own-entry-check 0 'fable: 0 changes needed, 0 conflicts'
 rm "$p/settings.json" && ln -s ../settings.json "$p/settings.json"
+run --own settings.json fable; ck own-undeployed 2 "link-profile: $p/settings.json missing: deploy it first"
+run --own ../x fable; ck own-path 2 'usage: link-profile [--check] [--own <entry>]... <name>'
 rm "$p/.claude.json" && echo '{}' > "$p/.claude.json"
 run fable; ck real-claude-json 1 'fable: 0 changes, 1 conflicts' '[ ! -L "$p/.claude.json" ]'
 if [ "$fail" -eq 0 ]; then echo "link-profile: $n/$n cases pass"; else echo "link-profile: $fail/$n cases FAIL"; exit 1; fi
