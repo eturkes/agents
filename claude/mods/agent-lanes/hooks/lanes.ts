@@ -10,13 +10,23 @@
 // Fable 5.2 the science boards split by task; + statement-faithfulness judging until checked (astra 6 led the one
 // benchmark; no 6.2 entry). terra = visual work, computer use + writing (tied sol 6.1 at lower cost; no rated board
 // pairs it with sol 6.2 yet) + gathering (copies + abstains well, judges less; left a broken search tool unreported
-// in 1% of OpenAI's cases, sol 6.2 in 9%; which gathers more per budget = untested); beats luna at every price above
-// $0.04.
-// Effort shifts = user rulings, no board tests them: haiku −1, floor medium (terra's steepest drop = medium → low);
-// classifier −2 (one paired corpus: sol low ≈ medium in flag count + known-error recall, 6.1 + 6.2; the brief's
-// boundary rules moved 6.2's flags 4×, effort 1.03×); opus +1 (astra's max gains on the hardest questions: HLE-Diamond
-// +4.9 over xhigh; its science gain depends on the board).
-// Codex credits = 25 × API $ per model ⇒ $/task = quota. When to pick each lane = host CLAUDE.md `Model lanes`.
+// in 1% of OpenAI's cases, sol 6.2 in 9%); beats luna at every price above $0.04.
+// Open-search sweeps, paired in-session check 2026-11-19 (one brief, one run per cell bar terra high ×3, distinct
+// sources per run): terra high 16–21 in 9–13 min, terra xhigh 20, sol medium 29 in 21 min, sol xhigh 50 in 33 min;
+// three terra-high runs together 35 (22 shared with sol xhigh, 13 only terra, 28 only sol) at under half sol xhigh's
+// flat-rate token cost ⇒ breadth = parallel terra, depth per run = sol; row accuracy past quote matching = ungraded.
+// Effort shifts = user rulings = starting points, none measured as an optimum (appraisal 2026-11-19): harder
+// multi-step work gained with effort (Bito hard sessions, sol low → high: +8.5 rubric points, misleading claims per
+// answer 0.62 → 0.23; Bug Hunt Bench, sol low…max: 36 / 45.7 / 49.7 / 49 / 54.7 of 105 planted bugs fixed), bounded
+// tests split (AI Coding Daily flat low…high; AI BENCHY sol low / medium / high 58 / 64 / 67 of 69). haiku −1, floor
+// medium (terra's steepest drop = medium → low); classifier −2 (one paired corpus: sol low ≈ medium in flag count +
+// known-error recall, 6.1 + 6.2; the brief's boundary rules moved 6.2's flags 4× + its recall 20 → 15 of 21, effort
+// 1.03×); opus +1 (astra max over xhigh: HLE-Diamond +4.9, Bug Hunt +2.7 of 105, AA index +0.5, AA Terminal-Bench
+// Science −0.5, a 23-test suite level; token cost +20% … +137% by workload).
+// Review = sol under the incumbent pick, astra unproven either way: Bug Hunt (find + fix) at xhigh astra 60 vs sol 49
+// (runs 59–62 vs 46–52), one 16-bug hunt level with 2–3 false reports from astra, one bug-finding score sol ahead.
+// Codex credits = 25 × API $ per model at flat per-token rates (the API's 2× rate past 272K input: OpenAI states it
+// absent for subscription use of sol 6.1 alone) ⇒ $/task ≈ quota. When to pick each lane = host CLAUDE.md `Model lanes`.
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -49,7 +59,9 @@ export function laneEffort(lane: Lane | undefined, main: string | undefined): Ef
   return EFFORTS[Math.max(shifted, lane?.floor === undefined ? 0 : EFFORTS.indexOf(lane.floor))]
 }
 
-/** Terra stops before its task is done ⇒ each terra agent's first stop is sent back once. */
+/** Terra stops before its task is done ⇒ each terra agent's first stop is sent back once. NUDGE's wording = measured
+ *  on `researcher` sweeps (2026-11-19): "rows filled + checked → stop" → 0 of 6 resumed source work; a text naming
+ *  the undone step kinds → 4 of 4 did (3–46 tool calls, 1–6 rows added). */
 export const NUDGED_MODEL = 'gpt-6.1-terra'
 
 export const REFUSED = 'fable'
@@ -75,7 +87,7 @@ export const refusal = (model: string) =>
   `model "${model}" → no lane: lanes = omitted (${DEFAULT_MODEL}), sonnet, haiku, opus (Agent tool description).`
 
 export const NUDGE =
-  'Stop check (terra lane, once): reread your task\'s finish line + the validator it names. Every deliverable row filled + checked → stop with your final message; otherwise continue until it holds.'
+  'Stop check (terra lane, once): reread your task\'s finish line item by item + rerun the validator it names. An item still unmet, or a step the brief asks for left undone (a search not run, a source not opened, a `none-found` row ahead of its searches) → do that work now; a step you tried + could not do → named with its error. Every item met → stop with your final message.'
 
 /** Appended to the Agent tool's description: the mapping beside the enum it reinterprets. */
 export function describeLanes(): string {
