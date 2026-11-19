@@ -1,7 +1,10 @@
 #!/bin/sh
 # fable — Claude Code with Fable as MAIN (claude/prompts/README.md `Fable as MAIN`).
 # Usage: fable [claude arguments], e.g. `fable --effort xhigh`, `fable --resume <id> --effort xhigh`.
-# = the Fable profile as config home + the Fable model id + the Opus host file kept out: CC loads
+# = the Fable profile as config home (own CLAUDE.md + settings.json: Code Mode on a direct Anthropic sign-in,
+# no GPT; claude/check-fable generates both) + the Fable model id + this command as the exit line's resume
+# hint (a Code Mode session resumes with Code Mode on alone ⇒ through `fable`; CC reads the hint from the
+# launch env, never from settings) + the Opus host file kept out: CC loads
 # `<dir>/.claude/CLAUDE.md` of every directory above the launch dir as a project file ⇒ under $HOME a
 # profile session also receives `~/.claude/CLAUDE.md`, the file the profile replaces; `claudeMdExcludes`
 # drops it (it matches user files too ⇒ a launch setting, never the shared settings.json).
@@ -10,5 +13,5 @@ p=$HOME/.claude/fable
   echo "fable: $p/CLAUDE.md is missing. Deploy the Fable profile first (claude/prompts/README.md, Fable as MAIN)." >&2
   exit 2
 }
-CLAUDE_CONFIG_DIR=$p exec claude --model claude-fable-5-2 \
+CLAUDE_CONFIG_DIR=$p CLAUDE_CODE_RESUME_HINT_COMMAND=fable exec claude --model claude-fable-5-2 \
   --settings "{\"claudeMdExcludes\":[\"$HOME/.claude/CLAUDE.md\"]}" "$@"

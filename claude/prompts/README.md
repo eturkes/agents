@@ -104,26 +104,67 @@ To run Fable 5.2 as the main agent, start the session with the `fable` command. 
 fable --effort <level>
 ```
 
-`fable` is a link from `~/.local/bin` to `claude/fable`. It starts Claude Code with three settings:
+A `fable` session uses no GPT model. Use it when you want no GPT usage, or when the GPT quota is spent. It differs from a `claude` session in these ways:
 
-- The configuration folder is the Fable profile, `~/.claude/fable` (`CLAUDE_CONFIG_DIR`). Claude Code reads its global `CLAUDE.md` from that folder.
+- It connects directly to Anthropic with the Claude Code sign-in of the machine. It does not use the local proxy.
+- Code Mode is on. In Code Mode, the model writes JavaScript that calls its tools, and one script can make many tool calls. Code Mode is an experimental feature of Claude Code. Anthropic can change it or remove it in any release.
+- The teammates are Claude Haiku 5.5 only, for wide gathering work. The main agent does all other work itself. Thus, a `fable` session has no independent review by a second strong model. The main agent names each such review in its final message, so that you can run it later in a `claude` session.
+- The cache keeper does not see the session, because the session does not go through the proxy. Claude Code's own idle compaction and cache timing apply.
+- Claude Code downloads feature flags from Anthropic and sends telemetry events. Code Mode needs the flag downloads, and Claude Code offers no switch that keeps them without the events. Error reports, the feedback command and the feedback survey stay off.
+
+`fable` is a link from `~/.local/bin` to `claude/fable`. It starts Claude Code with these settings:
+
+- The configuration folder is the Fable profile, `~/.claude/fable` (`CLAUDE_CONFIG_DIR`). Claude Code reads its global `CLAUDE.md` and its `settings.json` from that folder.
 - The model is `claude-fable-5-2`.
+- The exit message of a session shows `fable --resume <id>` (`CLAUDE_CODE_RESUME_HINT_COMMAND`).
 - The Opus `CLAUDE.md` stays out of the session. Claude Code also loads `.claude/CLAUDE.md` from each directory above the working directory. Thus, without this setting, a session below your home directory loads `~/.claude/CLAUDE.md` in addition, the file that the profile replaces.
 
-The other entries in the profile folder link into `~/.claude`, so Fable and Opus sessions share settings, transcripts, history, MCP servers, plugins and mods. The Fable `CLAUDE.md` is the Opus `CLAUDE.md` with model-specific changes. It replaces the prompts from the Opus 5.5 prompting guide with prompts from the Fable prompting guides, and it compares the teammates with Fable instead of Opus.
+The profile has its own `CLAUDE.md` and its own `settings.json`. `claude/check-fable --write` generates both from the host files, and `claude/check-fable` reports a difference. The Fable `CLAUDE.md` is the Opus `CLAUDE.md` with these changes: prompts from the Fable prompting guides replace the prompts from the Opus 5.5 prompting guide, and the rules for teammates and tools describe a Code Mode session with Haiku teammates. The Fable `settings.json` is the host `settings.json` without the proxy, with Code Mode on, and without the `idle-compact` mod. The other entries in the profile folder link into `~/.claude`, so Fable and Opus sessions share transcripts, history, MCP servers, plugins and mods.
 
 The Anthropic guide for Fable 5.2 names `high` as the level to start from for hard coding and long runs. Anthropic reports that Fable 5.2 at `high` scored about level with Opus 5.5 at `max` on the FrontierCode 2.0 coding test, at about half the cost for each task. The guide reports that `xhigh` raised the scores on its coding tests only slightly and used many more tokens. Teammates take their effort level from the session, so a lower level also lowers the level of the teammates.
 
 A Fable session has no advisor, so its command leaves out `--advisor`.
+
+### Limits of a Code Mode session
+
+- You can resume a `fable` session only with `fable`. `claude --resume` refuses a session that started in Code Mode. A `fable` session from before this change resumes without Code Mode, and its GPT teammates are gone.
+- `fable -p` runs without Code Mode. Code Mode works only in an interactive session in a terminal.
+- Remote Control, Claude in Chrome and computer use are not available. You cannot move the session to the Desktop app or to the background.
+- Code Mode needs Claude Code 2.1.327 or later, because all mods of this repository examine tool calls and earlier versions refuse Code Mode beside such a mod.
+- If Code Mode cannot start, the session shows `Code Mode (experimental) isn't available` with the reason, and it continues with the ordinary tools. `/status` shows the reason too.
+
+### Deploy
 
 To deploy or update the profile, run these commands from the repository root. Replace `<host>` with `cachyos` or `aeon`.
 
 ```sh
 mkdir -p ~/.claude/fable
 cp claude/<host>/fable/CLAUDE.md ~/.claude/fable/
-claude/link-profile fable
+cp --remove-destination claude/<host>/fable/settings.json ~/.claude/fable/settings.json
+claude/link-profile --own settings.json fable
 ```
+
+Use `cp --remove-destination` for `settings.json`. In a profile from before this change, `settings.json` is a link to `~/.claude/settings.json`, and a plain `cp` writes through that link into the settings of the `claude` sessions.
 
 On a new machine, also add the link for the command: `ln -s ~/.local/app/agents/claude/fable ~/.local/bin/fable`.
 
-If `~/.claude/fable/settings.json` is a copy of `~/.claude/settings.json`, `link-profile` replaces the copy with a link. After a Claude Code update or a new entry in `~/.claude`, run `claude/link-profile fable` again. `claude/link-profile --check fable` lists the changes that the profile needs and leaves the files as they are.
+After a Claude Code update or a new entry in `~/.claude`, run `claude/link-profile --own settings.json fable` again. `claude/link-profile --check --own settings.json fable` lists the changes that the profile needs and leaves the files as they are.
+
+Sign in one time on each machine: start `fable`, type `/login`, select the Claude subscription and approve the request in the browser. Claude Code keeps the sign-in in `~/.claude/.credentials.json`. The `claude` sessions continue to use the proxy.
+
+At the first start with Code Mode, Claude Code asks you to confirm Code Mode and then restarts.
+
+### Go back to the proxy setup
+
+If Anthropic removes Code Mode, or if you want GPT teammates in `fable` again, do these steps. Replace `<host>` with `cachyos` or `aeon`.
+
+1. In the repository, revert the commit that made the profile a Code Mode profile. `git log --oneline -- claude/cachyos/fable/settings.json` shows it. The revert restores the earlier `CLAUDE.md` of the profile and removes its `settings.json`.
+2. Deploy the profile:
+
+   ```sh
+   cp claude/<host>/fable/CLAUDE.md ~/.claude/fable/
+   rm ~/.claude/fable/settings.json
+   claude/link-profile fable
+   ```
+
+`link-profile` then links `settings.json` to `~/.claude/settings.json` again, and a `fable` session uses the proxy and the GPT teammates. The sign-in of Claude Code can stay. A session that started in Code Mode cannot be resumed after this change.

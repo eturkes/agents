@@ -10,6 +10,8 @@ Claude Code → cache-keepalive 127.0.0.1:8318 → CLIProxyAPI 127.0.0.1:8317
 
 CachyOS = systemd user service; aeon = foreground in a terminal, like CLIProxyAPI there.
 
+Covers proxied sessions alone: a `fable` session (direct Anthropic sign-in, `../prompts/README.md` `Fable as MAIN`) never passes the relay ⇒ CC's own keepalive + idle compaction apply there, the statusline shows no keeper segment + mod `idle-compact` stays out of its settings.
+
 ## Why
 
 - Behind a proxy CC writes the 5-min cache TTL; the 1-h TTL needs CC's own claude.ai sign-in. Settings `env` `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` restores 1 h for the main thread.

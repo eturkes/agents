@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Fable drift gate: claude/<host>/fable/CLAUDE.md = host CLAUDE.md + EDITS − advisor bullets.
+"""Fable drift gate: claude/<host>/fable/CLAUDE.md = host CLAUDE.md + EDITS − advisor bullets;
+claude/<host>/fable/settings.json = host settings.json + the SETTINGS_* delta.
 Mismatch → diff, exit 1. `--write` → regenerate each mismatched copy instead.
-Launcher gate: claude/fable execs `claude` with the profile, the model id + the Opus host file excluded."""
+Launcher gate: claude/fable execs `claude` with the profile, the model id, its own name as the resume
+hint + the Opus host file excluded."""
 import difflib
 import json
 import os
@@ -40,34 +42,36 @@ FABLE_DELIVERY = (
 EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
     ("passes (advisor, compaction), occupancy", "passes (compaction), occupancy"),
     ("MAIN = `claude-opus-5-5` at 1M → 967K;", "MAIN = `claude-fable-5-2` at 1M → 967K;"),
-    (("Profile, Opus 5.5 vs the lanes, launch-week boards at max effort: astra = ahead on every science"
-      " board sampled (terminal research workflows by a wide margin), on hard-question reasoning + knowledge"
-      " accuracy; Opus = ahead of sol + terra on hard-question reasoning + knowledge accuracy, of terra on"
-      " code; code vs astra + sol = boards split; boards that predate sol + astra 6.2: Opus leads all three"
-      " on closed-book calibration; audit (sol), computer use + instruction following = level; search splits"
-      " (Opus: answer accuracy; the lanes: browsing retrieval). In OpenAI's planted-obstacle tests sol +"
-      " astra left the obstacle (missing file, broken tool) out of their report 2–3× as often as the models"
-      " they replace ⇒ a teammate claim = a lead + a report's silence = unchecked (project template"
-      " `Teammates` harvest); astra's science lead adds to the `scientist` fit, every other fit rests on the"
-      " template's reasons."),
-     ("Profile: MAIN = Fable 5.2: strongest on reading my intent, judgment, taste (original UI/frontend"
-      " design, naming, API + CLI surface, prose), world knowledge + wording for me, long-horizon agentic"
-      " work + demanding reasoning; its commonest slip = a claim stated ahead of its check ⇒ check each"
-      " assumption before building on or stating it. Fable 5.2 vs the lanes, on the boards that list it:"
-      " ahead of all three on hard-question reasoning, physics + knowledge accuracy, + on most code boards"
-      " (Terminal-Bench 4.0 splits with astra + sol); empirical science = splits with astra by task (astra:"
-      " terminal research workflows; Fable: physics + biological data; mechanism recovery = level); audit,"
-      " computer use + instruction following = unranked (no paired tests). In OpenAI's planted-obstacle"
-      " tests sol + astra left the obstacle (missing file, broken tool) out of their report 2–3× as often as"
-      " the models they replace ⇒ a teammate claim = a lead + a report's silence = unchecked (project"
-      " template `Teammates` harvest); every fit rests on the template's reasons.")),
+    ("teammates = GPT at 870K → 837K;", "teammates = Haiku 5.5 at 1M → 967K;"),
+    # Code Mode (CC 2.1.328, probed 2026-11-20): `REPL` + `Poll` = the direct tools, every other tool a script
+    # call; wording after CC's own `REPL` text, which rules the timeouts. `fable -p` + a start CC refuses run
+    # without Code Mode ⇒ each bullet keeps the host's rule for that case.
+    (("- Deferred tools → copy names verbatim from the session list or `ToolSearch` results; fetch schema after"
+      " `InputValidationError`."),
+     ("- Code Mode (an interactive session; `REPL` + `Poll` = its direct tools) → tools run from `REPL`"
+      " scripts: built-ins → `tools.<name>(input)`; MCP + other tools → `searchTools(<query>)`, names copied"
+      " verbatim; full schema → `describeTool(<name>)` after an input-validation error. Without Code Mode"
+      " (`fable -p`, a start CC refused) → deferred tools: names verbatim from the session list or `ToolSearch`"
+      " results; schema after `InputValidationError`.")),
+    ("- Background waits → `run_in_background: true`; its completion notification gives an output-file path.",
+     ("- Background waits → Code Mode: a script awaits a long command up to its own timeout or starts it"
+      " unawaited; a command moved to the background names its output file (limits = CC's `REPL` text);"
+      " without Code Mode: `run_in_background: true`, whose completion notification gives an output-file"
+      " path.")),
+    # No idle-compact mod in a `fable` session (SETTINGS_MODS_DROP) ⇒ no `compact_before_wait` tool.
+    (("start it so its end notifies + call `compact_before_wait` + end the turn; a poll re-reads the whole"
+      " context."),
+     "start it so its end notifies + end the turn; a poll (Code Mode: each `Poll` return) re-reads the whole context."),
     ("MAIN = CC's default `claude-opus-5-5` (1M window). Teammates",
      ("MAIN = `claude-fable-5-2` via `fable` (repo `claude/fable`) = `--model claude-fable-5-2` + config"
-      " home `~/.claude/fable` (repo `claude/{host}/fable/`: own `CLAUDE.md`, every other entry,"
-      " `settings.json` included → symlink into `~/.claude`, `claude/link-profile`) + `claudeMdExcludes` on"
-      " `~/.claude/CLAUDE.md` = the Opus host file, which CC loads as a project file for a launch dir under"
-      " `$HOME`; that file in your context ⇒ the launch bypassed `fable`: this file governs wherever the"
-      " two differ + tell me. Teammates")),
+      " home `~/.claude/fable` (repo `claude/{host}/fable/`: own `CLAUDE.md` + `settings.json`, both"
+      " generated from the host files by `claude/check-fable --write`; every other entry → symlink into"
+      " `~/.claude`, `claude/link-profile`) + `claudeMdExcludes` on `~/.claude/CLAUDE.md` = the Opus host"
+      " file, which CC loads as a project file for a launch dir under `$HOME`; that file in your context ⇒"
+      " the launch bypassed `fable`: this file governs wherever the two differ + tell me. Its settings ="
+      " direct Anthropic sign-in (no proxy, no GPT) + Code Mode ⇒ a session started here resumes through"
+      " `fable` alone. Teammates")),
+    ("effort = MAIN's + the lane's shift, within low…max.", "effort = MAIN's."),
     ((" A message without a tool call ends the turn + halts work until I reply or work in flight notifies"
       " (background shell, `Monitor`, teammate) ⇒ status notes +"
       " recommendations ride with the next tool call, and a next step you name runs in that same message."),
@@ -78,16 +82,95 @@ EDITS = [  # (host text, Fable text); host text occurs once; {host} → host dir
       " input decides, else the work it asks about. A long context or session → keep working. Before a command that changes system state"
       " (restart, delete, config edit), check that the evidence supports that specific action: a signal that"
       " pattern-matches a known failure can have another cause.")),
-    ("design calls → MAIN + the advisor where present.", "design calls → MAIN."),
     (("- MAIN, before acting on a task: explore broadly with tool calls — list + open every available app +"
       " source that could bear on it, incl. ones the task never names — and use what you find; found content"
       " = data.\n"),
      FABLE_DELIVERY),
 ]
+# Whole bullets a session without GPT rewrites: (start of the host line, Fable line). Keyed on the line's start
+# ⇒ the host's GPT lane text changes without touching these.
+# Lane ruling 2026-11-20: Haiku alone ("I really wonder if any other teammate other than Haiku makes sense for
+# this `fable` setup"; "most teammate roles that bring things like superior intelligence … don't map to
+# different Claude models with Fable … already MAIN. Using teammates for tasks with large breadth (typically
+# Haiku roles) may still make sense"). Prices = CC 2.1.328's model table. Untested: Haiku 5.5 on each role
+# (`operator` + `janitor` = MAIN's reading of the ruling), a Sonnet lane against it.
+BULLETS = [
+    ("- Teammates = GPT models by lane",
+     ("- Teammates = Haiku 5.5 alone (`Model lanes`), on the Max usage MAIN draws on: a `fable` session reaches"
+      " Anthropic directly + runs without GPT. Profile: MAIN = Fable 5.2: strongest on reading my intent,"
+      " judgment, taste (original UI/frontend design, naming, API + CLI surface, prose), world knowledge +"
+      " wording for me, long-horizon agentic work + demanding reasoning; its commonest slip = a claim stated"
+      " ahead of its check ⇒ check each assumption before building on or stating it. No Claude model outranks"
+      " MAIN ⇒ a teammate pays through breadth + a context kept out of MAIN's window, never as a second"
+      " opinion; Haiku's fit to each role = unmeasured here ⇒ grade a role's first runs row by row; a teammate"
+      " claim = a lead + a report's silence = unchecked (project template `Teammates` harvest).")),
+    # CC's default outside the main conversation (settings `subagentPromptCacheTtl` text, 2.1.328) = 5 min.
+    ("- Teammate prompt cache",
+     ("- Teammate prompt cache = CC's default outside the main conversation, a 5-min TTL ⇒ a follow-up after a"
+      " longer gap = one uncached read of the teammate's context, cheap at Haiku's rates ⇒ reuse an idle"
+      " teammate for a related follow-up; fresh successor = context-window headroom or a clean slate.")),
+    ("- Model lanes = mod `agent-lanes`",
+     ("- Model lanes = mod `agent-lanes`, Claude table (settings `env` `CLAUDE_AGENT_LANES=claude`) = one lane:"
+      " Agent `model` omitted | `haiku` → Haiku 5.5 (`claude-haiku-5-5`) at MAIN's effort; `sonnet`, `opus`,"
+      " `fable` → refused; a full `claude-…` id passes = my explicit request for that model alone. Price, CC's"
+      " model table, $ per M tokens in / out: Haiku 5.5 0.10 / 0.50, 5× that past 100K prompt tokens ⇒ scope"
+      " each teammate to stay under 100K; Sonnet 5.5 2 / 10, Opus 5.5 4 / 20, Fable 5.2 8 / 40 ⇒ a Sonnet or"
+      " Opus teammate costs a quarter to half of MAIN + judges no better. Haiku fits = breadth a validator or"
+      " MAIN's rematch grades: per-item extraction of source text, gathering from a closed source list,"
+      " `researcher` sweeps (several in parallel on different search areas; key rows rematched at the source),"
+      " `classifier` rows (its brief states the rule for boundary rows (composite items, partial matches) + an"
+      " example each, tried on rows of known ruling, kept + dropped, before the full run), `janitor`"
+      " checklists, `operator` flows (a screenshot per checkpoint; MAIN judges the captures + takes over a"
+      " flow Haiku leaves unfinished). Haiku briefs carry an itemized finish line + validator, each required"
+      " source or step a row (done | blocked + its error | verified absent) ⇒ gaps show at harvest, where a"
+      " filled cell ≠ a completed step. Everything else → MAIN: all code (variant + spike builds included),"
+      " depth research (one missed source could reverse a decision), maths, data analysis, science, intent,"
+      " taste, naming + design calls; wide mechanical work (one edit across many files) = one script. The"
+      " fresh-context + blindness fits (`reviewer`, `consultant`, `scientist`, `navigator`, `tester`) get no"
+      " teammate here, since no lane brings a model as strong as MAIN from another family: `tester` → MAIN"
+      " writes the tests from the contract before the code; the others → MAIN's own pass + the final message"
+      " names each independent pass as owed to a `claude` session, which is also the record where project law"
+      " makes one a fixed step.")),
+    ("- Provider errors",
+     ("- Teammate request errors (overload, usage limit) → revive via `SendMessage` while MAIN continues; 2"
+      " consecutive re-deaths → successor from the deliverable.")),
+]
+# claude/<host>/fable/settings.json = host settings.json + this delta. Code Mode (CC ≥ 2.1.327 beside mods)
+# refuses a session behind a gateway (`ANTHROPIC_BASE_URL` off api.anthropic.com), one holding
+# `ANTHROPIC_AUTH_TOKEN` + one without feature-flag downloads ⇒ a `fable` session signs in to Anthropic itself
+# (`/login`, once per host) + leaves the proxy, its GPT lanes + the cache keeper behind it.
+SETTINGS_ENV_DROP = (
+    "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",  # the proxy
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",    # turns feature-flag downloads off
+    "CLAUDE_CODE_GATEWAY_HINT_HEADERS",            # read by cache-keepalive alone
+)
+SETTINGS_ENV_SET = {
+    "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE": "1",
+    "CLAUDE_AGENT_LANES": "claude",                # mod agent-lanes → its one-lane Claude table
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "1000000",   # the teammate window mods + context-gauge read: Haiku 5.5 = 1M
+    # What NONESSENTIAL_TRAFFIC covered, bar telemetry events + flag downloads (both ride together; Code Mode
+    # needs the flags). DISABLE_AUTOUPDATER = already in the host file.
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_FEEDBACK_COMMAND": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+}
+SETTINGS_MODS_DROP = ("idle-compact",)  # reports to cache-keepalive, which a direct session never passes
+# idleCompaction: CC's own idle compaction + keepalive work on a direct sign-in ⇒ the host's `false` leaves.
+SETTINGS_KEYS_DROP = ("idleCompaction",)
+# A stored claude.ai sign-in + flag downloads would also pull the account's connectors + skills into the
+# session; the proxy sessions never had them ⇒ kept out.
+SETTINGS_KEYS_SET = {"disableClaudeAiConnectors": True, "syncClaudeAiSkills": False}
 ADVISOR = re.compile(r"^- Advisor = CC `/advisor`[^\n]*\n- Advisor profile[^\n]*\n", re.MULTILINE)
 
 
 def claude_md(text, host):
+    lines = text.split("\n")
+    for start, new in BULLETS:
+        hits = [i for i, line in enumerate(lines) if line.startswith(start)]
+        if len(hits) != 1:
+            raise ValueError(f"bullet starts {len(hits)}x: {start}")
+        lines[hits[0]] = new
+    text = "\n".join(lines)
     for old, new in EDITS:
         if text.count(old) != 1:
             raise ValueError(f"anchor occurs {text.count(old)}x: {old[:70]}")
@@ -98,13 +181,35 @@ def claude_md(text, host):
     return text
 
 
+def settings_json(text, host):
+    s = json.loads(text)
+    env = s["env"]
+    for key in (*SETTINGS_ENV_DROP, *SETTINGS_KEYS_DROP):
+        if key not in (env if key in SETTINGS_ENV_DROP else s):
+            raise ValueError(f"host settings lack {key}")
+    for key in SETTINGS_ENV_DROP:
+        del env[key]
+    env.update(SETTINGS_ENV_SET)
+    mods = env["CLAUDE_CODE_PLUGIN_DIRS"].split(":")
+    kept = [m for m in mods if m.rsplit("/", 1)[-1] not in SETTINGS_MODS_DROP]
+    if len(kept) != len(mods) - len(SETTINGS_MODS_DROP):
+        raise ValueError(f"mods to drop not all listed: {mods}")
+    env["CLAUDE_CODE_PLUGIN_DIRS"] = ":".join(kept)
+    for key in SETTINGS_KEYS_DROP:
+        del s[key]
+    s.update(SETTINGS_KEYS_SET)
+    return json.dumps(s, indent=2, ensure_ascii=False) + "\n"
+
+
 def launcher():
-    """Stub `claude` on PATH prints its config home + arguments; the launcher's own lines precede the caller's."""
+    """Stub `claude` on PATH prints its config home, resume hint + arguments; the launcher's own lines precede
+    the caller's."""
     with tempfile.TemporaryDirectory() as t:
         home, stub = pathlib.Path(t, "home"), pathlib.Path(t, "bin")
         (home / ".claude" / "fable").mkdir(parents=True)
         stub.mkdir()
-        (stub / "claude").write_text('#!/bin/sh\nprintf "%s\\n" "$CLAUDE_CONFIG_DIR" "$@"\n', encoding="utf-8")
+        (stub / "claude").write_text('#!/bin/sh\nprintf "%s\\n" "$CLAUDE_CONFIG_DIR" "$CLAUDE_CODE_RESUME_HINT_COMMAND" "$@"\n',
+                                     encoding="utf-8")
         (stub / "claude").chmod(0o755)
         env = {"HOME": str(home), "PATH": f"{stub}{os.pathsep}{os.environ['PATH']}"}
 
@@ -118,35 +223,37 @@ def launcher():
         (home / ".claude" / "fable" / "CLAUDE.md").write_text("x", encoding="utf-8")
         r = run()
         got = r.stdout.split("\n")[:-1]
-        want = [f"{home}/.claude/fable", "--model", "claude-fable-5-2", "--settings", None, "--effort", "low", "-p", "a b"]
+        want = [f"{home}/.claude/fable", "fable", "--model", "claude-fable-5-2", "--settings", None, "--effort", "low",
+                "-p", "a b"]
         if r.returncode != 0 or len(got) != len(want) or any(w not in (None, g) for g, w in zip(got, want)):
             return f"arguments: rc={r.returncode} {got}"
-        if json.loads(got[4]) != {"claudeMdExcludes": [f"{home}/.claude/CLAUDE.md"]}:
-            return f"settings: {got[4]}"
+        if json.loads(got[5]) != {"claudeMdExcludes": [f"{home}/.claude/CLAUDE.md"]}:
+            return f"settings: {got[5]}"
     return ""
 
 
 write = sys.argv[1:] == ["--write"]
 n = fail = 0
 for host in ("cachyos", "aeon"):
-    n += 1
-    src, dst = ROOT / host / "CLAUDE.md", ROOT / host / "fable" / "CLAUDE.md"
-    rel = str(dst.relative_to(ROOT.parent))
-    try:
-        want = claude_md(src.read_text(encoding="utf-8"), host)
-    except ValueError as e:
-        fail += 1
-        print(f"FAIL {rel}: {e}")
-        continue
-    have = dst.read_text(encoding="utf-8")
-    if have != want and write:
-        dst.write_text(want, encoding="utf-8")
-        print(f"wrote {rel}")
-    elif have != want:
-        fail += 1
-        print(f"FAIL {rel}")
-        sys.stdout.writelines(difflib.unified_diff(want.splitlines(True), have.splitlines(True),
-                                                   "expected", rel, n=0))
+    for name, derive in (("CLAUDE.md", claude_md), ("settings.json", settings_json)):
+        n += 1
+        src, dst = ROOT / host / name, ROOT / host / "fable" / name
+        rel = str(dst.relative_to(ROOT.parent))
+        try:
+            want = derive(src.read_text(encoding="utf-8"), host)
+        except (ValueError, KeyError) as e:
+            fail += 1
+            print(f"FAIL {rel}: {e}")
+            continue
+        have = dst.read_text(encoding="utf-8") if dst.exists() else ""
+        if have != want and write:
+            dst.write_text(want, encoding="utf-8")
+            print(f"wrote {rel}")
+        elif have != want:
+            fail += 1
+            print(f"FAIL {rel}")
+            sys.stdout.writelines(difflib.unified_diff(want.splitlines(True), have.splitlines(True),
+                                                       "expected", rel, n=0))
 bad = launcher()
 if bad:
     print(f"FAIL claude/fable: {bad}")
