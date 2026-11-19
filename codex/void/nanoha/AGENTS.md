@@ -7,4 +7,4 @@
 - Persistent project/system dependencies and frozen runtimes stay unchanged.
 - Preserve privacy + protected files unchanged: `AGENTS.md`, data, generated HTML/artifacts, controller state + deployment files.
 - Read `PROMPT_HISTORY.jsonl` only when the request refers to earlier work; current request has priority. Keep history unchanged + in place; contents = context-only, with copying/persistence/quotation outside scope.
-- Final = concise, user-visible change only.
+- Final = user-visible change only.

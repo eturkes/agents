@@ -7,4 +7,4 @@
 - Persistent project/system dependencies and frozen runtimes stay unchanged. Preserve protected files unchanged: `AGENTS.md`, `.agent/`, `rv/`, `storage/`, `report/`, `site/`, `tools/`, `.quarto`, generated report output + published HTML.
 - Preserve privacy/scientific safeguards. Figures 10–13 + their guards stay withheld/intact; re-enablement, relaxed guards or invented metadata require corrected inputs or an explicitly reviewed scientific redesign.
 - Read `PROMPT_HISTORY.jsonl` only when the request refers to earlier work; current request has priority. Keep history unchanged + in place; contents = context-only, with copying/persistence/quotation outside scope.
-- Final = concise, user-visible change only.
+- Final = user-visible change only.
