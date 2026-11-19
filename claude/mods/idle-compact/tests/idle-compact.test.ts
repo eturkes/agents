@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { AgentInfo, On } from 'claude-code'
 
-type Poll = { session: string; quiet: boolean; working: boolean; tokens?: number }
+type Poll = { session: string; quiet: boolean; working: boolean; wait: boolean; tokens?: number }
 type World = {
   polls: Poll[]; reports: unknown[]; notices: { tool_use_id: string; text: string | undefined }[]
   compact: boolean; compactions: number; skip?: string; down: boolean; entry: object; gate?: Promise<void>; agents: AgentInfo[]
@@ -26,7 +26,8 @@ function world(on: On): World & { advance: (ms: number) => Promise<void> } {
   on('session.usage', () => ({ value: { startedAt: 0, context: { tokens: w.tokens, window: 1_000_000 }, rateLimits: [] } }))
   on('http.fetch', (_$, e) => {
     if (w.down) throw new Error('connection refused')
-    const body = JSON.parse(e.init?.body ?? '{}')
+    const sent = e.init?.body
+    const body = JSON.parse(typeof sent === 'string' ? sent : '{}')
     let reply = {}
     if (e.url === 'http://keeper/_keepalive/poll') {
       w.polls.push(body)
@@ -70,6 +71,7 @@ const step = async ($: Engine, turnId: string, agentId?: string) => {
 const teammate = (status: AgentInfo['status']): AgentInfo => ({ id: 'a1', description: 'reviewer-1', type: 'teammate', status })
 const stopTask = { id: 'a1', type: 'teammate', status: 'running', description: 'reviewer-1' }
 const flags = (w: World) => w.polls.map(p => `${p.quiet ? 'quiet' : 'busy'}${p.working ? '+working' : ''}`)
+const shell = { id: 'b7', type: 'shell', status: 'running', description: 'pool run p1' }
 function ask($: Engine, w: World): () => Promise<unknown> {
   let release = () => {}
   w.gate = new Promise<void>(resolve => (release = resolve))
@@ -82,7 +84,7 @@ test('a quiet session is compacted once the keeper asks, and the result reported
   await start($)
   await stop($)
   await w.advance(30_000)
-  expect(w.polls).toEqual([{ session: 's1', quiet: true, working: false }])
+  expect(w.polls).toEqual([{ session: 's1', quiet: true, working: false, wait: false }])
   expect(w.compactions).toBe(0)
   w.compact = true
   await w.advance(30_000)
@@ -238,33 +240,68 @@ test('an interactive session lists compact_before_wait in front, keep required; 
   expect(w.tools).toMatchObject([{ name: 'compact_before_wait', isDeferred: false, inputSchema: { required: ['keep'] } }])
 })
 
-test('the call compacts at its main turn end with keep in the instructions, the keeper told before + after', async ($, on) => {
+test('the call registers its wait at the main turn end; the keeper\'s ask at its mark compacts with keep in the instructions', async ($, on) => {
   const w = world(on)
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
   w.tokens = 896_000
   w.output = 0
   const r = await wait($)
-  expect(r.result).toBe("Compaction set for this turn's end (context 896K). End your turn now; the work you started wakes the compacted session.")
-  await w.advance(1)
-  expect(w.compactions).toBe(0)
+  expect(r.result).toBe("Wait registered (context 896K): compaction only if the work still runs at the cache keeper's mark (~55 min); sooner → the session wakes uncompacted. End your turn now; the work you started wakes the session.")
   await step($, 'a1', 'teammate-1')
   await complete($, 'a1', { agentId: 'teammate-1' }) // a teammate's turn end is not the call's
-  await w.advance(1)
-  expect(w.compactions).toBe(0)
+  await w.advance(30_000)
+  expect(w.polls.at(-1)).toMatchObject({ quiet: false, wait: false })
+  await stop($, [shell])
   await complete($, 't1')
-  await w.advance(1)
+  await w.advance(30_000)
+  expect(w.polls.at(-1)).toMatchObject({ quiet: false, wait: true })
+  expect(w.compactions).toBe(0) // the turn end compacts nothing
+  w.compact = true
+  await w.advance(30_000)
   expect(w.compactions).toBe(1)
   expect(w.instructions[0]).toContain(`Keep verbatim: ${KEEP}`)
-  expect(told(w)).toEqual(['compacting', 'compacted'])
-  expect(w.reports[1]).toMatchObject({ session: 's1', ok: true, reason: '', usage: { cache_read_input_tokens: 900 } })
-  await $.turn.start({ text: '<task-notification>', turnId: 't2' })
-  await complete($, 't2')
-  await w.advance(1)
-  expect(w.compactions).toBe(1) // one call, one compaction
+  expect(told(w)).toEqual(['compacted'])
+  expect(w.reports[0]).toMatchObject({ session: 's1', ok: true, reason: '', usage: { cache_read_input_tokens: 900 } })
 })
 
-test('a call under the 200K floor compacts nothing + still sends the session to its turn end', async ($, on) => {
+test('work ending before the mark wakes the session uncompacted: the next main turn ends the wait', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  w.tokens = 896_000
+  await wait($)
+  await stop($, [shell])
+  await complete($, 't1')
+  await w.advance(30_000)
+  expect(w.polls.at(-1)?.wait).toBe(true)
+  await $.turn.start({ text: '<task-notification>', turnId: 't2' })
+  await stop($)
+  await complete($, 't2')
+  await w.advance(30_000)
+  expect(w.polls.at(-1)).toMatchObject({ quiet: true, wait: false })
+  expect(w.compactions).toBe(0)
+  w.compact = true // the quiet session's own mark, 55 min on
+  await w.advance(30_000)
+  expect(w.instructions).toEqual([undefined])
+})
+
+test('a wait registered with nothing in flight compacts as any quiet session: without keep', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  w.tokens = 896_000
+  await wait($)
+  await stop($)
+  await complete($, 't1')
+  await w.advance(30_000)
+  expect(w.polls.at(-1)).toMatchObject({ quiet: true, wait: true })
+  w.compact = true
+  await w.advance(30_000)
+  expect(w.instructions).toEqual([undefined])
+})
+
+test('a call under the 200K floor registers nothing + still sends the session to its turn end', async ($, on) => {
   const w = world(on)
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
@@ -272,36 +309,35 @@ test('a call under the 200K floor compacts nothing + still sends the session to 
   const r = await wait($)
   expect(r.result).toBe('No compaction: context 199K, under the 200K floor (a summary barely shrinks it). End your turn now; the work you started wakes the session.')
   await complete($, 't1')
-  await w.advance(1)
-  expect(w.compactions).toBe(0)
-  expect(w.reports).toHaveLength(0)
+  await w.advance(30_000)
+  expect(w.polls.at(-1)?.wait).toBe(false)
   await $.turn.start({ text: 'go', turnId: 't2' })
   w.output = 1_000 // 199K input side + 1K output = the floor
   await step($, 't2')
-  expect((await wait($)).result).toContain('Compaction set')
+  expect((await wait($)).result).toContain('Wait registered')
   await complete($, 't2')
-  await w.advance(1)
-  expect(w.compactions).toBe(1)
+  await w.advance(30_000)
+  expect(w.polls.at(-1)?.wait).toBe(true)
+  expect(w.compactions).toBe(0)
 })
 
-test('during its own compaction the session reports busy', async ($, on) => {
+test('during its compaction the session reports busy', async ($, on) => {
   const w = world(on)
   let release = () => {}
   w.hold = new Promise<void>(resolve => (release = resolve))
   await start($)
   await stop($)
-  await $.turn.start({ text: 'go', turnId: 't1' })
-  await wait($)
-  await complete($, 't1')
+  w.compact = true
+  await w.advance(30_000)
   await w.advance(30_000)
   release()
   await w.advance(30_000)
   expect(w.compactions).toBe(1)
-  // turn start, turn end (before the compaction), 30-s poll mid-compaction, its end, the next 30-s poll
-  expect(flags(w)).toEqual(['busy+working', 'quiet', 'busy', 'quiet', 'quiet'])
+  // the poll the keeper answers with its ask, the 30-s poll mid-compaction, the one after its end
+  expect(flags(w)).toEqual(['quiet', 'busy', 'quiet'])
 })
 
-test('a teammate call or an empty keep is refused + leaves nothing pending', async ($, on) => {
+test('a teammate call or an empty keep is refused + registers nothing', async ($, on) => {
   const w = world(on)
   await start($)
   await $.turn.start({ text: 'go', turnId: 't1' })
@@ -309,46 +345,33 @@ test('a teammate call or an empty keep is refused + leaves nothing pending', asy
   expect((await wait($, '  ')).deny).toContain('keep =')
   expect((await wait($, 7)).deny).toContain('keep =')
   await complete($, 't1')
-  await w.advance(1)
-  expect(w.compactions).toBe(0)
+  await w.advance(30_000)
+  expect(w.polls.some(p => p.wait)).toBe(false)
 })
 
-test('an interrupted or failed turn drops the call: no compaction then or at the next turn end', async ($, on) => {
+test('an interrupted or failed turn drops the call: no wait then or after the next turn end', async ($, on) => {
   const w = world(on)
   await start($)
   for (const [turnId, reason] of [['t1', 'aborted'], ['t2', 'error']] as const) {
     await $.turn.start({ text: 'go', turnId })
     await wait($)
     await complete($, turnId, { reason, isAborted: reason === 'aborted' })
+    await w.advance(30_000)
   }
   await $.turn.start({ text: 'again', turnId: 't3' })
   await complete($, 't3')
-  await w.advance(1)
-  expect(w.compactions).toBe(0)
-  expect(w.reports).toHaveLength(0)
+  await w.advance(30_000)
+  expect(w.polls.some(p => p.wait)).toBe(false)
 })
 
-test('an unreachable keeper never holds the compaction up', async ($, on) => {
-  const w = world(on)
-  w.down = true
-  await start($)
-  await $.turn.start({ text: 'go', turnId: 't1' })
-  await wait($)
-  await complete($, 't1')
-  await w.advance(1)
-  expect(w.compactions).toBe(1)
-})
-
-test('a failed compaction reports failure, the keeper told before + after', async ($, on) => {
+test('a compaction that throws is reported as failed', async ($, on) => {
   const w = world(on)
   w.reject = 'a turn is running' // a throwing test hook is skipped ⇒ the harness core fails the call
+  w.compact = true
   await start($)
-  await $.turn.start({ text: 'go', turnId: 't1' })
-  await wait($)
-  await complete($, 't1')
-  await w.advance(1)
-  expect(told(w)).toEqual(['compacting', 'compacted'])
-  expect(w.reports[1]).toMatchObject({ session: 's1', ok: false, reason: expect.stringContaining('Error') })
+  await stop($)
+  await w.advance(30_000)
+  expect(w.reports).toMatchObject([{ url: 'http://keeper/_keepalive/compacted', session: 's1', ok: false, reason: expect.stringContaining('Error') }])
 })
 
 test("a typed /compact or CC's threshold tells the keeper; a precompute, a subagent's own or a headless one does not", async ($, on) => {

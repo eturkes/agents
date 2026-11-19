@@ -1,6 +1,6 @@
 # cache-keepalive
 
-Keeps a waiting CC session's prompt cache warm + compacts a finished session of ≥ 200K tokens before its cache expires; without it, a prompt after >1 h re-sends the whole conversation as an uncached write.
+Keeps a waiting CC session's prompt cache warm + compacts a session of ≥ 200K tokens before its cache expires, once it has finished or a wait it registered has run that long; without it, a prompt after >1 h re-sends the whole conversation as an uncached write.
 
 HTTP relay between CC + CLIProxyAPI; settings `env` `ANTHROPIC_BASE_URL` points CC at it:
 
@@ -25,10 +25,11 @@ CachyOS = systemd user service; aeon = foreground in a terminal, like CLIProxyAP
   - quiet session (no running turn or agent at work, idle teammates = quiet; last turn left no shell, subagent, workflow, cloud session or scheduled wakeup):
     - context ≥ 200K tokens (`--min-tokens`) or size unreported → mod `idle-compact` compacts it: the compaction reads the cache, the next prompt writes only the short summary; keeper stops for the session.
     - smaller → neither compaction nor touch: the cache lapses at 1 h (state `lapsed`); a rewrite that small costs less than a summary loses; turning busy first → touches.
-  - else (waiting at an AskUserQuestion dialog, or work still running), any size → a touch = the stored request re-sent, renewing the 1-h entry; ≤19 per session (Cost).
+  - session waiting on work it started, the wait registered (the model's `compact_before_wait` call; the mod reports it from that turn's end to the next main turn), context ≥ 200K tokens or size unreported → the mod compacts it the same way, the call's `keep` in the summary instructions. Work ending before the mark wakes the session uncompacted on a valid cache ⇒ a compaction ahead of the mark saves nothing + costs the context's detail.
+  - else (waiting at an AskUserQuestion dialog, or work still running with no wait registered | under the floor), any size → a touch = the stored request re-sent, renewing the 1-h entry; ≤19 per session (Cost).
 - Touch = stream closed at `message_start` ⇒ a cache read + almost no output. Byte-identical to the stored request, except a stored `stream: false` becomes `stream: true`: touches stream, and the flag sits outside the cached prompt ⇒ same cache entry.
-- [`idle-compact`](../mods/README.md) runs in each interactive session: every 30 s + at each turn start/end + question open/close → quiet + working + context size (`POST /_keepalive/poll`; size = input side + the last main step's output = the statusline gauge, absent before the live window's first response ⇒ unreported; reply = compact now? + touches, limit + state → the touch line under an open question); on the keeper's ask → compacts + reports (`POST /_keepalive/compacted`). No mod report for 90 s, or a failed compaction → touches only.
-- Compaction the keeper did not ask for (the model's `compact_before_wait`, a typed `/compact`, CC's threshold, another plugin) → the mod reports `POST /_keepalive/compacting` before + `/compacted` after; an armed entry → `compacting` → success = `compacted` (stored request dropped: its prefix is dead, a touch would re-read it), failure = `armed` with the keeper's own attempt unspent; a newer stored request in between stays armed. CC's compaction request itself is never stored.
+- [`idle-compact`](../mods/README.md) runs in each interactive session: every 30 s + at each turn start/end + question open/close → quiet + working + registered wait + context size (`POST /_keepalive/poll`; size = input side + the last main step's output = the statusline gauge, absent before the live window's first response ⇒ unreported; reply = compact now? + touches, limit + state → the touch line under an open question); on the keeper's ask → compacts + reports (`POST /_keepalive/compacted`). No mod report for 90 s, or a failed compaction → touches only.
+- Compaction the keeper did not ask for (a typed `/compact`, CC's threshold, another plugin) → the mod reports `POST /_keepalive/compacting` before + `/compacted` after; an armed entry → `compacting` → success = `compacted` (stored request dropped: its prefix is dead, a touch would re-read it), failure = `armed` with the keeper's own attempt unspent; a newer stored request in between stays armed. CC's compaction request itself is never stored.
 - Keeper stops for a session once: the mod compacted it (the keeper's ask or the session's own); a quiet session under the floor reached its TTL (`lapsed`); touch budget spent + its next 55-min mark reached; touches fail until the entry expires; upstream rejects a touch with 400/401/403/404/413/422; two touches in a row write more than they read.
 - Stopped session stays listed; its next main-thread request restarts it; it leaves the list once its CC process ends (process + launch dir from `~/.claude/sessions/<pid>.json`).
 - Stored requests live in memory ⇒ a keeper restart drops them; each session re-stores on its next main-thread request.
@@ -69,4 +70,4 @@ journalctl --user -u cache-keepalive.service
 
 ## Options
 
-`--interval` (3300 s) = idle time before a compaction or touch; `--touches` (19) = max touches per stored request; `--min-tokens` (200000) = context size a quiet session needs to compact; `--ttl` (3600 s) = cache lifetime; `--listen` + `--upstream` = addresses. Change one: CachyOS → the unit's `ExecStart`; aeon → the `cache-keepalive` command.
+`--interval` (3300 s) = idle time before a compaction or touch; `--touches` (19) = max touches per stored request; `--min-tokens` (200000) = context size a quiet or waiting session needs to compact; `--ttl` (3600 s) = cache lifetime; `--listen` + `--upstream` = addresses. Change one: CachyOS → the unit's `ExecStart`; aeon → the `cache-keepalive` command.

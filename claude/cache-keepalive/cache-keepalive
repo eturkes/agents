@@ -3,10 +3,11 @@
 
 Relay Claude Code → CLIProxyAPI; stores each session's last main-thread request. --interval s without one →
 quiet session (idle-compact mod report: no turn, no background work) → ≥ --min-tokens context: the mod compacts
-it; smaller: the cache lapses at --ttl; touches end either way; else ≤ --touches touches: re-send the request as
-a stream, cut at message_start ⇒ the cache read renews the 1h entry. A compaction the session runs on its own (mod
-report) drops the stored request: its prefix is dead. CC's own keepalive needs a direct
-api.anthropic.com connection → off behind these proxies.
+it; smaller: the cache lapses at --ttl; touches end either way; session waiting on work it started (same report:
+the model's compact_before_wait call) at ≥ --min-tokens → the mod compacts it as well, work ending sooner wakes it
+uncompacted; else ≤ --touches touches: re-send the request as a stream, cut at message_start ⇒ the cache read renews
+the 1h entry. A compaction the session runs on its own (mod report) drops the stored request: its prefix is dead.
+CC's own keepalive needs a direct api.anthropic.com connection → off behind these proxies.
 
 Stdlib only: starts without a package cache.
 """
@@ -50,6 +51,7 @@ class Entry:
     busy: bool = False
     quiet: bool = False  # idle-compact's last report
     working: bool = False  # same report: a turn running, no question open
+    waits: bool = False  # same report: a wait the model registered (compact_before_wait) on work it started
     tokens: int | None = None  # same report: main context size; None = unreported → compacts
     polled_at: float = 0.0
     compact_at: float = 0.0  # when the mod was told to compact: one attempt per entry
@@ -180,12 +182,18 @@ class Keeper:
         """Caller holds the lock. The mod's last report = quiet + recent; stale = the mod is gone → touches."""
         return entry.quiet and now - entry.polled_at < POLL_FRESH
 
+    @staticmethod
+    def waits(entry, now):
+        """Caller holds the lock. The mod's last report = a registered wait + recent. Before the mark its cache is
+        valid ⇒ a compaction there saves nothing; at the mark it takes the touch's place."""
+        return entry.waits and now - entry.polled_at < POLL_FRESH
+
     def small(self, entry):
         return entry.tokens is not None and entry.tokens < self.cfg.min_tokens
 
     def compacts(self, entry, now):
         """Caller holds the lock. True = the entry's mark goes to the mod's compaction, not a touch."""
-        return self.quiet(entry, now) and not self.small(entry) and not entry.compact_at
+        return (self.quiet(entry, now) or self.waits(entry, now)) and not self.small(entry) and not entry.compact_at
 
     def lapses(self, entry, now):
         """Caller holds the lock. True = the entry's mark neither compacts nor touches: its cache lapses."""
@@ -201,13 +209,13 @@ class Keeper:
             return "lapse"
         return "stop" if entry.touches >= self.cfg.touches else "touch"
 
-    def poll(self, session, quiet, working, tokens, now):
+    def poll(self, session, quiet, working, waits, tokens, now):
         """Store the mod's report → {compact: True = compact now, + the entry's touches, limit + state}."""
         with self.lock:
             entry = self.entries.get(session)
             if entry is None:  # no stored request yet (new session, keeper restart mid-turn): the report alone
                 entry = self.entries[session] = Entry(session, "", "", [], b"", 0.0, state="ready", last="ready")
-            entry.quiet, entry.working, entry.tokens, entry.polled_at = quiet, working, tokens, now
+            entry.quiet, entry.working, entry.waits, entry.tokens, entry.polled_at = quiet, working, waits, tokens, now
             reply = {"compact": False, "touches": entry.touches, "limit": self.cfg.touches, "state": entry.state}
             if entry.state != "armed" or entry.busy or now - entry.renewed_at < self.cfg.interval \
                     or not self.compacts(entry, now):
@@ -217,7 +225,7 @@ class Keeper:
         return reply | {"compact": True, "state": "compacting"}
 
     def compacting(self, session, now):
-        """The session compacts on its own (the model's call, a typed /compact, CC's threshold): a later touch would
+        """The session compacts on its own (a typed /compact, CC's threshold, another plugin): a later touch would
         re-read the dead pre-compaction prefix ⇒ the stored request drops once `compacted` reports success."""
         with self.lock:
             entry = self.entries.get(session)
@@ -353,8 +361,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 entry.stopped_at = time.time()
 
     def control(self):
-        """GET status; POST /poll {session, quiet, working, tokens} → poll(); POST /compacting {session} → compacting();
-        POST /compacted {session, ok, reason, usage}."""
+        """GET status; POST /poll {session, quiet, working, wait, tokens} → poll(); POST /compacting {session} →
+        compacting(); POST /compacted {session, ok, reason, usage}."""
         keeper = self.server.keeper
         if self.command == "GET" and self.path == STATUS_PATH:
             cfg = self.server.cfg
@@ -365,8 +373,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if self.path == STATUS_PATH + "/poll":
                 tokens = report.get("tokens")
                 tokens = tokens if type(tokens) is int and tokens >= 0 else None  # absent | malformed → unknown
-                return self.reply(200, keeper.poll(report["session"], report["quiet"] is True,
-                                                   report.get("working") is True, tokens, time.time()))
+                return self.reply(200, keeper.poll(report["session"], report["quiet"] is True, report.get("working") is True,
+                                                   report.get("wait") is True, tokens, time.time()))
             if self.path == STATUS_PATH + "/compacting":
                 keeper.compacting(str(report["session"]), time.time())
                 return self.reply(200, {})
@@ -487,7 +495,8 @@ def parse(argv):
     p.add_argument("--touches", type=int, default=19, help="touches per stored request while the session is not quiet")
     # below it a 1-h rewrite costs less than a summary loses
     p.add_argument("--min-tokens", type=int, default=200_000,
-                   help="context tokens a quiet session needs to compact; a smaller session lets its cache lapse")
+                   help="context tokens a quiet or waiting session needs to compact; a smaller quiet session lets its "
+                        "cache lapse")
     p.add_argument("--tick", type=float, default=30)
     p.add_argument("--touch-timeout", type=float, default=180)
     p.add_argument("--upstream-timeout", type=float, default=900, help="idle read timeout on relayed requests")

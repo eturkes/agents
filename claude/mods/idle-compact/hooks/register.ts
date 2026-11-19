@@ -1,8 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register, SessionCompactResult } from 'claude-code'
 
-// cache-keepalive decides at its mark (claude/cache-keepalive/README.md); this mod reports quiet + working + context
-// size + runs the compaction.
+// cache-keepalive decides at its mark (claude/cache-keepalive/README.md); this mod reports quiet + working + a
+// registered wait + context size + runs the compaction.
 const POLL_MS = 30_000
 const KEEPER = 'http://127.0.0.1:8318'
 // Quiet = no turn running + no question open (a plugin's $.ui.ask runs outside turns) + no agent at work + the last
@@ -23,10 +23,13 @@ let interactive = false
 // Context size = the engine's input side + the last main step's output = the statusline gauge (context-alert's rule);
 // host state ⇒ a reload keeps the output.
 const output = atom({ plugin: 'idle-compact', key: 'output' } as const, 0)
-// The model's call ahead of a wait (a poll or foreground wait re-reads the whole context per check). Compaction
-// rejects mid-turn ⇒ it runs at the call's turn end. Value = what the summary keeps, '' = none; host state ⇒ a reload
-// between the call + its turn end keeps it.
+// The model's call ahead of a wait (a poll or foreground wait re-reads the whole context per check). Value = what the
+// summary keeps, '' = none; host state ⇒ a reload keeps both. `pending` = the call until its turn ends → `waiting` =
+// the registered wait, reported at each poll: before the keeper's mark the cache is valid ⇒ work ending there wakes
+// the session uncompacted (a compaction ahead of the mark saves nothing + costs the detail); at the mark, the work
+// still running, the keeper asks for the compaction in place of a touch. The next main turn ends the wait.
 const pending = atom({ plugin: 'idle-compact', key: 'pending' } as const, '')
+const waiting = atom({ plugin: 'idle-compact', key: 'waiting' } as const, '')
 // A compacted session returns at ~57K (median) ⇒ under the floor a summary barely shrinks it. = cache-keepalive's
 // --min-tokens default → change both together. Unreported size compacts, the keeper's rule.
 const FLOOR = 200_000
@@ -34,13 +37,13 @@ const TOOL = 'compact_before_wait'
 const SPEC = {
   name: TOOL,
   description:
-    "Compacts this session at your turn's end. Call it whenever you expect a wait (long build, test, benchmark or mutation run; pool or CI job; teammate report): start that work so its end notifies you (Bash run_in_background, Monitor, background agent or teammate) → call this → end your turn; the notification wakes the compacted session. A poll or foreground wait re-reads the whole context per check. Context under 200K → no compaction (a summary barely shrinks it); end your turn all the same. Main session only.",
+    "Registers a wait, so that a long one ends in a compaction: the session compacts only if the work still runs ~55 min after your turn's end (the cache keeper's mark, just ahead of the 1-h cache expiry); work ending sooner wakes the session uncompacted, its cache intact. Call it whenever you expect a wait (long build, test, benchmark or mutation run; pool or CI job; teammate report): start that work so its end notifies you (Bash run_in_background, Monitor, background agent or teammate) → call this → end your turn; the notification wakes the session. A poll or foreground wait re-reads the whole context per check. Context under 200K → no compaction (a summary barely shrinks it); end your turn all the same. Main session only.",
   inputSchema: {
     type: 'object',
     properties: {
       keep: {
         type: 'string',
-        description: 'What the summary keeps verbatim: the work in flight (task or agent ids, log + output paths), what its result decides, your next action once it arrives.',
+        description: 'What the summary keeps verbatim, should the wait reach that mark: the work in flight (task or agent ids, log + output paths), what its result decides, your next action once it arrives.',
       },
     },
     required: ['keep'],
@@ -86,11 +89,13 @@ async function poll($: EngineInterface): Promise<void> {
   const quiet = running.size === 0 && asking.size === 0 && !agents && !(await read($, background)) && !compacting
   const working = running.size > 0 && asking.size === 0
   const tokens = await size($)
-  const asked = (await report($, 'poll', { session, quiet, working, tokens })) as Reply | undefined
+  const keep = await read($, waiting)
+  const asked = (await report($, 'poll', { session, quiet, working, wait: keep !== '', tokens })) as Reply | undefined
   const text = notice(asked)
   for (const id of asking) $.ui.notice(id, text) // refusal (call resolved, another plugin's $.tool.call) = engine-logged drop
   if (asked?.compact !== true) return
-  const { reason, usage } = await compact($)
+  // Quiet = nothing in flight ⇒ the wait's work is over or never ran: the plain summary, as for any quiet session.
+  const { reason, usage } = await compact($, keep && !quiet ? instructions(keep) : undefined)
   await report($, 'compacted', { session, ok: !reason, reason, usage })
 }
 
@@ -132,7 +137,7 @@ export const register: Register = on => {
     }
     await update($, pending, () => keep.trim())
     const now = tokens === undefined ? '' : ` (context ${Math.trunc(tokens / 1000)}K)`
-    return { result: `Compaction set for this turn's end${now}. End your turn now; the work you started wakes the compacted session.` }
+    return { result: `Wait registered${now}: compaction only if the work still runs at the cache keeper's mark (~55 min); sooner → the session wakes uncompacted. End your turn now; the work you started wakes the session.` }
   })
 
   // Typed /compact, CC's threshold, another plugin's call; this mod's own calls skip its own hook.
@@ -156,8 +161,10 @@ export const register: Register = on => {
     return r
   })
 
-  on('turn.start', ($, e, next) => {
+  on('turn.start', async ($, e, next) => {
     running.add(e.turnId)
+    // A main turn = the wake or a prompt ⇒ the registered wait is over, compacted or not.
+    if (e.agentId === undefined && (await read($, waiting))) await update($, waiting, () => '')
     pollNow($)
     return next(e)
   })
@@ -178,15 +185,14 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     running.delete(e.turnId)
-    pollNow($)
-    const r = await next(e)
     const keep = e.agentId === undefined ? await read($, pending) : ''
     if (keep) {
       await update($, pending, () => '')
       // An interrupt or an API error ends the turn early: the person or the failure needs the context first.
-      if (e.reason === 'answer') void tell($, () => compact($, instructions(keep))).catch(() => {}).finally(() => pollNow($))
+      if (e.reason === 'answer') await update($, waiting, () => keep)
     }
-    return r
+    pollNow($)
+    return next(e)
   })
 
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {

@@ -165,8 +165,8 @@ def control(server, path, payload):
     return resp.status, json.loads(resp.read())
 
 
-def poll(server, session, quiet, tokens=None):
-    report = {"session": session, "quiet": quiet} | ({} if tokens is None else {"tokens": tokens})
+def poll(server, session, quiet, tokens=None, wait=False):
+    report = {"session": session, "quiet": quiet} | ({} if tokens is None else {"tokens": tokens}) | ({"wait": True} if wait else {})
     status, reply = control(server, "poll", report)
     assert status == 200, (status, reply)
     return reply["compact"]
@@ -452,6 +452,36 @@ def waiting_session_touches_up_to_limit():
     assert len(Up.seen) == 3 and entry["last"] == "touch limit", entry
     tick(server, ahead=1e4)
     assert len(Up.seen) == 3 and entries(server)["wait"]["kept_alive"] == 2, "finished entry touched or unlisted"
+
+
+@check
+def registered_wait_compacts_at_mark_in_place_of_a_touch():
+    Up.reset()
+    server = proxy("--interval", "100", "--min-tokens", "1000")
+    for session in ("rw", "rs", "rf"):
+        live(session)
+        post(server, session=session)
+    assert poll(server, "rw", False, wait=True) is False, "compacted before the mark"
+    assert entries(server)["rw"]["mark"] == "compact", "registered wait not marked to compact"
+    backdate(server, "rw", 101)
+    tick(server)
+    assert len(Up.seen) == 3, "registered wait touched"
+    assert poll(server, "rw", False, wait=True) is True, "no compaction at the mark"
+    assert control(server, "compacted", {"session": "rw", "ok": True}) == (200, {})
+    assert entries(server)["rw"]["kept_alive"] == "compacted", entries(server)["rw"]
+    post(server, session="rw")  # the wake's request: the wait is over ⇒ its next mark touches
+    backdate(server, "rw", 101)
+    tick(server)
+    assert entries(server)["rw"]["kept_alive"] == 1, "a new request kept the ended wait"
+    poll(server, "rs", False, tokens=10, wait=True)
+    backdate(server, "rs", 101)
+    tick(server)
+    assert entries(server)["rs"]["kept_alive"] == 1, "registered wait under the floor not touched"
+    backdate(server, "rf", 101)
+    assert poll(server, "rf", False, wait=True) is True
+    control(server, "compacted", {"session": "rf", "ok": False, "reason": "a turn is running"})
+    tick(server)
+    assert entries(server)["rf"]["kept_alive"] == 1, "failed compaction of a registered wait not touched"
 
 
 @check
