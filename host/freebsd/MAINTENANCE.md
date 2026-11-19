@@ -27,9 +27,9 @@ Guests = 2 shared vCPUs each. Sizes = GiB except EFI; OS includes swap.
 
 | Workload | Placement + operation |
 | --- | --- |
-| Static eturkes.com/wedding + private VM proxies | Caddy VNET jail `web-ingress`; ingress/publication runbook → `~/pro/eturkes.com/README.md` |
+| Static eturkes.com/wedding + private VM proxies | Caddy VNET jail `web-ingress`; ingress/publication runbook → `~/pro/eturkes.com/README.md` (remote = private `eturkes/personal-site`; directory rename ⇒ the old path must keep resolving: pinned + hash-frozen `ops/*-update.py` engines hard-code `/home/eturkes/pro/eturkes.com` + `codex/void/runtime-policy.py` loads the engine by that sibling name) |
 | Naoto/Nanoha/Rehab | Private VM shells `:8080`; Rehab application origin `:8081`; shared PromptVM release procedure → `~/pro/promptvm/docs/deployed-vms.md` |
-| Wedding editor | Shared-stack `wedding-editor` jail, `172.31.100.1:8090`; unchanged state/public paths; controller/runtime/rollback → `~/pro/sushi-and-kebab.wedding/ops/jail/README.md` |
+| Wedding editor | Shared-stack `wedding-editor` jail, `172.31.100.1:8090`; unchanged state/public paths; controller/runtime/rollback → `~/pro/wedding-site/ops/jail/README.md` (remote = private `eturkes/wedding-site`; checkout renamed from `sushi-and-kebab.wedding` 2026-11-19, public paths under `/srv/sushi-and-kebab.wedding` unchanged) |
 | Veriformatics | Private Debian VM `172.31.104.2`; Caddy/listmonk loopback, outbound cloudflared, rootless PostgreSQL/data at `/srv/veriformatics` |
 
 Wedding boot order = `web-ingress wedding-editor`; retained host controller =
