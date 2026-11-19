@@ -75,8 +75,9 @@ xs=""
 # Renders follow token usage, which settles before turn end ⇒ settings
 # refreshInterval 10 s bounds a stale `in progress`. Keeper down | predating these
 # fields ⇒ no segment. `last HH:MM` = the next mark compacts | lets a small session's
-# cache lapse; lapsed ⇒ purple, the paused-phase color.
-ks=$(curl -sf --max-time 1 "${CACHE_KEEPALIVE_URL:-http://127.0.0.1:8318}/_keepalive" 2>/dev/null | jq -r --arg s "$sid" --argjson now "$now" '
+# cache lapse; lapsed ⇒ purple, the paused-phase color. The keeper = a relay on the session's
+# ANTHROPIC_BASE_URL ⇒ a session without one (`fable`: direct sign-in) never passes it ⇒ no segment.
+ks=$([ -n "$ANTHROPIC_BASE_URL" ] && curl -sf --max-time 1 "${CACHE_KEEPALIVE_URL:-http://127.0.0.1:8318}/_keepalive" 2>/dev/null | jq -r --arg s "$sid" --argjson now "$now" '
   select(.interval > 0 and .touches >= 0) | .interval as $i | .touches as $l
   | first(.entries[]? | select(.session == $s[:8])) // {state: "ready"}
   | if .working == true and (.state == "armed" or .state == "ready") then "0 working"

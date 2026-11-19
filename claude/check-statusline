@@ -178,6 +178,8 @@ ck repo-root ':no phase' 'Phase: IMPLEMENT' r/s r
 # none, `last` gains the read's HH:MM; STATE = this session's entry state beside another session's
 # entry | `-` ⇒ no entry of its own | `{…}` = the document verbatim | `off` ⇒ unreachable;
 # MARK `-` ⇒ null; KEPT = kept_alive as JSON; AGO = s since the last cache read; WORKING = JSON.
+# ku = the session's ANTHROPIC_BASE_URL: the keeper relay | empty = a direct session.
+ku=http://127.0.0.1:8318
 kk() {
   n=$((n + 1)); now=$(date +%s); r=$((now - ${6:-0})); rm -f "$t/ka.json"
   case $3 in
@@ -187,7 +189,7 @@ kk() {
        [ "$3" = - ] || e=$(printf ',{"session":"5e551011","state":"%s","mark":%s,"kept_alive":%s,"renewed":"%s","working":%s}' "$3" "$m" "${5:-0}" "$(date -u -d "@$r" +%Y-%m-%dT%H:%M:%SZ)" "${7:-false}")
        printf '{"interval":3300.0,"touches":19,"entries":[{"session":"0ther000","state":"armed","mark":"touch","kept_alive":3,"renewed":null,"working":true}%s]}' "$e" > "$t/ka.json" ;;
   esac
-  out=$(printf '{"session_id":"5e551011-0000-4000-8000-000000000000","workspace":{"project_dir":"%s"},"context_window":{"total_input_tokens":1,"context_window_size":200000}}' "$t/k" | HOME=$t sh "$sl" 2>/dev/null)
+  out=$(printf '{"session_id":"5e551011-0000-4000-8000-000000000000","workspace":{"project_dir":"%s"},"context_window":{"total_input_tokens":1,"context_window_size":200000}}' "$t/k" | HOME=$t ANTHROPIC_BASE_URL=$ku sh "$sl" 2>/dev/null)
   got=${out#* | } want=${2#*:}
   got=${got%no phase}
   [ "$want" = last ] && want="last $(date -d "@$r" +%H:%M)"
@@ -224,6 +226,7 @@ kk working-after-touches ':in progress' armed touch 5 0 true
 kk working-unarmed :compacted compacted - '"compacted"' 0 true
 kk compacting :compacting compacting - 0
 kk compacted :compacted compacted - '"compacted"'
+ku=''; kk direct-session : armed touch 3; ku=http://127.0.0.1:8318
 kk stopped 31:stopped 'done' - 19
 kk unknown-state : bogus
 # wk NAME WANT [RATE_LIMITS]: WANT = the line's last segment; RATE_LIMITS = native rate_limits JSON.
