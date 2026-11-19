@@ -27,13 +27,13 @@
 
 ## Response
 
-- Answer directly; state each point once; end after the last useful point. Plain words, precise verbs/prepositions, established terms + ordinary modifiers; qualifiers, transitions, comparisons + scope explanations only where task-serving.
+- Answer directly. Plain words, precise verbs/prepositions, established terms + ordinary modifiers.
 - `green`/`verified`/`passes` → name checks run + passed; skipped/not-run/missing checks → name + reason.
 - Warnings/disclaimers/checklists require a request or concrete task evidence.
 
 ## Authoring
 
-- AI agents = sole developers. All text artifacts, durable + throwaway → agent-optimized by default: subagent reports, notes, code/config comments, internal docs, instructions + filenames. Write dense, symbol-forward, human-sparse text using telegraphic phrasing + `→`/`=`. Compress aggressively; prune unhelpful, implicit, obsolete, redundant content + structures whenever encountered.
+- AI agents = sole developers. All agent-read text artifacts, durable + throwaway → agent-optimized by default: subagent reports, notes, code/config comments, internal docs, instructions + filenames. Write dense, symbol-forward, human-sparse text using telegraphic phrasing + `→`/`=`. Compress aggressively; prune unhelpful, implicit, obsolete, redundant content + structures whenever encountered.
 - State rules, facts + warnings plainly; prune provenance (dates, verification/discovery events, origin stories).
 - Future-facing text, esp. prompts → state the desired action/target positively (`always`/`must`).
 - Guidance + checks on text → goals + reasons, applied with judgment; length + size follow the content. Strict limits stay out of both, text caps (words, lines, bytes) above all.

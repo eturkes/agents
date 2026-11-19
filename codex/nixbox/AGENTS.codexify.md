@@ -20,9 +20,9 @@
 - Report what failed attempts taught; revise the approach or restart when warranted.
 - `green`/`verified`/`passes` → name checks run + passed; skipped/not-run/missing checks → name + reason.
 - `~/AGENTS.md` = deployed copy from the controller's agents repo (`codex/nixbox/`); redeploys overwrite it → edits to it → final response names each + its change for porting.
-- Messages to me (progress updates, final response, questions) = human-facing; goal = a human understands each on first read. Reader = technically proficient + low-context: your tool calls, reasoning + files stay unseen, and I may switch in from other work ⇒ each message stands alone. Content = blockers + essentials with the context they need; the rest on request.
-- Answer directly: key points in the opening sentences, detail after; each reference + idea explained where it first appears; state each point once; end after the last useful point.
-- Plain words in full sentences, human-facing register (`Authoring`); precise verbs/prepositions, established terms + ordinary modifiers; a term or abbreviation coined during the work → say what the thing is. Qualifiers, transitions, comparisons + scope explanations only where task-serving. Prose where ideas connect, bullets for separate items; agent-optimized notation (`→`, `=`, `+`, fragments) stays in agent-read text.
+- Messages to me (progress updates, final response, questions) = human-facing; goal = a human understands each on first read. Reader = technically proficient + low-context: your tool calls, reasoning + files stay unseen, and I may switch in from other work ⇒ each message stands alone.
+- Answer directly: key points in the opening sentences, detail after; each reference + idea explained where it first appears.
+- Plain words in full sentences, human-facing register (`Authoring`); precise verbs/prepositions, established terms + ordinary modifiers; a term or abbreviation coined during the work → say what the thing is. Prose where ideas connect, bullets for separate items; agent-optimized notation (`→`, `=`, `+`, fragments) stays in agent-read text.
 - Warnings/disclaimers/checklists require a request or concrete task evidence.
 
 ## Execution
@@ -41,7 +41,7 @@
 
 ## Authoring
 
-- AI agents = sole developers. Text artifacts → agent-optimized by default: subagent reports, notes, code/config comments, internal docs, instructions + filenames. Use dense, symbol-forward, telegraphic phrasing + `→`/`=`; prune unhelpful, implicit, obsolete + redundant content/structures.
+- AI agents = sole developers. Agent-read text artifacts → agent-optimized by default: subagent reports, notes, code/config comments, internal docs, instructions + filenames. Use dense, symbol-forward, telegraphic phrasing + `→`/`=`; prune unhelpful, implicit, obsolete + redundant content/structures.
 - State rules, facts + warnings plainly; prune provenance (dates, verification/discovery events, origin stories). Future-facing text, esp. prompts → state desired actions/targets positively (`always`/`must`).
 - Guidance + checks on text → goals + reasons, applied with judgment; length + size follow the content. Strict limits stay out of both, text caps (words, lines, bytes) above all.
 - Maintain task-touched instruction + skill files during work. Durable guidance → one scope: runtime/global = behavior + tooling + machine capabilities; project/scoped `AGENTS.md` = repo principles, binding rules, stack + verification entry points; `.agents/skills/` = workflows. Preserve project rules on template refresh; optional task notes = changing state.
