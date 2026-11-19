@@ -21,7 +21,10 @@ case $1 in -h|--help) sed -n '2,/^[^#]/s/^# \{0,1\}//p' "$0"; exit 0 ;; esac
 # run: an own entry still a link means its deploy has not happened; `cp` writes through a link ⇒ deploy
 # with `cp --remove-destination`). Links are relative (../<entry>, ../../.claude.json) ⇒ valid under any
 # mount path. CC creates state dirs lazily ⇒ a profile-only entry moves into ~/.claude; an empty dir or
-# byte-identical file → link.
+# byte-identical file → link. Exception = `account_state`: caches CC fetches for the sign-in + provider of
+# the sessions that write them (organization policy limits, server-managed settings) ⇒ a profile on its own
+# sign-in keeps its copies + takes none from ~/.claude; shared, they would rule sessions of another provider.
+account_state() { case $1 in policy-limits.json*|remote-settings.json*) return 0 ;; esac; return 1; }
 usage() { echo 'usage: link-profile [--check] [--own <entry>]... <name>' >&2; exit 2; }
 check='' own=''
 while :; do
@@ -47,6 +50,7 @@ for e in "$b"/* "$b"/.[!.]* "$b"/..?*; do
   [ -e "$e" ] || [ -L "$e" ] || continue
   x=${e##*/} t=$p/${e##*/}
   case $kept in *" $x "*) continue ;; esac
+  account_state "$x" && continue
   [ -L "$e/.claude.json" ] && continue  # another profile
   if [ -L "$t" ]; then
     [ "$(readlink "$t")" = "../$x" ] || change "relink $x" relink "$t" "../$x"
@@ -64,6 +68,7 @@ for e in "$p"/* "$p"/.[!.]* "$p"/..?*; do
   [ -e "$e" ] || [ -L "$e" ] || continue
   x=${e##*/}
   case " .claude.json$kept" in *" $x "*) continue ;; esac
+  account_state "$x" && continue
   if [ -L "$e" ]; then
     [ -e "$e" ] || [ -e "$b/$x" ] || [ -L "$b/$x" ] || change "drop $x (dangling)" rm "$e"
   elif [ ! -e "$b/$x" ] && [ ! -L "$b/$x" ]; then

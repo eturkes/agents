@@ -57,6 +57,12 @@ run --check --own settings.json fable; ck own-entry-check 0 'fable: 0 changes ne
 rm "$p/settings.json" && ln -s ../settings.json "$p/settings.json"
 run --own settings.json fable; ck own-undeployed 2 "link-profile: $p/settings.json missing: deploy it first"
 run --own ../x fable; ck own-path 2 'usage: link-profile [--check] [--own <entry>]... <name>'
+echo limits > "$p/policy-limits.json" && echo sig > "$p/policy-limits.json.signature.json" && echo '{}' > "$p/remote-settings.json"
+run fable; ck account-state-stays 0 'fable: 0 changes, 0 conflicts' \
+  '[ -f "$p/policy-limits.json" ] && [ ! -L "$p/policy-limits.json" ] && [ ! -e "$b/policy-limits.json" ]' \
+  '[ ! -e "$b/policy-limits.json.signature.json" ] && [ ! -e "$b/remote-settings.json" ]'
+echo other > "$b/remote-settings.json" && rm "$p/remote-settings.json"
+run fable; ck account-state-unshared 0 'fable: 0 changes, 0 conflicts' '[ ! -e "$p/remote-settings.json" ] && [ ! -L "$p/remote-settings.json" ]'
 rm "$p/.claude.json" && echo '{}' > "$p/.claude.json"
 run fable; ck real-claude-json 1 'fable: 0 changes, 1 conflicts' '[ ! -L "$p/.claude.json" ]'
 if [ "$fail" -eq 0 ]; then echo "link-profile: $n/$n cases pass"; else echo "link-profile: $fail/$n cases FAIL"; exit 1; fi
