@@ -110,7 +110,10 @@ const hint = ($: Engine, surface: (typeof SURFACES)[number] = 'terminal') =>
 type Hint = Mounted<(typeof SURFACES)[number], 'PromptHint'>
 const shown = async (ui: Hint) => (await ui.find({ type: 'Text' }))?.text
 const entries = async (ui: Hint) => (await ui.findAll({ type: 'Text' })).filter(x => x.props.color === 'warning').map(x => x.text)
-const running = (id: string, name?: string): AgentInfo => ({ id, description: `desc ${id}`, type: 'teammate', status: 'running', name })
+/** `$.agent.list()` fields required since CC 2.1.328 that these tests leave at rest. */
+const LISTED = { kind: 'in_process_teammate' as const, taskStatus: 'running' as const, label: '', startTime: 0, cwd: '/tmp/proj',
+  tokenCount: 0, tokenSamples: [] as number[], hasRow: true }
+const running = (id: string, name?: string): AgentInfo => ({ ...LISTED, id, description: `desc ${id}`, type: 'teammate', status: 'running', name })
 
 async function spawn($: Engine, name: string, prompt = 'Do it.'): Promise<string> {
   const r = await $.agent.spawn({ prompt, description: 'd', subagentType: 'reviewer', name } as never)
@@ -141,7 +144,7 @@ test('the brief carries the deliverable note', async ($, on) => {
 test('a teammate brief carries the note once; the TaskStop hold knows it by name', async ($, on) => {
   const w = world(on)
   const sub = await spawn($, 'rev-1', 'Audit x.')
-  w.agents = [{ id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
+  w.agents = [{ ...LISTED, id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
   await tell($, sub, 'Audit x.')
   await tell($, 'tm-1', 'Audit y; end with rev-3-DONE-1.')
   await tell($, 'tm-1', 'Also z.')
@@ -156,7 +159,7 @@ test('a teammate brief carries the note once; the TaskStop hold knows it by name
 
 test('a teammate brief that already holds the note stays as sent', async ($, on) => {
   const w = world(on)
-  w.agents = [{ id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
+  w.agents = [{ ...LISTED, id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
   const brief = `<teammate-message teammate_id="team-lead">\nAudit y.\n\n${SPAWN_NOTE}\n</teammate-message>`
   await tell($, 'tm-1', brief)
   expect(w.rows).toEqual([[{ type: 'text', text: brief }]])
@@ -164,7 +167,7 @@ test('a teammate brief that already holds the note stays as sent', async ($, on)
 
 test('a teammate already tracked before its row keeps the row as sent', async ($, on) => {
   const w = world(on)
-  w.agents = [{ id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
+  w.agents = [{ ...LISTED, id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
   await step($, 'tm-1')
   await tell($, 'tm-1', 'Also z.')
   expect(w.rows).toEqual([[{ type: 'text', text: 'Also z.' }]])
@@ -172,7 +175,7 @@ test('a teammate already tracked before its row keeps the row as sent', async ($
 
 test('a teammate tracked before its row gains its name for the hold, looked up once', async ($, on) => {
   const w = world(on)
-  w.agents = [{ id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
+  w.agents = [{ ...LISTED, id: 'tm-1', description: 'd', type: 'teammate', status: 'running', name: 'rev-3' }]
   await step($, 'tm-1')
   await tell($, 'tm-1', 'Also z.')
   await tell($, 'tm-1', 'And w.')

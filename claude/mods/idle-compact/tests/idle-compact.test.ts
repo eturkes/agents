@@ -67,8 +67,11 @@ const told = (w: World) => w.reports.map(r => (r as { url: string }).url.split('
 const step = async ($: Engine, turnId: string, agentId?: string) => {
   for await (const c of $.turn.step({ turnId, index: 1, model: 'claude-opus-5-5', messageCount: 3, agentId } as never)) void c
 }
+/** `$.agent.list()` fields required since CC 2.1.328 that these tests leave at rest. */
+const LISTED = { kind: 'in_process_teammate' as const, taskStatus: 'running' as const, label: '', startTime: 0, cwd: '/tmp/proj',
+  tokenCount: 0, tokenSamples: [] as number[], hasRow: true }
 /** A teammate in `$.agent.list()`: `idle` once its turn ended, until a message wakes it; Stop lists it `running`. */
-const teammate = (status: AgentInfo['status']): AgentInfo => ({ id: 'a1', description: 'reviewer-1', type: 'teammate', status })
+const teammate = (status: AgentInfo['status']): AgentInfo => ({ ...LISTED, id: 'a1', description: 'reviewer-1', type: 'teammate', status })
 const stopTask = { id: 'a1', type: 'teammate', status: 'running', description: 'reviewer-1' }
 const flags = (w: World) => w.polls.map(p => `${p.quiet ? 'quiet' : 'busy'}${p.working ? '+working' : ''}`)
 const shell = { id: 'b7', type: 'shell', status: 'running', description: 'pool run p1' }
