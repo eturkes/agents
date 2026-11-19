@@ -5,17 +5,17 @@
 // 2.5–4.6× sol's cost per task, sol ahead on code migration; leads terra on frontend builds, knowledge + per-item
 // judgment; maths: sol 6.1 tied astra 6.2 on FrontierMath tiers 1–4, sol 6.2 unlisted there + on its open-problem board
 // (astra 6.2 7 of 68, sol 6.1 3); Lean proofs, Vals Autoform-Hard 2026-11-18 (56 tasks, one attempt each): astra 49,
-// sol 48, Fable 5.2 48 at $15.24 / $8.09 / $23.21 per task = one task apart, sol cheapest); a proof sol fails → MAIN
-// (Opus 5.5 led sol 6.1 + astra 6 on the older proof boards; none sampled pairs it with a 6.2 model). astra = empirical
-// science: ahead of sol on every science board sampled (terminal research workflows, mechanism recovery, biological
-// data, physics), where sol 6.2 scores under sol 6.1 on mechanism recovery + physics (Vals MysteryMechanism 36.9 vs
-// 46.4, CritPt 62.5 vs 69.5) + over it on terminal science; vs Fable 5.2 the science boards split by task; +
-// statement-faithfulness judging until checked (astra 6 led the one benchmark; no 6.2 entry). terra = visual work,
-// computer use + writing (tied sol 6.1 at lower cost; no rated board pairs it with sol 6.2 yet; computer use, launch
-// week = mixed: one tester's two tests sol 6.2 ahead (77 vs 70 of 100 locations found, faster on a navigation game),
-// one self-reported board terra ahead (88% vs 76% of tasks completed), OpenAI's recommender = terra balanced, sol high
-// for quality) + gathering (copies + abstains well, judges less; left a broken search tool unreported in 1% of OpenAI's
-// cases, sol 6.2 in 9%); beats luna at every price above $0.04.
+// sol 48, Fable 5.2 48 at $15.24 / $8.09 / $23.21 per task = one task apart, sol cheapest); a problem sol fails → MAIN
+// + one astra solver (below; Opus 5.5 led sol 6.1 + astra 6 on the older proof boards; none sampled pairs it with a 6.2
+// model). astra = empirical science: ahead of sol on every science board sampled (terminal research workflows,
+// mechanism recovery, biological data, physics), where sol 6.2 scores under sol 6.1 on mechanism recovery + physics
+// (Vals MysteryMechanism 36.9 vs 46.4, CritPt 62.5 vs 69.5) + over it on terminal science; vs Fable 5.2 the science
+// boards split by task; + statement-faithfulness judging until checked (astra 6 led the one benchmark; no 6.2 entry).
+// terra = visual work, computer use + writing (tied sol 6.1 at lower cost; no rated board pairs it with sol 6.2 yet;
+// computer use, launch week = mixed: one tester's two tests sol 6.2 ahead (77 vs 70 of 100 locations found, faster on a
+// navigation game), one self-reported board terra ahead (88% vs 76% of tasks completed), OpenAI's recommender = terra
+// balanced, sol high for quality) + gathering (copies + abstains well, judges less; left a broken search tool
+// unreported in 1% of OpenAI's cases, sol 6.2 in 9%); beats luna at every price above $0.04.
 // Open-search sweeps, paired in-session check 2026-11-19 (one brief, one run per cell bar terra high ×3, distinct
 // sources per run): terra high 16–21 in 9–13 min, terra xhigh 20, sol medium 29 in 21 min, sol xhigh 50 in 33 min;
 // three terra-high runs together 35 (22 shared with sol xhigh, 13 only terra, 28 only sol) at under half sol xhigh's
@@ -32,6 +32,13 @@
 // (user ruling 2026-11-19 on evidence appraised open: Bug Hunt (find + fix) at xhigh astra 60 vs sol 49, runs 59–62
 // vs 46–52; one 16-bug hunt level with 2–3 false reports from astra; one bug-finding score sol ahead; no test of the
 // added pass against the slices alone).
+// Hard maths + proofs = astra: research-level from the start (no known proof, or new theory needed), or + one astra
+// solver from a fresh context where solving stalls (user proposal 2026-11-19, adopted on open evidence: the board
+// numbers above = one Lean task of 56 apart + an open-problem lead over sol 6.1 alone; practitioner posts on research
+// maths name astra, none compares sol 6.2; Fable 5.2 leads astra on HLE-Diamond + FrontierMath tiers 1–3 (95.1 vs 92.6)
+// ⇒ a second solver, not a ranking; no test of the added solver against sol or MAIN alone). Astra's extra Autoform-Hard
+// solve followed the harness's rejection of its early `unsolved` report + launch-week reviews report early stops ⇒ a
+// first `unsolved` report is sent back once.
 // Codex credits = 25 × API $ per model at flat per-token rates (the API's 2× rate past 272K input: OpenAI states it
 // absent for subscription use of sol 6.1 alone) ⇒ $/task ≈ quota. When to pick each lane = host CLAUDE.md `Model lanes`.
 
