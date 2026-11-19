@@ -10,7 +10,6 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-ENGINE = ROOT.parents[2] / "eturkes.com/ops/prompt-history-agent-update.py"
 PROJECT = '# Project → policy\n\n- Preserve "quotes", \'quotes\', \\\\ + π.\n'.encode()
 CHAT = b"# Read-only chat\n\n- Inspect relevant files.\n"
 
@@ -108,7 +107,7 @@ class RuntimePolicyTest(unittest.TestCase):
                 self.policy.patch_controller("nanoha", source, PROJECT, CHAT)
 
     def test_stage_preserves_engine_functions_and_pins_payload(self):
-        engine = ENGINE.read_bytes()
+        engine = self.policy.ENGINE.read_bytes()
         for vm in ("nanoha", "naoto", "rehab"):
             with self.subTest(vm=vm), tempfile.TemporaryDirectory() as raw:
                 before = baseline(vm)
@@ -144,7 +143,7 @@ class RuntimePolicyTest(unittest.TestCase):
                 self.assertNotEqual(changed["manifest.json"], artifacts["manifest.json"])
 
     def test_engine_drift_invalid_vm_and_noop_fail(self):
-        engine = ENGINE.read_bytes()
+        engine = self.policy.ENGINE.read_bytes()
         before = baseline("nanoha")
         for vm, controller, source, workspace in (
             ("nanoha", before, engine + b"\n", None),

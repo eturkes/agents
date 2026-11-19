@@ -5,12 +5,12 @@ description: "VM policies → PromptVM controller releases + native instruction-
 
 # VM instructions
 
-Scope/invariants → [VM instruction maintenance](../../../codex/void/AGENTS.md). Host = T70 (FreeBSD), `ssh -p 9993 eturkes@192.168.40.50`; checkout `~/pro/agents` beside `~/pro/promptvm` + `~/pro/eturkes.com` (the `../` paths below); another machine → run there over SSH. Host commands = Bash (login shell = tcsh) from `~/pro/agents`, `python3.12 -B`; guest operator = `/usr/bin/python3 -I -B`. Transient stages/baselines → outside tracked paths.
+Scope/invariants → [VM instruction maintenance](../../../codex/void/AGENTS.md). Host = T70 (FreeBSD), `ssh -p 9993 eturkes@192.168.40.50`; checkout `~/pro/agents` beside `~/pro/promptvm` + `~/pro/personal-site` (the `../` paths below); another machine → run there over SSH. Host commands = Bash (login shell = tcsh) from `~/pro/agents`, `python3.12 -B`; guest operator = `/usr/bin/python3 -I -B`. Transient stages/baselines → outside tracked paths.
 
 ## Ownership + invariants
 
 - Live source = `../promptvm/promptvm/deployment/`; controller changes, including policy constants → one verified PromptVM wheel. Canonical build/release/recovery procedure = `../promptvm/docs/deployed-vms.md`.
-- Frozen `../eturkes.com/ops` controller/policy payloads, `/usr/local/libexec` trees + original receipts = immutable recovery assets. Historical engine path/pin = `runtime-policy.py:{ENGINE,ENGINE_SHA256}`; `runtime-policy.py stage` + generated `--guest-install`/`--guest-recover` → matching historical procedure. Live releases → PromptVM.
+- Frozen `../personal-site/ops` controller/policy payloads, `/usr/local/libexec` trees + original receipts = immutable recovery assets. Historical engine path/pin = `runtime-policy.py:{ENGINE,ENGINE_SHA256}`; `runtime-policy.py stage` + generated `--guest-install`/`--guest-recover` → matching historical procedure. Live releases → PromptVM.
 - Canonical edit/chat payloads = `codex/void/{vm}/AGENTS.md`, `codex/void/AGENTS.chat.md`; materialization preserves installation constants + normalized nonpolicy AST. Shared chat changes affect all three profiles.
 - Preserved = source path/type/content identity outside root `AGENTS.md`; report/private/runtime/older-history/manifest/commit + VM `.codex/` auth/config bytes. Active instruction changes → native linked-child/identical-head no-op via `update-workspace.py --release SHA256`.
 - Release rollback tests precede source transitions. Runtime rollback = pre-source-child phase; committed/uncertain work → forward reconciliation with its matching runtime, because native receipts bind durable ancestry.
@@ -100,7 +100,7 @@ for policy_vm in nanoha naoto rehab; do
   cmp "codex/void/$policy_vm/AGENTS.md" "$policy_package/workspace-AGENTS.md"
 done
 (
-  cd ../eturkes.com || exit
+  cd ../personal-site || exit
   ./scripts/check
 )
 ```

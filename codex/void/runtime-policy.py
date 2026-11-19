@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent
-ENGINE = ROOT.parents[2] / "eturkes.com/ops/prompt-history-agent-update.py"
+ENGINE = ROOT.parents[2] / "personal-site/ops/prompt-history-agent-update.py"
 ENGINE_SHA256 = "a3d204e5d0be0139fa75004db63747d6a30edeff1a442ced4448c0449c0b6b19"
 VMS = ("nanoha", "naoto", "rehab")
 
