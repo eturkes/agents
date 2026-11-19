@@ -39,8 +39,9 @@ helpers remain on the host through forced-command SSH.
 
 ## Project ownership and recovery
 
-- Keep `~/pro/eturkes.com` as a symlink to `personal-site`: frozen historical
-  `ops/*-update.py` recovery tools require the old absolute checkout path.
+- Leave `~/pro/eturkes.com` absent. Only a host-side replay of a frozen updater
+  may need it temporarily. See `~/pro/personal-site/README.md`, “Historical VM
+  updater replay.”
 - PromptVM runtime = shared immutable wheel; eturkes.com controller trees =
   frozen provisioning/receipt/recovery assets. Reapply 0.2.22 → exact artifact
   `~/pro/promptvm/dist/policy-concision-20261119/promptvm-0.2.22-py3-none-any.whl`
