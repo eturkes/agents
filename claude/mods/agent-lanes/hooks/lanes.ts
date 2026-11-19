@@ -23,8 +23,10 @@
 // known-error recall, 6.1 + 6.2; the brief's boundary rules moved 6.2's flags 4× + its recall 20 → 15 of 21, effort
 // 1.03×); opus +1 (astra max over xhigh: HLE-Diamond +4.9, Bug Hunt +2.7 of 105, AA index +0.5, AA Terminal-Bench
 // Science −0.5, a 23-test suite level; token cost +20% … +137% by workload).
-// Review = sol under the incumbent pick, astra unproven either way: Bug Hunt (find + fix) at xhigh astra 60 vs sol 49
-// (runs 59–62 vs 46–52), one 16-bug hunt level with 2–3 false reports from astra, one bug-finding score sol ahead.
+// Review = sol; a closing diff with large consequences may add one whole-diff astra reviewer beside the sol slices
+// (user ruling 2026-11-19 on evidence appraised open: Bug Hunt (find + fix) at xhigh astra 60 vs sol 49, runs 59–62
+// vs 46–52; one 16-bug hunt level with 2–3 false reports from astra; one bug-finding score sol ahead; no test of the
+// added pass against the slices alone).
 // Codex credits = 25 × API $ per model at flat per-token rates (the API's 2× rate past 272K input: OpenAI states it
 // absent for subscription use of sol 6.1 alone) ⇒ $/task ≈ quota. When to pick each lane = host CLAUDE.md `Model lanes`.
 
