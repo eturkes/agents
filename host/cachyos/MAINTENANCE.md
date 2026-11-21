@@ -86,6 +86,16 @@ done
 
 Checks = `bash -n host/cachyos/cli-proxy-api-patch`, `shellcheck host/cachyos/cli-proxy-api-patch`, `ruff check host/cachyos/check-cli-proxy-api-patch`, `python -B host/cachyos/check-cli-proxy-api-patch -q`, `host/cachyos/cli-proxy-api-patch check`.
 
+### zmx patch
+
+- Codex (and other TUIs) ask the terminal for its colours (OSC 10/11) and wait ~200 ms; over SSH from abroad (RTT ≈ 240 ms) + through zmx the reply arrives late ⇒ Codex falls back to palette colour 8 for the user-message background = Black Box light's `#424242` = its foreground ⇒ submitted prompts unreadable. `zmx-patch.patch` (new `src/color_replies.zig` + client-loop hooks): the attach client probes its terminal once at attach, answers later queries at once from that reply (sent as `Input` ⇒ the daemon passes only the leader's), still forwards each query to refresh the cache, drops replies nothing waits for. Off for emachine clients (`ZMX_SYNC_RESTORE=1`): its xterm.js answers + switches themes itself.
+- Scope = SSH/login shells: `~/.local/bin/zmx` → `~/.local/lib/zmx-patch/zmx` shadows `/usr/bin/zmx` (`zmx-bin`). emachine's own pinned client (`~/.local/app/emachine/scripts/zmx.mjs`, its own patches, pinned commit + Zig) = independent of `zmx-bin`, owned by that repo ⇒ not rebuilt here.
+- `apply`: `zmx-bin` version → tag `v<version>` in `~/.cache/zmx-patch/src` → `git apply` → Zig = the tag's `minimum_zig_version` from ziglang.org (index checksum, cached in `~/.cache/zmx-patch/zig`) → `zig build test` → build → link. Build stamp = version + patch SHA-256 ⇒ unchanged rerun = no build. Patch, tests or build fail → link removed (packaged zmx), exit 2 → rebase onto the new tag, `git format-patch -1 --full-index --stdout > host/cachyos/zmx-patch.patch` (`*.patch` is globally ignored → `git add -f`), commit, rerun `apply`. v1.0.1 (zig 0.17) = 2 small `loop.zig` conflicts (import line, client setup block) as of 2026-11-22.
+- `upgrade`: `apply` after `paru -Syu` (exit 2 → review; later stages continue); postflight `check` = read-only: link target, build stamp, a clean login shell resolves `zmx` to the link.
+- Activation = detach + re-attach (the client carries the fix; sessions + daemons keep running). `rollback` = link removed → `/usr/bin/zmx` at the next attach.
+
+Checks = `bash -n host/cachyos/zmx-patch`, `shellcheck host/cachyos/zmx-patch`, `host/cachyos/zmx-patch check`.
+
 ### CLIProxyAPI model catalog
 
 - The proxy routes a model id only when its catalog lists it: `models.json` of `router-for-me/models`, fetched at start + every 3 h. A release ahead of that repository → `unknown provider for model <id>`, while Codex's own list (`~/.codex/models_cache.json`) already carries the id.

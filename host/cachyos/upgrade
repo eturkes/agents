@@ -213,6 +213,15 @@ check_cli_proxy_api_patch() {
   esac
   details "$check_output"
 }
+check_zmx_patch() {
+  capture "$script_dir/zmx-patch" check
+  case $check_status in
+    0) report PASS 'zmx patch' ;;
+    2) report REVIEW 'zmx patch needs action' ;;
+    *) report FAIL "zmx patch (exit $check_status)" ;;
+  esac
+  details "$check_output"
+}
 check_cli_proxy_api_catalog() {
   # A local catalog replaces the upstream model sources (MAINTENANCE.md, CLIProxyAPI model catalog).
   if grep -Eqs '^[[:space:]]+catalog:[[:space:]]*["'\'']?/' "$HOME/.cli-proxy-api/config.yaml"; then
@@ -240,6 +249,7 @@ postflight() {
     browseros-call tabs '{"action":"list"}'
   check_cli_proxy_api_patch
   check_cli_proxy_api_catalog
+  check_zmx_patch
   check_configs
   check 'Project snapshot storage' 'Run project-snapshots report. Resolve the reported error.' show \
     "$script_dir/project-snapshots" report
@@ -301,6 +311,11 @@ stage 'CLIProxyAPI patch'
 # paru may have moved cli-proxy-api-bin → rebuild the patch on its release; exit 2 = packaged binary kept.
 "$script_dir/cli-proxy-api-patch" apply ||
   report REVIEW "cli-proxy-api-patch apply exited $?; inspect its output above"
+
+stage 'zmx patch'
+# paru may have moved zmx-bin → rebuild the colour-reply patch on its release; exit 2 = packaged zmx kept.
+"$script_dir/zmx-patch" apply ||
+  report REVIEW "zmx-patch apply exited $?; inspect its output above"
 
 stage 'Python tools (uv)'
 # uv = pacman-managed (`paru -Syu` above moves it); this step owns uv-installed tools.

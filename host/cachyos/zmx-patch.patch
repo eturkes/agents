@@ -1,0 +1,293 @@
+From 36adedfbabaa932b8666b9d8b97a5c9a438b04a3 Mon Sep 17 00:00:00 2001
+From: Emir Turkes <eturkes@bu.edu>
+Date: Sun, 22 Nov 2026 05:00:52 +0900
+Subject: [PATCH] client: answer OSC 10/11 colour queries from the attached
+ terminal's cached reply
+
+---
+ src/color_replies.zig | 194 ++++++++++++++++++++++++++++++++++++++++++
+ src/loop.zig          |  26 +++++-
+ src/test.zig          |   1 +
+ 3 files changed, 220 insertions(+), 1 deletion(-)
+ create mode 100644 src/color_replies.zig
+
+diff --git a/src/color_replies.zig b/src/color_replies.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa78bbe0d50e026433462e9782be6225f8be40f5
+--- /dev/null
++++ b/src/color_replies.zig
+@@ -0,0 +1,194 @@
++//! Local answers to OSC 10/11 colour queries for the attach client.
++const std = @import("std");
++const testing = std.testing;
++
++/// OSC 10/11 (default foreground/background) query bytes the client sends to
++/// its own terminal at attach.
++pub const color_probe = "\x1b]10;?\x1b\\\x1b]11;?\x1b\\";
++
++/// Answers OSC 10/11 colour queries from the attached terminal's last reply.
++///
++/// Programs such as Codex wait only ~200 ms for these replies; over a slow SSH
++/// link the real terminal answers too late and the program falls back to
++/// unreadable default colours. The client probes its terminal once at attach,
++/// answers later queries at once from that reply, still forwards each query
++/// so the cache tracks theme changes, and drops replies nobody waits for.
++pub const ColorReplies = struct {
++    const spec_max = 64;
++    const Spec = struct { len: u8 = 0, bytes: [spec_max]u8 = undefined };
++
++    /// Latest reply spec per kind: 0 = OSC 10 (foreground), 1 = OSC 11 (background).
++    specs: [2]?Spec = .{ null, null },
++    /// Program queries forwarded while no reply was cached; their terminal
++    /// replies must reach the program.
++    waiting: [2]u16 = .{ 0, 0 },
++    /// Output-side matcher progress over "ESC ] 1 {0,1} ; ? <BEL | ESC \>".
++    out_state: u8 = 0,
++    out_kind: u1 = 0,
++    /// Input-side matcher: bytes of a possible reply held back from the program.
++    in_hold: [spec_max + 8]u8 = undefined,
++    in_len: usize = 0,
++    in_kind: u1 = 0,
++
++    fn appendReply(self: *const ColorReplies, alloc: std.mem.Allocator, out: *std.ArrayList(u8), kind: u1) !void {
++        const spec = self.specs[kind].?;
++        try out.appendSlice(alloc, if (kind == 0) "\x1b]10;" else "\x1b]11;");
++        try out.appendSlice(alloc, spec.bytes[0..spec.len]);
++        try out.appendSlice(alloc, "\x1b\\");
++    }
++
++    /// Scan program output; append immediate replies for complete queries to `replies`.
++    pub fn scanOutput(self: *ColorReplies, alloc: std.mem.Allocator, payload: []const u8, replies: *std.ArrayList(u8)) !void {
++        for (payload) |byte| {
++            const next: u8 = switch (self.out_state) {
++                0 => if (byte == 0x1b) 1 else 0,
++                1 => if (byte == ']') 2 else 0,
++                2 => if (byte == '1') 3 else 0,
++                3 => blk: {
++                    if (byte != '0' and byte != '1') break :blk 0;
++                    self.out_kind = @intCast(byte - '0');
++                    break :blk 4;
++                },
++                4 => if (byte == ';') 5 else 0,
++                5 => if (byte == '?') 6 else 0,
++                6 => if (byte == 0x07) 8 else if (byte == 0x1b) 7 else 0,
++                7 => if (byte == '\\') 8 else 0,
++                else => 0,
++            };
++            if (next == 8) {
++                if (self.specs[self.out_kind] != null) {
++                    try self.appendReply(alloc, replies, self.out_kind);
++                } else {
++                    self.waiting[self.out_kind] +|= 1;
++                }
++                self.out_state = 0;
++            } else if (next == 0 and byte == 0x1b) {
++                self.out_state = 1;
++            } else {
++                self.out_state = next;
++            }
++        }
++    }
++
++    /// Filter terminal input; append what the program should receive to `forward`.
++    /// A possible reply is held across reads only once "ESC ] 1 0" or "ESC ] 1 1"
++    /// has arrived, so a lone ESC key press is never delayed.
++    pub fn filterInput(self: *ColorReplies, alloc: std.mem.Allocator, input: []const u8, forward: *std.ArrayList(u8)) !void {
++        var i: usize = 0;
++        while (i < input.len) : (i += 1) {
++            const byte = input[i];
++            if (self.in_len == 0) {
++                if (byte == 0x1b) {
++                    self.in_hold[0] = byte;
++                    self.in_len = 1;
++                } else try forward.append(alloc, byte);
++                continue;
++            }
++            const ok = switch (self.in_len) {
++                1 => byte == ']',
++                2 => byte == '1',
++                3 => byte == '0' or byte == '1',
++                4 => byte == ';',
++                else => true,
++            };
++            if (!ok or self.in_len >= self.in_hold.len) {
++                try forward.appendSlice(alloc, self.in_hold[0..self.in_len]);
++                self.in_len = 0;
++                // Re-examine this byte from the ground state.
++                if (byte == 0x1b) {
++                    self.in_hold[0] = byte;
++                    self.in_len = 1;
++                } else try forward.append(alloc, byte);
++                continue;
++            }
++            if (self.in_len == 3) self.in_kind = @intCast(byte - '0');
++            self.in_hold[self.in_len] = byte;
++            self.in_len += 1;
++            if (self.in_len < 6) continue;
++            // Terminated by BEL, or by ESC \ (ST).
++            const held = self.in_hold[0..self.in_len];
++            const end: ?usize = if (byte == 0x07)
++                held.len - 1
++            else if (byte == '\\' and held[held.len - 2] == 0x1b)
++                held.len - 2
++            else
++                null;
++            if (end) |e| {
++                const spec = held[5..e];
++                if (spec.len > 0 and spec.len <= spec_max and spec[0] != '?') {
++                    var stored: Spec = .{ .len = @intCast(spec.len) };
++                    @memcpy(stored.bytes[0..spec.len], spec);
++                    self.specs[self.in_kind] = stored;
++                    if (self.waiting[self.in_kind] > 0) {
++                        self.waiting[self.in_kind] -= 1;
++                        try forward.appendSlice(alloc, held);
++                    }
++                } else try forward.appendSlice(alloc, held);
++                self.in_len = 0;
++            }
++        }
++        // Only a recognised reply prefix may wait for the next read.
++        if (self.in_len > 0 and self.in_len < 4) {
++            try forward.appendSlice(alloc, self.in_hold[0..self.in_len]);
++            self.in_len = 0;
++        }
++    }
++};
++
++test "colour replies: cached answers, waiting queries, dropped late replies" {
++    const alloc = testing.allocator;
++    var cr: ColorReplies = .{};
++    var replies: std.ArrayList(u8) = .empty;
++    defer replies.deinit(alloc);
++    var forward: std.ArrayList(u8) = .empty;
++    defer forward.deinit(alloc);
++
++    // Uncached query: nothing answered locally, the terminal's reply passes through.
++    try cr.scanOutput(alloc, "x\x1b]11;?\x1b\\y", &replies);
++    try testing.expectEqualStrings("", replies.items);
++    try cr.filterInput(alloc, "a\x1b]11;rgb:f6f6/f5f5/f4f4\x1b\\b", &forward);
++    try testing.expectEqualStrings("a\x1b]11;rgb:f6f6/f5f5/f4f4\x1b\\b", forward.items);
++
++    // Cached query, split across output reads and BEL-terminated: answered at once.
++    try cr.scanOutput(alloc, "\x1b]1", &replies);
++    try cr.scanOutput(alloc, "1;?\x07", &replies);
++    try testing.expectEqualStrings("\x1b]11;rgb:f6f6/f5f5/f4f4\x1b\\", replies.items);
++
++    // The terminal's late reply, split across reads, is absorbed and refreshes the cache.
++    forward.clearRetainingCapacity();
++    try cr.filterInput(alloc, "\x1b]11;rgb:0000", &forward);
++    try cr.filterInput(alloc, "/0000/0000\x07z", &forward);
++    try testing.expectEqualStrings("z", forward.items);
++    replies.clearRetainingCapacity();
++    try cr.scanOutput(alloc, "\x1b]11;?\x1b\\", &replies);
++    try testing.expectEqualStrings("\x1b]11;rgb:0000/0000/0000\x1b\\", replies.items);
++
++    // Probe replies at attach are absorbed; foreground is tracked separately.
++    forward.clearRetainingCapacity();
++    try cr.filterInput(alloc, "\x1b]10;rgb:4242/4242/4242\x1b\\", &forward);
++    try testing.expectEqualStrings("", forward.items);
++    replies.clearRetainingCapacity();
++    try cr.scanOutput(alloc, "\x1b\x1b]10;?\x1b\\", &replies);
++    try testing.expectEqualStrings("\x1b]10;rgb:4242/4242/4242\x1b\\", replies.items);
++}
++
++test "colour replies: ordinary input is never held or altered" {
++    const alloc = testing.allocator;
++    var cr: ColorReplies = .{};
++    var forward: std.ArrayList(u8) = .empty;
++    defer forward.deinit(alloc);
++    for ([_][]const u8{
++        "\x1b", "\x1b]", "\x1b]1", "\x1b[A", "\x1b\x1b", "\x1b]12;rgb:1/2/3\x07",
++        "\x1b]0;title\x07", "\x1b]11;?\x07", "\x1b]1x", "plain text", "\x1bOA",
++    }) |input| {
++        forward.clearRetainingCapacity();
++        try cr.filterInput(alloc, input, &forward);
++        try testing.expectEqualStrings(input, forward.items);
++        try testing.expectEqual(@as(usize, 0), cr.in_len);
++    }
++    // An unterminated over-long sequence is released, not swallowed.
++    forward.clearRetainingCapacity();
++    const long = "\x1b]11;" ++ "a" ** 80;
++    try cr.filterInput(alloc, long, &forward);
++    try testing.expectEqualStrings(long, forward.items);
++}
+diff --git a/src/loop.zig b/src/loop.zig
+index 513d3f58b9c07702558014e3304c6fce631c3367..9fefe8514e3a994157cea6f980168715b4c60eb5 100644
+--- a/src/loop.zig
++++ b/src/loop.zig
+@@ -3,6 +3,7 @@ const ghostty_vt = @import("ghostty-vt");
+ const ipc = @import("ipc.zig");
+ const log = @import("log.zig");
+ const util = @import("util.zig");
++const color_replies = @import("color_replies.zig");
+ const cross = @import("cross.zig");
+ const socket = @import("socket.zig");
+ const label = @import("label.zig");
+@@ -49,6 +50,15 @@ pub fn clientLoop(client_sock_fd: i32, env_str: []const u8) !ClientResult {
+     const size = ipc.getTerminalSize(lib_posix.STDOUT_FILENO);
+     try ipc.appendSizeMessage(gpa, &sock_write_buf, .Init, size);
+ 
++    // Answer OSC 10/11 colour queries locally from this terminal's reply, so
++    // slow links do not miss the ~200 ms window programs allow. emachine
++    // (ZMX_SYNC_RESTORE) owns its own replies and theme switching.
++    const emachine = std.mem.eql(u8, lib_posix.getenv("ZMX_SYNC_RESTORE") orelse "", "1");
++    var colors: ?color_replies.ColorReplies = if (!emachine and std.c.isatty(lib_posix.STDOUT_FILENO) == 1 and
++        std.c.isatty(lib_posix.STDIN_FILENO) == 1) .{} else null;
++    var color_buf: std.ArrayList(u8) = .empty;
++    defer color_buf.deinit(gpa);
++
+     var poll_fds = try std.ArrayList(lib_posix.pollfd).initCapacity(gpa, 4);
+     defer poll_fds.deinit(gpa);
+ 
+@@ -57,6 +67,7 @@ pub fn clientLoop(client_sock_fd: i32, env_str: []const u8) !ClientResult {
+ 
+     var stdout_buf = try std.ArrayList(u8).initCapacity(gpa, 4096);
+     defer stdout_buf.deinit(gpa);
++    if (colors != null) try stdout_buf.appendSlice(gpa, color_replies.color_probe);
+ 
+     const stdin_fd = lib_posix.STDIN_FILENO;
+ 
+@@ -123,7 +134,13 @@ pub fn clientLoop(client_sock_fd: i32, env_str: []const u8) !ClientResult {
+                         std.log.info("detach key detected", .{});
+                         try ipc.appendMessage(gpa, &sock_write_buf, .Detach, "");
+                     } else {
+-                        try ipc.appendMessage(gpa, &sock_write_buf, .Input, buf[0..n]);
++                        var input: []const u8 = buf[0..n];
++                        if (colors) |*c| {
++                            color_buf.clearRetainingCapacity();
++                            try c.filterInput(gpa, input, &color_buf);
++                            input = color_buf.items;
++                        }
++                        if (input.len > 0) try ipc.appendMessage(gpa, &sock_write_buf, .Input, input);
+                     }
+                 } else {
+                     std.log.info("eof stdin", .{});
+@@ -152,6 +169,13 @@ pub fn clientLoop(client_sock_fd: i32, env_str: []const u8) !ClientResult {
+             while (read_buf.next()) |msg| {
+                 switch (msg.header.tag) {
+                     .Output => {
++                        if (msg.payload.len > 0) if (colors) |*c| {
++                            // Input, not Send: the daemon passes non-typed input from the
++                            // leader only, so several attached clients never answer twice.
++                            color_buf.clearRetainingCapacity();
++                            try c.scanOutput(gpa, msg.payload, &color_buf);
++                            if (color_buf.items.len > 0) try ipc.appendMessage(gpa, &sock_write_buf, .Input, color_buf.items);
++                        };
+                         if (msg.payload.len > 0) {
+                             try stdout_buf.appendSlice(gpa, msg.payload);
+                         }
+diff --git a/src/test.zig b/src/test.zig
+index c68b806e3a39756743e3018d55a21f6a4b68283d..7837fb8239bc1b215a7ea8e519fbce2b9b1d9c93 100644
+--- a/src/test.zig
++++ b/src/test.zig
+@@ -1,6 +1,7 @@
+ comptime {
+     _ = @import("main.zig");
+     _ = @import("util.zig");
++    _ = @import("color_replies.zig");
+     _ = @import("socket.zig");
+     _ = @import("ipc.zig");
+     _ = @import("label.zig");
+-- 
+2.56.0
+

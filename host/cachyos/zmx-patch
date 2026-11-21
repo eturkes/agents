@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# Patched zmx client: OSC 10/11 colour queries answered from the attached terminal's cached reply,
+# so programs (Codex) get the background colour over slow SSH links.
+# Patch = zmx-patch.patch; MAINTENANCE.md#zmx-patch.
+set -euo pipefail
+export LC_ALL=C
+
+usage() {
+  echo 'Usage: zmx-patch apply | check | rollback'
+  echo 'apply: Build the installed zmx-bin release with the patch. Test and install the build.'
+  echo '       Link ~/.local/bin/zmx to the build. When the patch does not apply or its tests fail, remove the link.'
+  echo 'check: Report the link and the build. Change nothing.'
+  echo 'rollback: Remove the link. New attaches use the packaged /usr/bin/zmx.'
+  echo 'Running clients keep their binary. Detach and re-attach to use a change; sessions keep running.'
+  echo 'Exit codes: 0 = done or current; 1 = failure; 2 = review needed (apply: packaged binary kept); 64 = usage error.'
+}
+
+(($# == 1)) || { usage >&2; exit 64; }
+case $1 in
+  apply|check|rollback) mode=$1 ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 64 ;;
+esac
+
+script_dir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+patch="$script_dir/zmx-patch.patch"
+state="${XDG_CACHE_HOME:-$HOME/.cache}/zmx-patch"
+src="$state/src"
+status_file="$state/status"
+lib="$HOME/.local/lib/zmx-patch"
+binary="$lib/zmx"
+stamp="$lib/build"
+link="$HOME/.local/bin/zmx"
+upstream=https://github.com/neurosnap/zmx.git
+tmp=''
+
+package_version() {
+  local name version
+  read -r name version < <(pacman -Q zmx-bin) || return
+  [[ $name == zmx-bin && -n $version ]] || return 1
+  printf '%s\n' "${version%-*}"
+}
+build_id() { printf '%s %s\n' "$1" "$(sha256sum < "$patch" | cut -d' ' -f1)"; }
+set_status() { mkdir -p -- "$state"; printf '%s\n' "$*" > "$status_file"; }
+remove_link() { [[ ! -L $link ]] || rm -f -- "$link"; }
+
+check_state() {
+  local version status=none build resolved
+  version=$(package_version) || { echo 'zmx-bin is not installed.'; return 1; }
+  [[ ! -f $status_file ]] || status=$(<"$status_file")
+  if [[ -e $link && ! -L $link ]]; then
+    echo "$link exists and is not this recipe's link."
+    return 1
+  fi
+  if [[ ! -L $link ]]; then
+    echo "No link. The packaged $version zmx runs without the fix (last apply: $status)."
+    echo 'Next: Run zmx-patch apply.'
+    return 2
+  fi
+  if [[ $(readlink -- "$link") != "$binary" ]]; then
+    echo "$link points to $(readlink -- "$link"), not $binary."
+    return 1
+  fi
+  if [[ ! -x $binary || ! -f $stamp ]]; then
+    echo "The link is present, but the patched build $binary is missing."
+    echo 'Next: Run zmx-patch apply. To use the packaged binary, run zmx-patch rollback.'
+    return 1
+  fi
+  build=$(<"$stamp")
+  if [[ $build != "$(build_id "$version")" ]]; then
+    echo "The patched build ($build) does not match package $version and the current patch."
+    echo 'Next: Run zmx-patch apply.'
+    return 2
+  fi
+  # A clean login shell = an SSH session's PATH; emachine's terminals put their own pinned zmx first.
+  resolved=$(env -i HOME="$HOME" USER="${USER:-$(id -un)}" bash -lc 'command -v zmx' 2> /dev/null || true)
+  if [[ $resolved != "$link" ]]; then
+    echo "The patched $version build is installed, but a login shell resolves zmx to ${resolved:-nothing}."
+    return 2
+  fi
+  echo "The patched $version build is linked ($link → $binary)."
+}
+
+fetch_source() {
+  if [[ ! -d $src/.git ]]; then
+    mkdir -p -- "$state"
+    git clone --quiet --no-checkout -- "$upstream" "$src"
+  fi
+  git -C "$src" fetch --quiet --force --tags origin
+}
+reset_source() {
+  git -C "$src" checkout --quiet --force --detach "v$1"
+  git -C "$src" clean --quiet -fdx
+}
+# Zig = the release's minimum_zig_version from ziglang.org, checksum from its download index.
+ensure_zig() {
+  local version url sum dir="$state/zig" archive
+  version=$(sed -n 's/^ *\.minimum_zig_version = "\([^"]*\)".*/\1/p' "$src/build.zig.zon")
+  [[ -n $version ]] || return 1
+  zig="$dir/$version/zig"
+  [[ -x $zig ]] && return
+  read -r url sum < <(curl -fsSL https://ziglang.org/download/index.json |
+    jq -r --arg v "$version" '.[$v]."x86_64-linux" | "\(.tarball) \(.shasum)"') || return
+  [[ $url == https://* && ${#sum} == 64 ]] || return 1
+  mkdir -p -- "$dir/$version.tmp"
+  archive="$dir/${url##*/}"
+  curl -fsSL -o "$archive" -- "$url"
+  echo "$sum  $archive" | sha256sum -c --quiet - || { rm -f -- "$archive"; return 1; }
+  tar -xf "$archive" --strip-components=1 -C "$dir/$version.tmp"
+  rm -f -- "$archive"
+  rm -rf -- "${dir:?}/$version"
+  mv -- "$dir/$version.tmp" "$dir/$version"
+}
+zig_build() {
+  (cd -- "$src" && ZIG_GLOBAL_CACHE_DIR="$state/zig-cache" ZIG_LOCAL_CACHE_DIR="$src/.zig-cache" \
+    "$zig" build "$@" -Doptimize=ReleaseSafe -Dtarget=x86_64-linux-musl)
+}
+
+keep_packaged() {
+  local reason=$1 version=$2
+  remove_link
+  set_status "stock $version: $reason"
+  echo "The packaged $version zmx stays: $reason."
+  echo 'Next: Rebase zmx-patch.patch onto the new release. Then run zmx-patch apply.'
+  exit 2
+}
+
+apply_patch() {
+  local version id zig
+  version=$(package_version) || { echo 'zmx-bin is not installed.' >&2; exit 1; }
+  if [[ -e $link && ! -L $link ]]; then
+    echo "$link exists and is not this recipe's link. Nothing changed." >&2
+    exit 1
+  fi
+  id=$(build_id "$version")
+  if [[ -x $binary && -f $stamp && $(<"$stamp") == "$id" ]]; then
+    ln -sfn -- "$binary" "$link"
+    set_status "active $version"
+    echo "The patched $version build is current."
+    return
+  fi
+
+  fetch_source
+  reset_source "$version"
+  git -C "$src" apply -- "$patch" || keep_packaged "the patch does not apply to v$version" "$version"
+  ensure_zig || { echo "Zig for zmx v$version is unavailable." >&2; exit 1; }
+  zig_build test || keep_packaged "the tests fail on v$version" "$version"
+
+  tmp=$(mktemp -d)
+  trap 'rm -rf -- "$tmp"' EXIT
+  zig_build "-Dversion=$version+colors" --prefix "$tmp/install" ||
+    keep_packaged "the patched build fails on v$version" "$version"
+  install -Dm755 -- "$tmp/install/bin/zmx" "$binary.new"
+  mv -f -- "$binary.new" "$binary"
+  printf '%s\n' "$id" > "$stamp"
+  mkdir -p -- "${link%/*}"
+  ln -sfn -- "$binary" "$link"
+  set_status "active $version"
+  echo "The patched $version build is installed: $link → $binary."
+  echo 'Detach and re-attach running sessions to use it.'
+}
+
+case $mode in
+  check) check_state ;;
+  rollback)
+    remove_link
+    set_status rollback
+    echo 'The link is removed. New attaches use the packaged /usr/bin/zmx.'
+    ;;
+  apply) apply_patch ;;
+esac
